@@ -1,4 +1,4 @@
-module gts-vcs
+module github.com/odvcencio/got
 
 go 1.25
 
@@ -10,5 +10,3 @@ require (
 )
 
 replace gts-suite => /home/draco/work/gts-suite
-
-replace github.com/odvcencio/gotreesitter => /home/draco/work/gotreesitter
