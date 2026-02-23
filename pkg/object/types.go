@@ -1,0 +1,60 @@
+package object
+
+// Hash is a 64-character hex-encoded SHA-256 digest.
+type Hash string
+
+// ObjectType identifies the kind of object stored.
+type ObjectType string
+
+const (
+	TypeBlob       ObjectType = "blob"
+	TypeEntity     ObjectType = "entity"
+	TypeEntityList ObjectType = "entitylist"
+	TypeTree       ObjectType = "tree"
+	TypeCommit     ObjectType = "commit"
+)
+
+// Blob holds raw file data.
+type Blob struct {
+	Data []byte
+}
+
+// EntityObj represents a single code entity (function, type, etc.).
+type EntityObj struct {
+	Kind     string // e.g. "function", "type", "method"
+	Name     string
+	DeclKind string // language-specific declaration kind
+	Receiver string // method receiver, empty for non-methods
+	Body     []byte
+	BodyHash Hash
+}
+
+// EntityListObj is an ordered list of entity references for a file.
+type EntityListObj struct {
+	Language   string
+	Path       string
+	EntityRefs []Hash // ordered refs to EntityObj hashes
+}
+
+// TreeEntry is one entry in a tree object.
+type TreeEntry struct {
+	Name           string
+	IsDir          bool
+	BlobHash       Hash
+	EntityListHash Hash
+	SubtreeHash    Hash
+}
+
+// TreeObj holds a sorted list of tree entries.
+type TreeObj struct {
+	Entries []TreeEntry // sorted by Name
+}
+
+// CommitObj represents a commit pointing to a tree with metadata.
+type CommitObj struct {
+	TreeHash  Hash
+	Parents   []Hash
+	Author    string
+	Timestamp int64
+	Message   string
+}
