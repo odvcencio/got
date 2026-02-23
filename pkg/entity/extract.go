@@ -194,7 +194,13 @@ func extractNameAndReceiver(bt *gotreesitter.BoundTree, node *gotreesitter.Node)
 		return extractGoMethodNameReceiver(bt, node)
 
 	case "function_declaration", "function_definition", "function_item":
-		return extractFirstIdentifierName(bt, node), ""
+		// For C/C++ function_definition, the identifier is nested inside
+		// a function_declarator child rather than being a direct child.
+		name = extractFirstIdentifierName(bt, node)
+		if name == "" {
+			name = extractDeclaratorName(bt, node)
+		}
+		return name, ""
 
 	case "type_declaration":
 		// Go: type_declaration -> type_spec -> type_identifier
@@ -233,6 +239,24 @@ func extractNameAndReceiver(bt *gotreesitter.BoundTree, node *gotreesitter.Node)
 		// Generic fallback: look for first identifier-like named child
 		return extractFirstIdentifierName(bt, node), ""
 	}
+}
+
+// extractDeclaratorName looks for a function_declarator (or similar declarator)
+// child and extracts the identifier from it. This handles C/C++ where the name
+// is nested inside a declarator node rather than being a direct child.
+func extractDeclaratorName(bt *gotreesitter.BoundTree, node *gotreesitter.Node) string {
+	declaratorTypes := map[string]bool{
+		"function_declarator": true,
+		"init_declarator":     true,
+	}
+	for i := 0; i < node.NamedChildCount(); i++ {
+		child := node.NamedChild(i)
+		childType := bt.NodeType(child)
+		if declaratorTypes[childType] {
+			return extractFirstIdentifierName(bt, child)
+		}
+	}
+	return ""
 }
 
 // extractFirstIdentifierName finds the first named child that looks like an
