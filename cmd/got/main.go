@@ -22,6 +22,7 @@ func main() {
 	root.AddCommand(newDiffCmd())
 	root.AddCommand(newBranchCmd())
 	root.AddCommand(newCheckoutCmd())
+	root.AddCommand(newMergeCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
