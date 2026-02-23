@@ -102,8 +102,18 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 			stats.Added++
 
 		case DeletedOurs, DeletedTheirs:
-			// Skip — omit from output.
-			stats.Deleted++
+			// Interstitials whose identity keys shifted because a new entity
+			// was inserted between their neighbors are not truly deleted —
+			// keep the base version to preserve whitespace separators.
+			if m.Base != nil && m.Base.Kind == entity.KindInterstitial {
+				resolved = append(resolved, ResolvedEntity{
+					Entity: *m.Base,
+				})
+				stats.Unchanged++
+			} else {
+				// Real deletion — omit from output.
+				stats.Deleted++
+			}
 
 		case Conflict:
 			re := resolveConflict(m, language)

@@ -59,36 +59,70 @@ type MatchedEntity struct {
 
 // MatchEntities performs three-way entity matching between base, ours, and theirs.
 // It builds identity-keyed maps for each side, collects all unique keys in a
-// stable order (base first, then new in ours, then new in theirs), and classifies
-// each key's disposition based on presence and hash comparison across the three sides.
+// stable order, and classifies each key's disposition based on presence and hash
+// comparison across the three sides.
+//
+// New entities from ours and theirs are inserted at their correct positions
+// relative to the base ordering (anchored after their nearest preceding base key)
+// rather than being appended at the end.
 func MatchEntities(base, ours, theirs *entity.EntityList) []MatchedEntity {
 	baseMap := buildEntityMap(base)
 	oursMap := buildEntityMap(ours)
 	theirsMap := buildEntityMap(theirs)
 
-	// Collect keys in stable order: base entities first, then new in ours, then new in theirs.
+	// Collect base keys in order.
+	baseKeySet := map[string]bool{}
+	var baseKeys []string
+	for i := range base.Entities {
+		key := base.Entities[i].IdentityKey()
+		if !baseKeySet[key] {
+			baseKeySet[key] = true
+			baseKeys = append(baseKeys, key)
+		}
+	}
+
+	// For ours and theirs, find new keys (not in base) and determine their
+	// anchor — the nearest preceding key that IS in base. Entities inserted
+	// before any base entity get anchor "" (insert at front).
+	oursInsertions := collectInsertions(ours, baseKeySet)
+	theirsInsertions := collectInsertions(theirs, baseKeySet)
+
+	// Build the merged key sequence: walk base keys in order, interleaving
+	// new entities at their anchor points.
 	seen := map[string]bool{}
 	var keys []string
 
-	for i := range base.Entities {
-		key := base.Entities[i].IdentityKey()
-		if !seen[key] {
-			seen[key] = true
-			keys = append(keys, key)
+	// Insert entities anchored before any base entity (anchor="").
+	for _, k := range oursInsertions[""] {
+		if !seen[k] {
+			seen[k] = true
+			keys = append(keys, k)
 		}
 	}
-	for i := range ours.Entities {
-		key := ours.Entities[i].IdentityKey()
-		if !seen[key] {
-			seen[key] = true
-			keys = append(keys, key)
+	for _, k := range theirsInsertions[""] {
+		if !seen[k] {
+			seen[k] = true
+			keys = append(keys, k)
 		}
 	}
-	for i := range theirs.Entities {
-		key := theirs.Entities[i].IdentityKey()
-		if !seen[key] {
-			seen[key] = true
-			keys = append(keys, key)
+
+	for _, bk := range baseKeys {
+		if !seen[bk] {
+			seen[bk] = true
+			keys = append(keys, bk)
+		}
+		// Insert entities anchored after this base key.
+		for _, k := range oursInsertions[bk] {
+			if !seen[k] {
+				seen[k] = true
+				keys = append(keys, k)
+			}
+		}
+		for _, k := range theirsInsertions[bk] {
+			if !seen[k] {
+				seen[k] = true
+				keys = append(keys, k)
+			}
 		}
 	}
 
@@ -109,6 +143,29 @@ func MatchEntities(base, ours, theirs *entity.EntityList) []MatchedEntity {
 	}
 
 	return result
+}
+
+// collectInsertions finds keys in el that are NOT in baseKeySet and groups them
+// by their anchor — the nearest preceding key that IS in baseKeySet.
+// Returns a map from anchor key to ordered slice of new keys to insert after it.
+// The special anchor "" means the entity appears before any base entity.
+func collectInsertions(el *entity.EntityList, baseKeySet map[string]bool) map[string][]string {
+	insertions := map[string][]string{}
+	seen := map[string]bool{}
+	anchor := "" // before any base entity
+	for i := range el.Entities {
+		key := el.Entities[i].IdentityKey()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if baseKeySet[key] {
+			anchor = key
+		} else {
+			insertions[anchor] = append(insertions[anchor], key)
+		}
+	}
+	return insertions
 }
 
 // classify determines the Disposition for an entity across three revisions.
