@@ -12,9 +12,12 @@ import (
 // PackEntry represents one object entry in a pack stream.
 type PackEntry struct {
 	Type         PackObjectType
+	OriginalType PackObjectType
 	Size         uint64
 	Data         []byte
+	Offset       uint64
 	BaseDistance uint64 // populated for OFS_DELTA entries
+	BaseRef      Hash   // populated for REF_DELTA entries
 }
 
 // PackFile is the decoded content of a full pack stream.
@@ -47,6 +50,7 @@ func ReadPack(data []byte) (*PackFile, error) {
 	offset := packHeaderSize
 	entries := make([]PackEntry, 0, header.NumObjects)
 	for i := uint32(0); i < header.NumObjects; i++ {
+		entryOffset := offset
 		objType, size, n, err := decodePackEntryHeaderStrict(payload[offset:])
 		if err != nil {
 			return nil, fmt.Errorf("entry %d: %w", i, err)
@@ -56,6 +60,7 @@ func ReadPack(data []byte) (*PackFile, error) {
 			return nil, fmt.Errorf("entry %d: missing compressed payload", i)
 		}
 		baseDistance := uint64(0)
+		baseRef := Hash("")
 		if objType == PackOfsDelta {
 			dist, dn, err := decodeOfsDeltaDistance(payload[offset:])
 			if err != nil {
@@ -65,7 +70,11 @@ func ReadPack(data []byte) (*PackFile, error) {
 			offset += dn
 		}
 		if objType == PackRefDelta {
-			return nil, fmt.Errorf("entry %d: ref-delta decode is not implemented", i)
+			if offset+32 > len(payload) {
+				return nil, fmt.Errorf("entry %d: truncated ref-delta base hash", i)
+			}
+			baseRef = Hash(hex.EncodeToString(payload[offset : offset+32]))
+			offset += 32
 		}
 
 		sub := bytes.NewReader(payload[offset:])
@@ -90,9 +99,12 @@ func ReadPack(data []byte) (*PackFile, error) {
 
 		entries = append(entries, PackEntry{
 			Type:         objType,
+			OriginalType: objType,
 			Size:         size,
 			Data:         raw,
+			Offset:       uint64(entryOffset),
 			BaseDistance: baseDistance,
+			BaseRef:      baseRef,
 		})
 	}
 
@@ -117,6 +129,109 @@ func ReadPackFromReader(r io.Reader) (*PackFile, error) {
 	return ReadPack(data)
 }
 
+// ReadPackResolved parses and resolves delta entries to their materialized
+// object contents.
+func ReadPackResolved(data []byte) (*PackFile, error) {
+	pf, err := ReadPack(data)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := ResolvePackEntries(pf.Entries)
+	if err != nil {
+		return nil, err
+	}
+	pf.Entries = resolved
+	return pf, nil
+}
+
+// ResolvePackEntries resolves OFS_DELTA and REF_DELTA entries to full object
+// contents. Returned entries preserve OriginalType while Type is set to the
+// resolved concrete object type.
+func ResolvePackEntries(entries []PackEntry) ([]PackEntry, error) {
+	resolved := make([]PackEntry, len(entries))
+	done := make([]bool, len(entries))
+	remaining := len(entries)
+
+	byOffset := make(map[uint64]int, len(entries))
+	for i, entry := range entries {
+		byOffset[entry.Offset] = i
+	}
+	byHash := make(map[Hash]int, len(entries))
+
+	for remaining > 0 {
+		progress := false
+		for i, entry := range entries {
+			if done[i] {
+				continue
+			}
+
+			switch entry.Type {
+			case PackCommit, PackTree, PackBlob, PackTag:
+				resolved[i] = entry
+				if resolved[i].OriginalType == 0 {
+					resolved[i].OriginalType = entry.Type
+				}
+				done[i] = true
+				remaining--
+				progress = true
+				if h, ok := packEntryResolvedHash(resolved[i]); ok {
+					byHash[h] = i
+				}
+			case PackOfsDelta:
+				if entry.BaseDistance == 0 || entry.BaseDistance > entry.Offset {
+					return nil, fmt.Errorf("entry %d: invalid ofs-delta base distance %d", i, entry.BaseDistance)
+				}
+				baseOffset := entry.Offset - entry.BaseDistance
+				baseIndex, ok := byOffset[baseOffset]
+				if !ok || !done[baseIndex] {
+					continue
+				}
+				out, err := applyDelta(resolved[baseIndex].Data, entry.Data)
+				if err != nil {
+					return nil, fmt.Errorf("entry %d: apply ofs-delta: %w", i, err)
+				}
+				r := entry
+				r.Type = resolved[baseIndex].Type
+				r.Data = out
+				resolved[i] = r
+				done[i] = true
+				remaining--
+				progress = true
+				if h, ok := packEntryResolvedHash(r); ok {
+					byHash[h] = i
+				}
+			case PackRefDelta:
+				baseIndex, ok := byHash[entry.BaseRef]
+				if !ok {
+					continue
+				}
+				out, err := applyDelta(resolved[baseIndex].Data, entry.Data)
+				if err != nil {
+					return nil, fmt.Errorf("entry %d: apply ref-delta: %w", i, err)
+				}
+				r := entry
+				r.Type = resolved[baseIndex].Type
+				r.Data = out
+				resolved[i] = r
+				done[i] = true
+				remaining--
+				progress = true
+				if h, ok := packEntryResolvedHash(r); ok {
+					byHash[h] = i
+				}
+			default:
+				return nil, fmt.Errorf("entry %d: unsupported type %d", i, entry.Type)
+			}
+		}
+
+		if !progress {
+			return nil, fmt.Errorf("unable to resolve remaining delta entries")
+		}
+	}
+
+	return resolved, nil
+}
+
 func decodePackEntryHeaderStrict(data []byte) (PackObjectType, uint64, int, error) {
 	if len(data) == 0 {
 		return 0, 0, 0, fmt.Errorf("entry header truncated")
@@ -139,4 +254,27 @@ func decodePackEntryHeaderStrict(data []byte) (PackObjectType, uint64, int, erro
 	}
 
 	return objType, size, consumed, nil
+}
+
+func packEntryResolvedHash(entry PackEntry) (Hash, bool) {
+	objType, ok := packObjectTypeToObjectType(entry.Type)
+	if !ok {
+		return "", false
+	}
+	return HashObject(objType, entry.Data), true
+}
+
+func packObjectTypeToObjectType(t PackObjectType) (ObjectType, bool) {
+	switch t {
+	case PackCommit:
+		return TypeCommit, true
+	case PackTree:
+		return TypeTree, true
+	case PackBlob:
+		return TypeBlob, true
+	case PackTag:
+		return TypeTag, true
+	default:
+		return "", false
+	}
 }
