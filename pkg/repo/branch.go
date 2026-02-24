@@ -20,11 +20,7 @@ func (r *Repo) CreateBranch(name string, target object.Hash) error {
 	if _, err := os.Stat(refPath); err == nil {
 		return fmt.Errorf("create branch: branch %q already exists", name)
 	}
-
-	if err := os.WriteFile(refPath, []byte(string(target)+"\n"), 0o644); err != nil {
-		return fmt.Errorf("create branch %q: %w", name, err)
-	}
-	return nil
+	return r.UpdateRef(filepath.ToSlash(filepath.Join("refs", "heads", name)), target)
 }
 
 // DeleteBranch removes the branch ref file .got/refs/heads/<name>.

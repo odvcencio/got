@@ -24,6 +24,7 @@ func Init(path string) (*Repo, error) {
 	dirs := []string{
 		filepath.Join(gotDir, "objects"),
 		filepath.Join(gotDir, "refs", "heads"),
+		filepath.Join(gotDir, "logs", "refs", "heads"),
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -130,6 +131,10 @@ func (r *Repo) ResolveRef(name string) (object.Hash, error) {
 // to a temporary file and then renamed into place.
 func (r *Repo) UpdateRef(name string, h object.Hash) error {
 	refPath := filepath.Join(r.GotDir, name)
+	oldHash := object.Hash("")
+	if oldRaw, err := os.ReadFile(refPath); err == nil {
+		oldHash = object.Hash(strings.TrimSpace(string(oldRaw)))
+	}
 
 	dir := filepath.Dir(refPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -157,6 +162,9 @@ func (r *Repo) UpdateRef(name string, h object.Hash) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("update ref %q: rename: %w", name, err)
 	}
+
+	// Reflog writes are best-effort; ref update already succeeded.
+	_ = r.appendReflog(name, oldHash, h, "update")
 
 	return nil
 }

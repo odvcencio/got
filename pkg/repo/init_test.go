@@ -36,6 +36,7 @@ func TestInit_CreatesStructure(t *testing.T) {
 
 	// refs/heads/ directory exists
 	assertDir(t, filepath.Join(gotDir, "refs", "heads"))
+	assertDir(t, filepath.Join(gotDir, "logs", "refs", "heads"))
 
 	// Store is non-nil
 	if r.Store == nil {
