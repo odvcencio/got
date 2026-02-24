@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -264,20 +265,80 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 			}
 
 		case inBase && inOurs && !inTheirs:
-			// Deleted by theirs: remove.
+			// Deleted by theirs.
+			if oursMap[path].BlobHash == baseMap[path].BlobHash {
+				// Ours unchanged: clean delete.
+				report.Files = append(report.Files, FileMergeReport{
+					Path:   path,
+					Status: "deleted",
+				})
+				deletedPaths = append(deletedPaths, path)
+				continue
+			}
+
+			// Delete-vs-modify must be a conflict (avoid silent data loss).
+			oursData, err := r.readBlobData(oursMap[path].BlobHash)
+			if err != nil {
+				return nil, fmt.Errorf("merge read ours %q: %w", path, err)
+			}
+			content := renderFileConflict(oursData, nil)
 			report.Files = append(report.Files, FileMergeReport{
-				Path:   path,
-				Status: "deleted",
+				Path:          path,
+				Status:        "conflict",
+				ConflictCount: 1,
 			})
-			deletedPaths = append(deletedPaths, path)
+			report.HasConflicts = true
+			report.TotalConflicts++
+			mergedFiles = append(mergedFiles, mergedFile{
+				path:    path,
+				content: content,
+				mode:    normalizeFileMode(oursMap[path].Mode),
+			})
+			conflictedFiles = append(conflictedFiles, mergeConflictState{
+				path:       path,
+				baseHash:   baseMap[path].BlobHash,
+				oursHash:   oursMap[path].BlobHash,
+				theirsHash: "",
+				mode:       normalizeFileMode(oursMap[path].Mode),
+			})
 
 		case inBase && !inOurs && inTheirs:
-			// Deleted by ours: remove.
+			// Deleted by ours.
+			if theirsMap[path].BlobHash == baseMap[path].BlobHash {
+				// Theirs unchanged: clean delete.
+				report.Files = append(report.Files, FileMergeReport{
+					Path:   path,
+					Status: "deleted",
+				})
+				deletedPaths = append(deletedPaths, path)
+				continue
+			}
+
+			// Delete-vs-modify must be a conflict (avoid silent data loss).
+			theirsData, err := r.readBlobData(theirsMap[path].BlobHash)
+			if err != nil {
+				return nil, fmt.Errorf("merge read theirs %q: %w", path, err)
+			}
+			content := renderFileConflict(nil, theirsData)
 			report.Files = append(report.Files, FileMergeReport{
-				Path:   path,
-				Status: "deleted",
+				Path:          path,
+				Status:        "conflict",
+				ConflictCount: 1,
 			})
-			deletedPaths = append(deletedPaths, path)
+			report.HasConflicts = true
+			report.TotalConflicts++
+			mergedFiles = append(mergedFiles, mergedFile{
+				path:    path,
+				content: content,
+				mode:    normalizeFileMode(theirsMap[path].Mode),
+			})
+			conflictedFiles = append(conflictedFiles, mergeConflictState{
+				path:       path,
+				baseHash:   baseMap[path].BlobHash,
+				oursHash:   "",
+				theirsHash: theirsMap[path].BlobHash,
+				mode:       normalizeFileMode(theirsMap[path].Mode),
+			})
 
 		case !inBase && inOurs && !inTheirs:
 			// New in ours only: keep as-is.
@@ -432,6 +493,22 @@ func (r *Repo) stageConflictState(conflicted []mergeConflictState, deletedPaths 
 		return fmt.Errorf("write staging: %w", err)
 	}
 	return nil
+}
+
+func renderFileConflict(ours, theirs []byte) []byte {
+	var buf bytes.Buffer
+	buf.WriteString("<<<<<<< ours\n")
+	buf.Write(ours)
+	if len(ours) > 0 && ours[len(ours)-1] != '\n' {
+		buf.WriteByte('\n')
+	}
+	buf.WriteString("=======\n")
+	buf.Write(theirs)
+	if len(theirs) > 0 && theirs[len(theirs)-1] != '\n' {
+		buf.WriteByte('\n')
+	}
+	buf.WriteString(">>>>>>> theirs\n")
+	return buf.Bytes()
 }
 
 // commitMerge creates a commit with two parents (for merge commits).

@@ -169,7 +169,16 @@ func resolveConflict(m MatchedEntity, language string) ResolvedEntity {
 		if m.Base != nil {
 			baseBody = m.Base.Body
 		}
-		merged, _ := MergeImports(baseBody, oursBody, theirsBody, language)
+		merged, hasConflicts := MergeImports(baseBody, oursBody, theirsBody, language)
+		if hasConflicts {
+			e := *m.Ours
+			return ResolvedEntity{
+				Entity:     e,
+				Conflict:   true,
+				OursBody:   oursBody,
+				TheirsBody: theirsBody,
+			}
+		}
 		e := *m.Ours
 		e.Body = merged
 		return ResolvedEntity{Entity: e}
@@ -184,7 +193,7 @@ func resolveConflict(m MatchedEntity, language string) ResolvedEntity {
 	if !result.HasConflicts {
 		// Clean merge — use the diff3 result.
 		e := *m.Ours
-		e.Body = trimTrailingNewline(result.Merged)
+		e.Body = normalizeMergedEntityBody(baseBody, oursBody, theirsBody, result.Merged)
 		return ResolvedEntity{Entity: e}
 	}
 
@@ -219,14 +228,24 @@ func resolveDeleteVsModify(m MatchedEntity) ResolvedEntity {
 	}
 }
 
-// trimTrailingNewline removes a single trailing newline from merged diff3
-// output, since entity bodies typically do not end with a trailing newline
-// (the interstitial between entities carries that whitespace).
-func trimTrailingNewline(b []byte) []byte {
-	if len(b) > 0 && b[len(b)-1] == '\n' {
-		return b[:len(b)-1]
+func normalizeMergedEntityBody(base, ours, theirs, merged []byte) []byte {
+	if shouldTrimSyntheticTrailingNewline(base, ours, theirs, merged) {
+		return merged[:len(merged)-1]
 	}
-	return b
+	return merged
+}
+
+func shouldTrimSyntheticTrailingNewline(base, ours, theirs, merged []byte) bool {
+	if len(merged) == 0 || merged[len(merged)-1] != '\n' {
+		return false
+	}
+	// Only trim when all input variants lacked trailing newline. This preserves
+	// legitimate trailing newlines for declarations where newline is semantic.
+	return !hasTrailingNewline(base) && !hasTrailingNewline(ours) && !hasTrailingNewline(theirs)
+}
+
+func hasTrailingNewline(b []byte) bool {
+	return len(b) > 0 && b[len(b)-1] == '\n'
 }
 
 // detectLanguage returns the language name based on file extension.

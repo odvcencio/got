@@ -3,11 +3,20 @@ package merge
 import (
 	"sort"
 	"strings"
+
+	"github.com/odvcencio/got/pkg/diff3"
 )
 
 // MergeImports performs set-based merge of import blocks.
 // Returns merged bytes and whether there was an unresolvable conflict.
 func MergeImports(base, ours, theirs []byte, language string) ([]byte, bool) {
+	// Safe structural import merge is currently implemented for Go only.
+	// For other languages, preserve syntax by delegating to line-level diff3.
+	if language != "go" {
+		result := diff3.Merge(base, ours, theirs)
+		return result.Merged, result.HasConflicts
+	}
+
 	baseImports := parseImportLines(string(base), language)
 	oursImports := parseImportLines(string(ours), language)
 	theirsImports := parseImportLines(string(theirs), language)
@@ -84,16 +93,7 @@ func formatImports(imports []string, language string) []byte {
 		b.WriteString(")")
 		return []byte(b.String())
 	default:
-		// Generic: one import per line
-		var b strings.Builder
-		for i, imp := range imports {
-			b.WriteString("import ")
-			b.WriteString(imp)
-			if i < len(imports)-1 {
-				b.WriteString("\n")
-			}
-		}
-		return []byte(b.String())
+		return nil
 	}
 }
 

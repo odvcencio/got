@@ -287,9 +287,54 @@ func TestExtractTypeScriptClassMethods(t *testing.T) {
 	if !found["validate"] {
 		t.Fatalf("expected method declaration 'validate', got %+v", found)
 	}
+	if !found["OrderService"] {
+		t.Fatalf("expected container declaration 'OrderService', got %+v", found)
+	}
 
 	verifyByteCoverage(t, el)
 	verifyUniqueKeys(t, el)
+}
+
+func TestExtractGoDuplicateInitFunctionsHaveDistinctKeys(t *testing.T) {
+	src := "package main\n\nfunc init() { println(\"a\") }\n\nfunc init() { println(\"b\") }\n"
+	el, err := Extract("main.go", []byte(src))
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+
+	var initKeys []string
+	for _, e := range el.Entities {
+		if e.Kind == KindDeclaration && e.Name == "init" {
+			initKeys = append(initKeys, e.IdentityKey())
+		}
+	}
+	if len(initKeys) != 2 {
+		t.Fatalf("expected 2 init declarations, got %d", len(initKeys))
+	}
+	if initKeys[0] == initKeys[1] {
+		t.Fatalf("expected distinct identity keys for duplicate init funcs, got %q", initKeys[0])
+	}
+}
+
+func TestExtractGoMultipleImportBlocksHaveDistinctKeys(t *testing.T) {
+	src := "package main\n\nimport \"fmt\"\nimport \"os\"\n\nfunc main() {}\n"
+	el, err := Extract("main.go", []byte(src))
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+
+	var keys []string
+	for _, e := range el.Entities {
+		if e.Kind == KindImportBlock {
+			keys = append(keys, e.IdentityKey())
+		}
+	}
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 import blocks, got %d", len(keys))
+	}
+	if keys[0] == keys[1] {
+		t.Fatalf("expected distinct keys for import blocks, got %q", keys[0])
+	}
 }
 
 func TestExtractUnknownExtension(t *testing.T) {

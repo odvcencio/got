@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // EntityKind classifies what role an entity plays in a source file.
@@ -32,10 +33,12 @@ func (k EntityKind) String() string {
 
 // Entity represents a structural unit within a source file.
 type Entity struct {
-	Kind     EntityKind
-	Name     string // Declaration name (empty for preamble/interstitial)
-	DeclKind string // e.g. "function_definition", "type_definition" (empty for non-declarations)
-	Receiver string // Method receiver (empty for functions/types)
+	Kind      EntityKind
+	Name      string // Declaration name (empty for preamble/interstitial)
+	DeclKind  string // e.g. "function_definition", "type_definition" (empty for non-declarations)
+	Receiver  string // Method receiver (empty for functions/types)
+	Signature string // Normalized declaration signature/header text
+	Ordinal   int    // Stable ordinal among entities sharing the same base identity
 
 	Body      []byte // Full source bytes of this entity
 	BodyHash  string // SHA-256 of Body
@@ -59,15 +62,24 @@ func (e *Entity) ComputeHash() {
 func (e *Entity) IdentityKey() string {
 	switch e.Kind {
 	case KindPreamble:
-		return "preamble"
+		return fmt.Sprintf("preamble:%d", e.Ordinal)
 	case KindImportBlock:
-		return "import_block"
+		return fmt.Sprintf("import_block:%d", e.Ordinal)
 	case KindDeclaration:
-		return fmt.Sprintf("decl:%s:%s:%s", e.DeclKind, e.Receiver, e.Name)
+		sig := normalizeIdentityText(e.Signature)
+		return fmt.Sprintf("decl:%s:%s:%s:%s:%d", e.DeclKind, e.Receiver, e.Name, sig, e.Ordinal)
 	case KindInterstitial:
 		return fmt.Sprintf("between:%s:%s", e.PrevEntityKey, e.NextEntityKey)
 	}
 	return ""
+}
+
+func normalizeIdentityText(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "-"
+	}
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // EntityList is an ordered sequence of entities extracted from a source file.

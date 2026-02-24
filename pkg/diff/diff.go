@@ -38,30 +38,15 @@ func DiffFiles(path string, before, after []byte) (*FileDiff, error) {
 		return nil, err
 	}
 
-	// Build maps from identity key to entity for both revisions.
-	beforeMap := make(map[string]*entity.Entity, len(beforeList.Entities))
-	for i := range beforeList.Entities {
-		e := &beforeList.Entities[i]
-		beforeMap[e.IdentityKey()] = e
-	}
-
-	afterMap := make(map[string]*entity.Entity, len(afterList.Entities))
-	for i := range afterList.Entities {
-		e := &afterList.Entities[i]
-		afterMap[e.IdentityKey()] = e
-	}
+	// Build identity maps using shared matching logic.
+	beforeMap := entity.BuildEntityMap(beforeList)
+	afterMap := entity.BuildEntityMap(afterList)
 
 	fd := &FileDiff{Path: path}
 
 	// Walk before entities in order: detect Removed and Modified.
-	seen := make(map[string]bool, len(beforeList.Entities))
-	for i := range beforeList.Entities {
-		e := &beforeList.Entities[i]
-		key := e.IdentityKey()
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
+	for _, key := range entity.OrderedIdentityKeys(beforeList) {
+		e := beforeMap[key]
 
 		afterEnt, inAfter := afterMap[key]
 		if !inAfter {
@@ -82,14 +67,8 @@ func DiffFiles(path string, before, after []byte) (*FileDiff, error) {
 	}
 
 	// Walk after entities in order: detect Added (keys not in before).
-	seenAfter := make(map[string]bool, len(afterList.Entities))
-	for i := range afterList.Entities {
-		e := &afterList.Entities[i]
-		key := e.IdentityKey()
-		if seenAfter[key] {
-			continue
-		}
-		seenAfter[key] = true
+	for _, key := range entity.OrderedIdentityKeys(afterList) {
+		e := afterMap[key]
 
 		if _, inBefore := beforeMap[key]; !inBefore {
 			fd.Changes = append(fd.Changes, EntityChange{

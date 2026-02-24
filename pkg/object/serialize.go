@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+const objectSerializationVersion = "1"
+
 // ---------------------------------------------------------------------------
 // Blob
 // ---------------------------------------------------------------------------
@@ -41,6 +43,7 @@ func UnmarshalBlob(data []byte) (*Blob, error) {
 //	<body bytes>
 func MarshalEntity(e *EntityObj) []byte {
 	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "version %s\n", objectSerializationVersion)
 	fmt.Fprintf(&buf, "kind %s\n", e.Kind)
 	fmt.Fprintf(&buf, "name %s\n", e.Name)
 	fmt.Fprintf(&buf, "declkind %s\n", e.DeclKind)
@@ -74,6 +77,10 @@ func UnmarshalEntity(data []byte) (*EntityObj, error) {
 			val = ""
 		}
 		switch key {
+		case "version":
+			if val != objectSerializationVersion {
+				return nil, fmt.Errorf("unmarshal entity: unsupported version %q", val)
+			}
 		case "kind":
 			e.Kind = val
 		case "name":
@@ -105,6 +112,7 @@ func UnmarshalEntity(data []byte) (*EntityObj, error) {
 //	...
 func MarshalEntityList(el *EntityListObj) []byte {
 	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "version %s\n", objectSerializationVersion)
 	fmt.Fprintf(&buf, "language %s\n", el.Language)
 	fmt.Fprintf(&buf, "path %s\n", el.Path)
 	buf.WriteByte('\n')
@@ -130,6 +138,10 @@ func UnmarshalEntityList(data []byte) (*EntityListObj, error) {
 			return nil, fmt.Errorf("unmarshal entitylist: malformed header line %q", line)
 		}
 		switch key {
+		case "version":
+			if val != objectSerializationVersion {
+				return nil, fmt.Errorf("unmarshal entitylist: unsupported version %q", val)
+			}
 		case "language":
 			el.Language = val
 		case "path":
@@ -171,6 +183,7 @@ func MarshalTree(tr *TreeObj) []byte {
 	})
 
 	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "version %s\n", objectSerializationVersion)
 	for _, e := range sorted {
 		mode := treeModeOrDefault(e)
 		bh := hashOrDash(e.BlobHash)
@@ -202,7 +215,19 @@ func UnmarshalTree(data []byte) (*TreeObj, error) {
 	if text == "" {
 		return tr, nil
 	}
-	for _, line := range strings.Split(text, "\n") {
+	lines := strings.Split(text, "\n")
+	if len(lines) > 0 {
+		if key, val, ok := strings.Cut(lines[0], " "); ok && key == "version" {
+			if val != objectSerializationVersion {
+				return nil, fmt.Errorf("unmarshal tree: unsupported version %q", val)
+			}
+			lines = lines[1:]
+		}
+	}
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
 		parts := strings.SplitN(line, " ", 5)
 		if len(parts) != 5 {
 			return nil, fmt.Errorf("unmarshal tree: malformed entry %q", line)
@@ -270,6 +295,7 @@ func parseTreeMode(mode string) (bool, string, error) {
 //	message
 func MarshalCommit(c *CommitObj) []byte {
 	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "version %s\n", objectSerializationVersion)
 	fmt.Fprintf(&buf, "tree %s\n", string(c.TreeHash))
 	for _, p := range c.Parents {
 		fmt.Fprintf(&buf, "parent %s\n", string(p))
@@ -300,6 +326,10 @@ func UnmarshalCommit(data []byte) (*CommitObj, error) {
 			return nil, fmt.Errorf("unmarshal commit: malformed header line %q", line)
 		}
 		switch key {
+		case "version":
+			if val != objectSerializationVersion {
+				return nil, fmt.Errorf("unmarshal commit: unsupported version %q", val)
+			}
 		case "tree":
 			c.TreeHash = Hash(val)
 		case "parent":

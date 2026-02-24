@@ -235,6 +235,92 @@ func A() { println("theirs") }
 	}
 }
 
+// TestMerge_DeleteVsModifyFileConflict verifies repository-level safety for
+// file delete-vs-modify: the merge must report a conflict and keep conflict
+// markers instead of silently dropping the modified side.
+func TestMerge_DeleteVsModifyFileConflict(t *testing.T) {
+	r, dir := setupMergeRepo(t)
+
+	// On main: modify main.go.
+	oursContent := `package main
+
+func A() { println("ours-change") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(oursContent), 0o644); err != nil {
+		t.Fatalf("write main.go (ours): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (ours): %v", err)
+	}
+	if _, err := r.Commit("modify main.go on main", "test-author"); err != nil {
+		t.Fatalf("Commit (ours): %v", err)
+	}
+
+	// Switch to feature and delete main.go while adding another tracked file
+	// so the delete commit is non-empty.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "keep.txt"), []byte("keep\n"), 0o644); err != nil {
+		t.Fatalf("write keep.txt: %v", err)
+	}
+	if err := r.Add([]string{"keep.txt"}); err != nil {
+		t.Fatalf("Add keep.txt: %v", err)
+	}
+	if err := r.Remove([]string{"main.go"}, false); err != nil {
+		t.Fatalf("Remove main.go: %v", err)
+	}
+	if _, err := r.Commit("delete main.go on feature", "test-author"); err != nil {
+		t.Fatalf("Commit (delete): %v", err)
+	}
+
+	// Merge feature into main.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+	report, err := r.Merge("feature")
+	if err != nil {
+		t.Fatalf("Merge(feature): %v", err)
+	}
+
+	if !report.HasConflicts {
+		t.Fatalf("expected conflict for delete-vs-modify, got clean merge: %+v", report)
+	}
+	if report.TotalConflicts == 0 {
+		t.Fatalf("expected conflict count > 0, got 0")
+	}
+
+	merged, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read conflicted main.go: %v", err)
+	}
+	mergedStr := string(merged)
+	if !strings.Contains(mergedStr, "<<<<<<< ours") || !strings.Contains(mergedStr, ">>>>>>> theirs") {
+		t.Fatalf("expected conflict markers in main.go, got:\n%s", mergedStr)
+	}
+	if !strings.Contains(mergedStr, "ours-change") {
+		t.Fatalf("expected ours modification to be preserved in conflict body, got:\n%s", mergedStr)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	entry := stg.Entries["main.go"]
+	if entry == nil {
+		t.Fatalf("expected conflicted main.go in staging")
+	}
+	if !entry.Conflict {
+		t.Fatalf("expected staging conflict flag for main.go")
+	}
+	if entry.OursBlobHash == "" {
+		t.Fatalf("expected ours blob hash to be recorded")
+	}
+	if entry.TheirsBlobHash != "" {
+		t.Fatalf("expected empty theirs blob hash for deleted side, got %q", entry.TheirsBlobHash)
+	}
+}
+
 // TestMerge_CommitWithTwoParents verifies that a clean merge creates a
 // commit with exactly two parent hashes.
 func TestMerge_CommitWithTwoParents(t *testing.T) {

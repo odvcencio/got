@@ -19,6 +19,16 @@ var (
 	nameIdentifierTypes = classify.NameIdentifierTypes
 )
 
+type classifiedNode struct {
+	node     *gotreesitter.Node
+	kind     EntityKind
+	start    uint32
+	end      uint32
+	declKind string
+	name     string
+	receiver string
+}
+
 // Extract parses source using tree-sitter and returns an EntityList
 // containing structural entities. The critical invariant is that
 // concatenating all entity bodies reproduces the original source exactly.
@@ -55,10 +65,6 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 	}
 
 	// Collect classified nodes from root's immediate children.
-	type classifiedNode struct {
-		node *gotreesitter.Node
-		kind EntityKind
-	}
 	var nodes []classifiedNode
 
 	for i := 0; i < childCount; i++ {
@@ -67,6 +73,27 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 		if kind == KindDeclaration && isContainerDeclaration(bt.NodeType(child)) {
 			nested := collectNestedDeclarationNodes(bt, child)
 			if len(nested) > 0 {
+				sort.Slice(nested, func(i, j int) bool {
+					return nested[i].StartByte() < nested[j].StartByte()
+				})
+
+				// Preserve class/interface identity by emitting a declaration
+				// entity for the container header before flattened members.
+				containerStart := child.StartByte()
+				containerEnd := nested[0].StartByte()
+				if containerEnd < containerStart {
+					containerEnd = containerStart
+				}
+				name, receiver := extractNameAndReceiver(bt, child)
+				nodes = append(nodes, classifiedNode{
+					kind:     KindDeclaration,
+					start:    containerStart,
+					end:      containerEnd,
+					declKind: bt.NodeType(child),
+					name:     name,
+					receiver: receiver,
+				})
+
 				for _, n := range nested {
 					nodes = append(nodes, classifiedNode{node: n, kind: KindDeclaration})
 				}
@@ -76,10 +103,12 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 		nodes = append(nodes, classifiedNode{node: child, kind: kind})
 	}
 	sort.Slice(nodes, func(i, j int) bool {
-		li := nodes[i].node.StartByte()
-		lj := nodes[j].node.StartByte()
+		li, _ := classifiedNodeRange(nodes[i])
+		lj, _ := classifiedNodeRange(nodes[j])
 		if li == lj {
-			return nodes[i].node.EndByte() < nodes[j].node.EndByte()
+			_, ei := classifiedNodeRange(nodes[i])
+			_, ej := classifiedNodeRange(nodes[j])
+			return ei < ej
 		}
 		return li < lj
 	})
@@ -88,8 +117,10 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 	var cursor uint32 // tracks current position in source
 
 	for _, cn := range nodes {
-		startByte := cn.node.StartByte()
-		endByte := cn.node.EndByte()
+		startByte, endByte := classifiedNodeRange(cn)
+		if endByte < startByte {
+			endByte = startByte
+		}
 
 		// Fill gap before this node as interstitial.
 		if startByte > cursor {
@@ -99,16 +130,30 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 
 		// Create the entity for this node.
 		e := makeEntity(cn.kind, source, startByte, endByte, 0, 0)
-		e.DeclKind = bt.NodeType(cn.node)
+		if cn.node != nil {
+			e.DeclKind = bt.NodeType(cn.node)
+		} else {
+			e.DeclKind = cn.declKind
+		}
 
 		// Extract name and receiver for declarations.
 		if cn.kind == KindDeclaration {
-			e.Name, e.Receiver = extractNameAndReceiver(bt, cn.node)
+			if cn.node != nil {
+				e.Name, e.Receiver = extractNameAndReceiver(bt, cn.node)
+			} else {
+				e.Name, e.Receiver = cn.name, cn.receiver
+			}
+			e.Signature = declarationSignature(e.Body)
 		}
 
 		// Set line numbers from tree-sitter points (0-indexed rows).
-		e.StartLine = int(cn.node.StartPoint().Row) + 1
-		e.EndLine = int(cn.node.EndPoint().Row) + 1
+		if cn.node != nil {
+			e.StartLine = int(cn.node.StartPoint().Row) + 1
+			e.EndLine = int(cn.node.EndPoint().Row) + 1
+		} else {
+			e.StartLine = lineNumberAtByte(source, startByte)
+			e.EndLine = lineNumberAtByte(source, endByte)
+		}
 
 		el.Entities = append(el.Entities, e)
 		cursor = endByte
@@ -120,6 +165,7 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 		el.Entities = append(el.Entities, gap)
 	}
 
+	assignIdentityOrdinals(el)
 	// Set PrevEntityKey/NextEntityKey on interstitials.
 	setInterstitialNeighborKeys(el)
 
@@ -180,16 +226,16 @@ func hasNameIdentifierDescendant(bt *gotreesitter.BoundTree, node *gotreesitter.
 	return false
 }
 
+var containerDeclarationNodeTypes = map[string]bool{
+	"class_definition":      true,
+	"class_declaration":     true,
+	"interface_declaration": true,
+	"trait_item":            true,
+	"impl_item":             true,
+}
+
 func isContainerDeclaration(nodeType string) bool {
-	switch nodeType {
-	case "class_definition", "class_declaration", "interface_declaration":
-		return true
-	}
-	// Cover additional grammars where container declarations use other node names.
-	return strings.Contains(nodeType, "class") ||
-		strings.Contains(nodeType, "interface") ||
-		strings.Contains(nodeType, "trait") ||
-		strings.Contains(nodeType, "impl")
+	return containerDeclarationNodeTypes[nodeType]
 }
 
 func collectNestedDeclarationNodes(bt *gotreesitter.BoundTree, node *gotreesitter.Node) []*gotreesitter.Node {
@@ -414,6 +460,68 @@ func extractExportName(bt *gotreesitter.BoundTree, node *gotreesitter.Node) stri
 		}
 	}
 	return extractFirstIdentifierName(bt, node)
+}
+
+func classifiedNodeRange(cn classifiedNode) (uint32, uint32) {
+	if cn.node != nil {
+		return cn.node.StartByte(), cn.node.EndByte()
+	}
+	return cn.start, cn.end
+}
+
+func declarationSignature(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if text == "" {
+		return ""
+	}
+	if idx := strings.Index(text, "{"); idx >= 0 {
+		text = strings.TrimSpace(text[:idx])
+	}
+	if idx := strings.Index(text, "\n"); idx >= 0 {
+		text = strings.TrimSpace(text[:idx])
+	}
+	return strings.Join(strings.Fields(text), " ")
+}
+
+func assignIdentityOrdinals(el *EntityList) {
+	counters := make(map[string]int)
+	for i := range el.Entities {
+		base := identityBaseKey(&el.Entities[i])
+		if base == "" {
+			continue
+		}
+		el.Entities[i].Ordinal = counters[base]
+		counters[base]++
+	}
+}
+
+func identityBaseKey(e *Entity) string {
+	switch e.Kind {
+	case KindPreamble:
+		return "preamble"
+	case KindImportBlock:
+		return "import_block"
+	case KindDeclaration:
+		return fmt.Sprintf("decl:%s:%s:%s:%s", e.DeclKind, e.Receiver, e.Name, normalizeIdentityText(e.Signature))
+	default:
+		return ""
+	}
+}
+
+func lineNumberAtByte(source []byte, bytePos uint32) int {
+	if bytePos == 0 {
+		return 1
+	}
+	if int(bytePos) > len(source) {
+		bytePos = uint32(len(source))
+	}
+	line := 1
+	for i := uint32(0); i < bytePos; i++ {
+		if source[i] == '\n' {
+			line++
+		}
+	}
+	return line
 }
 
 // makeEntity creates an Entity with body bytes, hash, and byte range.

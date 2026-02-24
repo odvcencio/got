@@ -42,3 +42,36 @@ func TestMergeImportsBothRemove(t *testing.T) {
 		t.Error("merged output should contain 'fmt'")
 	}
 }
+
+func TestMergeImportsNonGoUsesDiff3Fallback(t *testing.T) {
+	base := "from os.path import join\nfrom os import getenv\n"
+	ours := "from os.path import abspath\nfrom os import getenv\n"
+	theirs := "from os.path import join\nfrom os import listdir\n"
+
+	merged, conflict := MergeImports([]byte(base), []byte(ours), []byte(theirs), "python")
+	if conflict {
+		t.Fatalf("expected clean merge for non-overlapping python import additions, got conflict")
+	}
+
+	s := string(merged)
+	if !strings.Contains(s, "from os.path import abspath") {
+		t.Fatalf("expected merged output to preserve python import syntax, got %q", s)
+	}
+	if !strings.Contains(s, "from os import listdir") {
+		t.Fatalf("expected merged output to include theirs import, got %q", s)
+	}
+	if strings.Contains(s, "import from ") {
+		t.Fatalf("unexpected synthetic import prefix in merged output: %q", s)
+	}
+}
+
+func TestMergeImportsNonGoConflictPropagates(t *testing.T) {
+	base := "use std::io;\n"
+	ours := "use std::fs;\n"
+	theirs := "use std::net;\n"
+
+	_, conflict := MergeImports([]byte(base), []byte(ours), []byte(theirs), "rust")
+	if !conflict {
+		t.Fatal("expected conflict for incompatible non-Go import edits")
+	}
+}

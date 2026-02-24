@@ -10,16 +10,16 @@ import (
 type Disposition int
 
 const (
-	Unchanged    Disposition = iota
-	OursOnly                 // ours modified, theirs unchanged
-	TheirsOnly               // theirs modified, ours unchanged
-	BothSame                 // both modified identically
-	Conflict                 // both modified differently
-	AddedOurs                // new entity in ours, not in base
-	AddedTheirs              // new entity in theirs, not in base
-	DeletedOurs              // deleted by ours
-	DeletedTheirs            // deleted by theirs
-	DeleteVsModify           // one deleted, other modified
+	Unchanged      Disposition = iota
+	OursOnly                   // ours modified, theirs unchanged
+	TheirsOnly                 // theirs modified, ours unchanged
+	BothSame                   // both modified identically
+	Conflict                   // both modified differently
+	AddedOurs                  // new entity in ours, not in base
+	AddedTheirs                // new entity in theirs, not in base
+	DeletedOurs                // deleted by ours
+	DeletedTheirs              // deleted by theirs
+	DeleteVsModify             // one deleted, other modified
 )
 
 func (d Disposition) String() string {
@@ -66,19 +66,15 @@ type MatchedEntity struct {
 // relative to the base ordering (anchored after their nearest preceding base key)
 // rather than being appended at the end.
 func MatchEntities(base, ours, theirs *entity.EntityList) []MatchedEntity {
-	baseMap := buildEntityMap(base)
-	oursMap := buildEntityMap(ours)
-	theirsMap := buildEntityMap(theirs)
+	baseMap := entity.BuildEntityMap(base)
+	oursMap := entity.BuildEntityMap(ours)
+	theirsMap := entity.BuildEntityMap(theirs)
 
 	// Collect base keys in order.
 	baseKeySet := map[string]bool{}
-	var baseKeys []string
-	for i := range base.Entities {
-		key := base.Entities[i].IdentityKey()
-		if !baseKeySet[key] {
-			baseKeySet[key] = true
-			baseKeys = append(baseKeys, key)
-		}
+	baseKeys := entity.OrderedIdentityKeys(base)
+	for _, key := range baseKeys {
+		baseKeySet[key] = true
 	}
 
 	// For ours and theirs, find new keys (not in base) and determine their
@@ -228,15 +224,4 @@ func classify(base, ours, theirs *entity.Entity) Disposition {
 
 	// Should not reach here
 	return Unchanged
-}
-
-// buildEntityMap indexes entities by their identity key.
-// If duplicate keys exist, the last entity with that key wins.
-func buildEntityMap(el *entity.EntityList) map[string]*entity.Entity {
-	m := make(map[string]*entity.Entity, len(el.Entities))
-	for i := range el.Entities {
-		key := el.Entities[i].IdentityKey()
-		m[key] = &el.Entities[i]
-	}
-	return m
 }
