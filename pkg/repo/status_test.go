@@ -286,6 +286,57 @@ func TestStatus_MultipleFiles(t *testing.T) {
 	}
 }
 
+func TestStatus_RefreshesLegacySecondResolutionStatCache(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	filePath := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(filePath, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	entry := stg.Entries["main.go"]
+	if entry == nil {
+		t.Fatal("missing staging entry for main.go")
+	}
+	if entry.ModTime > 1_000_000_000_000 {
+		entry.ModTime = entry.ModTime / 1_000_000_000
+	}
+	if err := r.WriteStaging(stg); err != nil {
+		t.Fatalf("WriteStaging: %v", err)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one status entry")
+	}
+
+	stg, err = r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	refreshed := stg.Entries["main.go"]
+	if refreshed == nil {
+		t.Fatal("missing refreshed staging entry for main.go")
+	}
+	if refreshed.ModTime <= 1_000_000_000_000 {
+		t.Fatalf("expected nanosecond staging modtime after status refresh, got %d", refreshed.ModTime)
+	}
+}
+
 func TestStatus_DirtyWhenExecutableBitChangesOnDisk(t *testing.T) {
 	dir := t.TempDir()
 	r, err := Init(dir)

@@ -105,7 +105,7 @@ func (r *Repo) Checkout(target string) error {
 			BlobHash:       f.BlobHash,
 			EntityListHash: f.EntityListHash,
 			Mode:           normalizeFileMode(f.Mode),
-			ModTime:        info.ModTime().Unix(),
+			ModTime:        info.ModTime().UnixNano(),
 			Size:           info.Size(),
 		}
 	}

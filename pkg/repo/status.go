@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/odvcencio/got/pkg/object"
 )
@@ -96,6 +97,7 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("status: detect worktree renames: %w", err)
 	}
+	refreshStaging := false
 
 	// --- Working tree vs staging comparison ---
 
@@ -130,22 +132,25 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 			continue
 		}
 
-		// File is in staging — compare content hash.
+		// File is in staging — compare metadata first, then content hash if needed.
 		absPath := filepath.Join(r.RootDir, filepath.FromSlash(path))
 		info, err := os.Stat(absPath)
 		if err != nil {
 			return nil, fmt.Errorf("status: stat %q: %w", path, err)
 		}
-		content, err := os.ReadFile(absPath)
-		if err != nil {
-			return nil, fmt.Errorf("status: read %q: %w", path, err)
-		}
-
-		workHash := object.HashObject(object.TypeBlob, content)
 		workMode := modeFromFileInfo(info)
 		workStatus := StatusClean
-		if workHash != se.BlobHash || workMode != normalizeFileMode(se.Mode) {
-			workStatus = StatusDirty
+		if !stagingStatMatchesWorktree(se, info, workMode) {
+			content, err := os.ReadFile(absPath)
+			if err != nil {
+				return nil, fmt.Errorf("status: read %q: %w", path, err)
+			}
+			workHash := object.HashObject(object.TypeBlob, content)
+			if workHash != se.BlobHash || workMode != normalizeFileMode(se.Mode) {
+				workStatus = StatusDirty
+			} else if refreshStagingEntryStat(se, info, workMode) {
+				refreshStaging = true
+			}
 		}
 
 		entry := &StatusEntry{
@@ -230,6 +235,12 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 		return entries[i].Path < entries[j].Path
 	})
 
+	if refreshStaging {
+		if err := r.WriteStaging(stg); err != nil {
+			return nil, fmt.Errorf("status: refresh staging: %w", err)
+		}
+	}
+
 	return entries, nil
 }
 
@@ -278,6 +289,58 @@ func (r *Repo) flattenTree(treeHash object.Hash, prefix string, entries map[stri
 			}
 		}
 	}
+}
+
+const statusStatCacheNanoThreshold int64 = 1_000_000_000_000
+const statusRacyCleanWindow = 2 * time.Second
+
+func stagingStatMatchesWorktree(se *StagingEntry, info os.FileInfo, workMode string) bool {
+	if se == nil {
+		return false
+	}
+	if normalizeFileMode(se.Mode) != normalizeFileMode(workMode) {
+		return false
+	}
+	if se.Size != info.Size() {
+		return false
+	}
+	// Old index entries may use second resolution; hash those once and refresh.
+	if se.ModTime < statusStatCacheNanoThreshold {
+		return false
+	}
+	if isRacyCleanModTime(info.ModTime()) {
+		return false
+	}
+	// Some filesystems expose coarse (second-level) mtimes. When nanoseconds are
+	// zero, same-size edits inside a second can evade stat-only detection.
+	if info.ModTime().Nanosecond() == 0 {
+		return false
+	}
+	return se.ModTime == info.ModTime().UnixNano()
+}
+
+func refreshStagingEntryStat(se *StagingEntry, info os.FileInfo, workMode string) bool {
+	if se == nil {
+		return false
+	}
+	nextMode := normalizeFileMode(workMode)
+	nextModTime := info.ModTime().UnixNano()
+	nextSize := info.Size()
+	if se.ModTime == nextModTime && se.Size == nextSize && normalizeFileMode(se.Mode) == nextMode {
+		return false
+	}
+	se.Mode = nextMode
+	se.ModTime = nextModTime
+	se.Size = nextSize
+	return true
+}
+
+func isRacyCleanModTime(modTime time.Time) bool {
+	now := time.Now()
+	if modTime.After(now) {
+		return true
+	}
+	return now.Sub(modTime) < statusRacyCleanWindow
 }
 
 func detectIndexRenames(stg *Staging, headEntries map[string]headTreeState) (map[string]string, map[string]string) {

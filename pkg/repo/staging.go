@@ -146,7 +146,7 @@ func (r *Repo) Add(paths []string) error {
 			BlobHash:       blobHash,
 			EntityListHash: entityListHash,
 			Mode:           modeFromFileInfo(info),
-			ModTime:        info.ModTime().Unix(),
+			ModTime:        info.ModTime().UnixNano(),
 			Size:           info.Size(),
 		}
 	}

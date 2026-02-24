@@ -495,7 +495,7 @@ func (r *Repo) stageConflictState(conflicted []mergeConflictState, deletedPaths 
 			BaseBlobHash:   cf.baseHash,
 			OursBlobHash:   cf.oursHash,
 			TheirsBlobHash: cf.theirsHash,
-			ModTime:        info.ModTime().Unix(),
+			ModTime:        info.ModTime().UnixNano(),
 			Size:           info.Size(),
 		}
 	}
