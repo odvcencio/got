@@ -123,10 +123,21 @@ func (r *Repo) flattenTreeInto(h object.Hash, prefix string, out *[]TreeFileEntr
 		return fmt.Errorf("flatten tree: read %s: %w", h, err)
 	}
 
+	useFastJoin := false
+	prefixWithSlash := ""
+	if prefix != "" && isSimpleCleanPath(prefix) {
+		useFastJoin = true
+		prefixWithSlash = prefix + "/"
+	}
+
 	for _, entry := range treeObj.Entries {
 		fullPath := entry.Name
 		if prefix != "" {
-			fullPath = path.Join(prefix, entry.Name)
+			if useFastJoin && isSimplePathElem(entry.Name) {
+				fullPath = prefixWithSlash + entry.Name
+			} else {
+				fullPath = path.Join(prefix, entry.Name)
+			}
 		}
 
 		if entry.IsDir {
@@ -143,4 +154,39 @@ func (r *Repo) flattenTreeInto(h object.Hash, prefix string, out *[]TreeFileEntr
 		}
 	}
 	return nil
+}
+
+func isSimpleCleanPath(p string) bool {
+	if p == "" {
+		return false
+	}
+
+	segStart := 0
+	for i := 0; i <= len(p); i++ {
+		if i < len(p) && p[i] != '/' {
+			continue
+		}
+		if i == segStart {
+			return false
+		}
+		seg := p[segStart:i]
+		if seg == "." || seg == ".." {
+			return false
+		}
+		segStart = i + 1
+	}
+
+	return true
+}
+
+func isSimplePathElem(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		if name[i] == '/' {
+			return false
+		}
+	}
+	return true
 }
