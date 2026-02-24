@@ -26,6 +26,10 @@ func (r *Repo) LogByEntity(start object.Hash, limit int, pathFilter, entityKey s
 	}
 
 	normalizedPath := normalizeLogEntityPath(pathFilter)
+	if normalizedPath != "" {
+		return r.logByEntityTrackedPath(start, limit, normalizedPath, entityKey)
+	}
+
 	results := make([]LogEntry, 0, limit)
 	current := start
 
@@ -50,6 +54,107 @@ func (r *Repo) LogByEntity(start object.Hash, limit int, pathFilter, entityKey s
 			break
 		}
 		current = c.Parents[0]
+	}
+
+	return results, nil
+}
+
+func (r *Repo) logByEntityTrackedPath(start object.Hash, limit int, relPath, entityKey string) ([]LogEntry, error) {
+	results := make([]LogEntry, 0, limit)
+	currentHash := start
+	locator := entityLocator{Path: relPath, Key: entityKey}
+
+	for currentHash != "" && len(results) < limit {
+		commit, err := r.Store.ReadCommit(currentHash)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			return nil, fmt.Errorf("log by entity: read commit %s: %w", currentHash, err)
+		}
+
+		afterEntries, err := r.treeEntriesByPath(commit.TreeHash)
+		if err != nil {
+			return nil, err
+		}
+		afterCache := newCommitEntityCache(afterEntries)
+
+		currentEntity, inCurrent, err := r.findEntityByLocator(afterCache, currentHash, locator)
+		if err != nil {
+			if isEntityExtractionError(err) {
+				parentHash := firstParentHash(commit)
+				if parentHash == "" {
+					break
+				}
+				currentHash = parentHash
+				continue
+			}
+			return nil, fmt.Errorf("log by entity: %w", err)
+		}
+
+		parentHash := firstParentHash(commit)
+		touched := false
+		nextLocator := locator
+
+		if parentHash == "" {
+			touched = inCurrent
+		} else {
+			parentCommit, err := r.Store.ReadCommit(parentHash)
+			if err != nil {
+				return nil, fmt.Errorf("log by entity: read parent commit %s: %w", parentHash, err)
+			}
+
+			beforeEntries, err := r.treeEntriesByPath(parentCommit.TreeHash)
+			if err != nil {
+				return nil, err
+			}
+			beforeCache := newCommitEntityCache(beforeEntries)
+
+			if inCurrent {
+				parentEntity, inParent, err := r.resolveParentEntity(
+					currentEntity,
+					parentHash,
+					beforeCache,
+					changedCandidatePaths(beforeEntries, afterEntries, ""),
+				)
+				if err != nil {
+					if isEntityExtractionError(err) {
+						currentHash = parentHash
+						continue
+					}
+					return nil, fmt.Errorf("log by entity: %w", err)
+				}
+				if !inParent || parentEntity.BodyHash != currentEntity.BodyHash {
+					touched = true
+				}
+				if inParent {
+					nextLocator = parentEntity.Locator
+				}
+			} else {
+				parentEntity, inParent, err := r.findEntityByLocator(beforeCache, parentHash, locator)
+				if err != nil {
+					if isEntityExtractionError(err) {
+						currentHash = parentHash
+						continue
+					}
+					return nil, fmt.Errorf("log by entity: %w", err)
+				}
+				if inParent {
+					touched = true
+					nextLocator = parentEntity.Locator
+				}
+			}
+		}
+
+		if touched {
+			results = append(results, LogEntry{Hash: currentHash, Commit: commit})
+		}
+		locator = nextLocator
+
+		if parentHash == "" {
+			break
+		}
+		currentHash = parentHash
 	}
 
 	return results, nil
