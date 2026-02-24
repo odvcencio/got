@@ -11,6 +11,13 @@ import (
 // IgnoreChecker determines if a path should be ignored.
 type IgnoreChecker struct {
 	patterns []ignorePattern
+
+	// Precompiled/indexed pattern groups used by IsIgnored fast paths.
+	dirPrefixPatterns   map[string][]int
+	exactBasePatterns   map[string][]int
+	exactPathPatterns   map[string][]int
+	wildcardBasePattern []int
+	wildcardPathPattern []int
 }
 
 type ignorePattern struct {
@@ -36,21 +43,20 @@ func NewIgnoreChecker(repoRoot string) *IgnoreChecker {
 	// Read .gotignore if it exists.
 	ignorePath := filepath.Join(repoRoot, ".gotignore")
 	f, err := os.Open(ignorePath)
-	if err != nil {
-		// No .gotignore — only hardcoded patterns apply.
-		return ic
-	}
-	defer f.Close()
+	if err == nil {
+		defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		p := parseLine(line)
-		if p != nil {
-			ic.patterns = append(ic.patterns, *p)
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := scanner.Text()
+			p := parseLine(line)
+			if p != nil {
+				ic.patterns = append(ic.patterns, *p)
+			}
 		}
 	}
 
+	ic.compile()
 	return ic
 }
 
@@ -103,14 +109,100 @@ func parseLine(line string) *ignorePattern {
 func (ic *IgnoreChecker) IsIgnored(path string) bool {
 	// Normalise to forward slashes.
 	path = filepath.ToSlash(path)
+	base := filepath.Base(path)
 
+	lastMatch := -1
 	ignored := false
-	for _, p := range ic.patterns {
-		if p.matches(path) {
-			ignored = !p.negated
+	apply := func(idx int) {
+		if idx > lastMatch {
+			lastMatch = idx
+			ignored = !ic.patterns[idx].negated
 		}
 	}
+	applyAll := func(patterns []int) {
+		for _, idx := range patterns {
+			apply(idx)
+		}
+	}
+
+	// Directory-prefix patterns match the full path or any ancestor prefix.
+	if idxs, ok := ic.dirPrefixPatterns[path]; ok {
+		applyAll(idxs)
+	}
+	for i := 0; i < len(path); i++ {
+		if path[i] == '/' {
+			if idxs, ok := ic.dirPrefixPatterns[path[:i]]; ok {
+				applyAll(idxs)
+			}
+		}
+	}
+
+	// Exact literals are resolved via maps.
+	if idxs, ok := ic.exactPathPatterns[path]; ok {
+		applyAll(idxs)
+	}
+	if idxs, ok := ic.exactBasePatterns[base]; ok {
+		applyAll(idxs)
+	}
+
+	// Wildcards still require matching checks but are pre-separated by target.
+	for _, idx := range ic.wildcardPathPattern {
+		if ic.patterns[idx].match(path) {
+			apply(idx)
+		}
+	}
+	for _, idx := range ic.wildcardBasePattern {
+		if ic.patterns[idx].match(base) {
+			apply(idx)
+		}
+	}
+
 	return ignored
+}
+
+func (ic *IgnoreChecker) compile() {
+	ic.dirPrefixPatterns = make(map[string][]int)
+	ic.exactBasePatterns = make(map[string][]int)
+	ic.exactPathPatterns = make(map[string][]int)
+	ic.wildcardBasePattern = nil
+	ic.wildcardPathPattern = nil
+
+	for idx := range ic.patterns {
+		p := ic.patterns[idx]
+
+		// Keep hardcoded .got/.git special prefix behavior.
+		if p.dirOnly || p.pattern == ".got" || p.pattern == ".git" {
+			ic.dirPrefixPatterns[p.pattern] = append(ic.dirPrefixPatterns[p.pattern], idx)
+			if p.dirOnly {
+				continue
+			}
+		}
+
+		switch {
+		case p.regex != nil:
+			if p.hasSlash {
+				ic.wildcardPathPattern = append(ic.wildcardPathPattern, idx)
+			} else {
+				ic.wildcardBasePattern = append(ic.wildcardBasePattern, idx)
+			}
+		case isLiteralPattern(p.pattern):
+			if p.hasSlash {
+				ic.exactPathPatterns[p.pattern] = append(ic.exactPathPatterns[p.pattern], idx)
+			} else {
+				ic.exactBasePatterns[p.pattern] = append(ic.exactBasePatterns[p.pattern], idx)
+			}
+		default:
+			if p.hasSlash {
+				ic.wildcardPathPattern = append(ic.wildcardPathPattern, idx)
+			} else {
+				ic.wildcardBasePattern = append(ic.wildcardBasePattern, idx)
+			}
+		}
+	}
+}
+
+func isLiteralPattern(pattern string) bool {
+	return !strings.ContainsAny(pattern, "*?[")
 }
 
 // matches checks if the given relative path matches this ignore pattern.

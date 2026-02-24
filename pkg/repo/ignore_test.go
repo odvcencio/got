@@ -182,6 +182,48 @@ func TestIgnore_GlobstarPrefixPattern(t *testing.T) {
 	}
 }
 
+func TestIgnore_LastMatchWinsAcrossWildcardAndLiteral(t *testing.T) {
+	dir := t.TempDir()
+
+	writeGotignore(t, dir, "*.log\n!important.log\nimportant.log\n")
+	ic := NewIgnoreChecker(dir)
+
+	if !ic.IsIgnored("debug.log") {
+		t.Error("expected debug.log to be ignored")
+	}
+	if !ic.IsIgnored("important.log") {
+		t.Error("expected important.log to be ignored by final literal pattern")
+	}
+}
+
+func TestIgnore_DirPatternOverriddenByExactPathNegation(t *testing.T) {
+	dir := t.TempDir()
+
+	writeGotignore(t, dir, "build/\n!build/keep.txt\n")
+	ic := NewIgnoreChecker(dir)
+
+	if !ic.IsIgnored("build/out.bin") {
+		t.Error("expected build/out.bin to be ignored")
+	}
+	if ic.IsIgnored("build/keep.txt") {
+		t.Error("expected build/keep.txt to be unignored by exact path negation")
+	}
+}
+
+func TestIgnore_GlobstarOverriddenByExactPathNegation(t *testing.T) {
+	dir := t.TempDir()
+
+	writeGotignore(t, dir, "**/*.gen.go\n!cmd/main.gen.go\n")
+	ic := NewIgnoreChecker(dir)
+
+	if !ic.IsIgnored("pkg/nested/file.gen.go") {
+		t.Error("expected pkg/nested/file.gen.go to be ignored")
+	}
+	if ic.IsIgnored("cmd/main.gen.go") {
+		t.Error("expected cmd/main.gen.go to be unignored by later exact path negation")
+	}
+}
+
 // helper: write a .gotignore file in the given directory.
 func writeGotignore(t *testing.T, dir, content string) {
 	t.Helper()
