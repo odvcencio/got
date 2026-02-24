@@ -94,6 +94,10 @@ got diff [--staged] [--entity]  Show changes
 got branch [name] [-d name]  List, create, or delete branches
 got checkout <target> [-b]   Switch branches
 got merge <branch>           Three-way structural merge
+got remote                   Manage remotes
+got clone <url> [dir]        Clone from Got protocol endpoint
+got pull [remote] [branch]   Fetch and fast-forward local branch
+got push [remote] [branch]   Push local branch to remote
 ```
 
 ### Structural diff
@@ -157,7 +161,6 @@ What exists:
 - `.gotignore` support
 
 What doesn't exist yet:
-- Remote push/pull
 - Pack files (objects are loose)
 - Rename detection
 - Submodules

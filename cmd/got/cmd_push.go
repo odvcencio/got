@@ -1,0 +1,202 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/got/pkg/remote"
+	"github.com/odvcencio/got/pkg/repo"
+	"github.com/spf13/cobra"
+)
+
+func newPushCmd() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "push [remote] [branch]",
+		Short: "Push a local branch to a remote",
+		Args:  cobra.MaximumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := repo.Open(".")
+			if err != nil {
+				return err
+			}
+
+			remoteArg := ""
+			branch := ""
+			switch len(args) {
+			case 1:
+				candidate := strings.TrimSpace(args[0])
+				if looksLikeRemoteURL(candidate) {
+					remoteArg = candidate
+				} else if _, err := r.RemoteURL(candidate); err == nil {
+					remoteArg = candidate
+				} else {
+					branch = candidate
+				}
+			case 2:
+				remoteArg = strings.TrimSpace(args[0])
+				branch = strings.TrimSpace(args[1])
+			}
+			remoteName, remoteURL, err := resolveRemoteNameAndURL(r, remoteArg)
+			if err != nil {
+				return err
+			}
+
+			if branch == "" {
+				branch, err = r.CurrentBranch()
+				if err != nil {
+					return err
+				}
+			}
+			if branch == "" {
+				return fmt.Errorf("cannot infer branch while HEAD is detached; specify branch")
+			}
+
+			localRef := "refs/heads/" + branch
+			localHash, err := r.ResolveRef(localRef)
+			if err != nil {
+				return fmt.Errorf("resolve local branch %q: %w", branch, err)
+			}
+
+			client, err := remote.NewClient(remoteURL)
+			if err != nil {
+				return err
+			}
+			remoteRefs, err := client.ListRefs(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			remoteRef := "heads/" + branch
+			remoteHash, hasRemote := remoteRefs[remoteRef]
+			if hasRemote && strings.TrimSpace(string(remoteHash)) == "" {
+				hasRemote = false
+			}
+
+			if hasRemote && remoteHash == localHash {
+				_ = r.UpdateRef(remoteTrackingRefName(remoteName, remoteRef), remoteHash)
+				fmt.Fprintf(cmd.OutOrStdout(), "everything up-to-date (%s)\n", shortHash(localHash))
+				return nil
+			}
+
+			if hasRemote && !force {
+				if !r.Store.Has(remoteHash) {
+					haves, err := localRefTips(r)
+					if err != nil {
+						return err
+					}
+					if _, err := remote.FetchIntoStore(cmd.Context(), client, r.Store, []object.Hash{remoteHash}, haves); err != nil {
+						return fmt.Errorf("push safety check failed fetching remote head: %w", err)
+					}
+				}
+				base, err := r.FindMergeBase(localHash, remoteHash)
+				if err != nil {
+					return fmt.Errorf("push safety check failed: %w", err)
+				}
+				if base != remoteHash {
+					return fmt.Errorf("push rejected: non-fast-forward (local %s does not contain remote %s)", shortHash(localHash), shortHash(remoteHash))
+				}
+			}
+
+			stopRoots := make([]object.Hash, 0, len(remoteRefs))
+			for _, h := range remoteRefs {
+				if strings.TrimSpace(string(h)) == "" {
+					continue
+				}
+				if r.Store.Has(h) {
+					stopRoots = append(stopRoots, h)
+				}
+			}
+
+			objectsToPush, err := remote.CollectObjectsForPush(r.Store, []object.Hash{localHash}, stopRoots)
+			if err != nil {
+				return err
+			}
+			uploaded, err := pushObjectsChunked(cmd.Context(), client, objectsToPush)
+			if err != nil {
+				return err
+			}
+
+			old := object.Hash("")
+			if hasRemote {
+				old = remoteHash
+			}
+			newHash := localHash
+			updated, err := client.UpdateRefs(cmd.Context(), []remote.RefUpdate{{
+				Name: remoteRef,
+				Old:  &old,
+				New:  &newHash,
+			}})
+			if err != nil {
+				return err
+			}
+
+			finalHash := localHash
+			if h, ok := updated[remoteRef]; ok && strings.TrimSpace(string(h)) != "" {
+				finalHash = h
+			}
+			if err := r.UpdateRef(remoteTrackingRefName(remoteName, remoteRef), finalHash); err != nil {
+				return err
+			}
+
+			if hasRemote {
+				fmt.Fprintf(cmd.OutOrStdout(), "pushed %s: %s -> %s (%d objects)\n", branch, shortHash(remoteHash), shortHash(finalHash), uploaded)
+				return nil
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "pushed new branch %s at %s (%d objects)\n", branch, shortHash(finalHash), uploaded)
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "allow non-fast-forward update")
+	return cmd
+}
+
+func pushObjectsChunked(ctx context.Context, client *remote.Client, objects []remote.ObjectRecord) (int, error) {
+	const (
+		maxChunkObjects = 2000
+		maxChunkBytes   = 32 << 20
+		maxObjectBytes  = 16 << 20
+	)
+	if len(objects) == 0 {
+		return 0, nil
+	}
+
+	chunk := make([]remote.ObjectRecord, 0, maxChunkObjects)
+	chunkBytes := 0
+	uploaded := 0
+
+	flush := func() error {
+		if len(chunk) == 0 {
+			return nil
+		}
+		if err := client.PushObjects(ctx, chunk); err != nil {
+			return err
+		}
+		uploaded += len(chunk)
+		chunk = chunk[:0]
+		chunkBytes = 0
+		return nil
+	}
+
+	for _, obj := range objects {
+		if len(obj.Data) > maxObjectBytes {
+			return uploaded, fmt.Errorf("object %s exceeds %d-byte push limit", shortHash(obj.Hash), maxObjectBytes)
+		}
+		recBytes := len(obj.Data) + 128
+		if len(chunk) > 0 && (len(chunk) >= maxChunkObjects || chunkBytes+recBytes > maxChunkBytes) {
+			if err := flush(); err != nil {
+				return uploaded, err
+			}
+		}
+		chunk = append(chunk, obj)
+		chunkBytes += recBytes
+	}
+	if err := flush(); err != nil {
+		return uploaded, err
+	}
+	return uploaded, nil
+}

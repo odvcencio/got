@@ -23,6 +23,10 @@ func main() {
 	root.AddCommand(newBranchCmd())
 	root.AddCommand(newCheckoutCmd())
 	root.AddCommand(newMergeCmd())
+	root.AddCommand(newRemoteCmd())
+	root.AddCommand(newCloneCmd())
+	root.AddCommand(newPullCmd())
+	root.AddCommand(newPushCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
