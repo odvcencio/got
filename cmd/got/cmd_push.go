@@ -16,7 +16,7 @@ func newPushCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "push [remote] [branch]",
-		Short: "Push a local branch to a remote",
+		Short: "Push a local branch or ref to a remote",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := repo.Open(".")
@@ -45,20 +45,13 @@ func newPushCmd() *cobra.Command {
 				return err
 			}
 
-			if branch == "" {
-				branch, err = r.CurrentBranch()
-				if err != nil {
-					return err
-				}
+			pushTarget, localRef, remoteRef, err := resolvePushRefNames(r, branch)
+			if err != nil {
+				return err
 			}
-			if branch == "" {
-				return fmt.Errorf("cannot infer branch while HEAD is detached; specify branch")
-			}
-
-			localRef := "refs/heads/" + branch
 			localHash, err := r.ResolveRef(localRef)
 			if err != nil {
-				return fmt.Errorf("resolve local branch %q: %w", branch, err)
+				return fmt.Errorf("resolve local ref %q: %w", localRef, err)
 			}
 
 			client, err := remote.NewClient(remoteURL)
@@ -70,7 +63,6 @@ func newPushCmd() *cobra.Command {
 				return err
 			}
 
-			remoteRef := "heads/" + branch
 			remoteHash, hasRemote := remoteRefs[remoteRef]
 			if hasRemote && strings.TrimSpace(string(remoteHash)) == "" {
 				hasRemote = false
@@ -83,21 +75,25 @@ func newPushCmd() *cobra.Command {
 			}
 
 			if hasRemote && !force {
-				if !r.Store.Has(remoteHash) {
-					haves, err := localRefTips(r)
+				if strings.HasPrefix(remoteRef, "heads/") {
+					if !r.Store.Has(remoteHash) {
+						haves, err := localRefTips(r)
+						if err != nil {
+							return err
+						}
+						if _, err := remote.FetchIntoStore(cmd.Context(), client, r.Store, []object.Hash{remoteHash}, haves); err != nil {
+							return fmt.Errorf("push safety check failed fetching remote head: %w", err)
+						}
+					}
+					base, err := r.FindMergeBase(localHash, remoteHash)
 					if err != nil {
-						return err
+						return fmt.Errorf("push safety check failed: %w", err)
 					}
-					if _, err := remote.FetchIntoStore(cmd.Context(), client, r.Store, []object.Hash{remoteHash}, haves); err != nil {
-						return fmt.Errorf("push safety check failed fetching remote head: %w", err)
+					if base != remoteHash {
+						return fmt.Errorf("push rejected: non-fast-forward (local %s does not contain remote %s)", shortHash(localHash), shortHash(remoteHash))
 					}
-				}
-				base, err := r.FindMergeBase(localHash, remoteHash)
-				if err != nil {
-					return fmt.Errorf("push safety check failed: %w", err)
-				}
-				if base != remoteHash {
-					return fmt.Errorf("push rejected: non-fast-forward (local %s does not contain remote %s)", shortHash(localHash), shortHash(remoteHash))
+				} else if remoteHash != localHash {
+					return fmt.Errorf("push rejected: remote %s already exists at %s (use --force to overwrite)", remoteRef, shortHash(remoteHash))
 				}
 			}
 
@@ -143,16 +139,48 @@ func newPushCmd() *cobra.Command {
 			}
 
 			if hasRemote {
-				fmt.Fprintf(cmd.OutOrStdout(), "pushed %s: %s -> %s (%d objects)\n", branch, shortHash(remoteHash), shortHash(finalHash), uploaded)
+				fmt.Fprintf(cmd.OutOrStdout(), "pushed %s: %s -> %s (%d objects)\n", pushTarget, shortHash(remoteHash), shortHash(finalHash), uploaded)
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "pushed new branch %s at %s (%d objects)\n", branch, shortHash(finalHash), uploaded)
+			fmt.Fprintf(cmd.OutOrStdout(), "pushed new %s at %s (%d objects)\n", pushTarget, shortHash(finalHash), uploaded)
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "allow non-fast-forward update")
 	return cmd
+}
+
+func resolvePushRefNames(r *repo.Repo, branchArg string) (display string, localRef string, remoteRef string, err error) {
+	branchArg = strings.TrimSpace(branchArg)
+	if branchArg == "" {
+		branchArg, err = r.CurrentBranch()
+		if err != nil {
+			return "", "", "", err
+		}
+		if branchArg == "" {
+			return "", "", "", fmt.Errorf("cannot infer branch while HEAD is detached; specify branch or full ref")
+		}
+	}
+
+	if strings.HasPrefix(branchArg, "refs/heads/") {
+		name := strings.TrimPrefix(branchArg, "refs/heads/")
+		if strings.TrimSpace(name) == "" {
+			return "", "", "", fmt.Errorf("invalid branch ref %q", branchArg)
+		}
+		return "branch " + name, branchArg, "heads/" + name, nil
+	}
+	if strings.HasPrefix(branchArg, "refs/tags/") {
+		name := strings.TrimPrefix(branchArg, "refs/tags/")
+		if strings.TrimSpace(name) == "" {
+			return "", "", "", fmt.Errorf("invalid tag ref %q", branchArg)
+		}
+		return "tag " + name, branchArg, "tags/" + name, nil
+	}
+	if strings.HasPrefix(branchArg, "refs/") {
+		return "", "", "", fmt.Errorf("unsupported ref %q (only refs/heads/* and refs/tags/* are supported)", branchArg)
+	}
+	return "branch " + branchArg, "refs/heads/" + branchArg, "heads/" + branchArg, nil
 }
 
 func pushObjectsChunked(ctx context.Context, client *remote.Client, objects []remote.ObjectRecord) (int, error) {
