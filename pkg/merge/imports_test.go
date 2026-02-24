@@ -65,13 +65,20 @@ func TestMergeImportsNonGoUsesDiff3Fallback(t *testing.T) {
 	}
 }
 
-func TestMergeImportsNonGoConflictPropagates(t *testing.T) {
+func TestMergeRustImportsMergesDistinctPaths(t *testing.T) {
 	base := "use std::io;\n"
 	ours := "use std::fs;\n"
 	theirs := "use std::net;\n"
 
-	_, conflict := MergeImports([]byte(base), []byte(ours), []byte(theirs), "rust")
-	if !conflict {
-		t.Fatal("expected conflict for incompatible non-Go import edits")
+	merged, conflict := MergeImports([]byte(base), []byte(ours), []byte(theirs), "rust")
+	if conflict {
+		t.Fatal("expected rust import merge to union distinct paths without conflict")
+	}
+	s := string(merged)
+	if !strings.Contains(s, "use std::fs;") {
+		t.Fatalf("expected merged rust imports to include ours path, got %q", s)
+	}
+	if !strings.Contains(s, "use std::net;") {
+		t.Fatalf("expected merged rust imports to include theirs path, got %q", s)
 	}
 }
