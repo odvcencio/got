@@ -47,6 +47,16 @@ func diffUnstaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 	if err != nil {
 		return err
 	}
+	statusEntries, err := r.Status()
+	if err != nil {
+		return err
+	}
+	workRenamedOldToNew := make(map[string]string)
+	for _, e := range statusEntries {
+		if e.WorkStatus == repo.StatusRenamed && e.RenamedFrom != "" {
+			workRenamedOldToNew[e.RenamedFrom] = e.Path
+		}
+	}
 
 	// Sort paths for deterministic output.
 	paths := make([]string, 0, len(stg.Entries))
@@ -64,6 +74,10 @@ func diffUnstaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 		workData, err := os.ReadFile(absPath)
 		if err != nil {
 			if os.IsNotExist(err) {
+				if newPath, renamed := workRenamedOldToNew[p]; renamed {
+					printRename(out, p, newPath)
+					continue
+				}
 				// File deleted from working tree -- show full deletion.
 				stagedBlob, blobErr := r.Store.ReadBlob(se.BlobHash)
 				if blobErr != nil {
@@ -102,6 +116,18 @@ func diffStaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 	if err != nil {
 		return err
 	}
+	statusEntries, err := r.Status()
+	if err != nil {
+		return err
+	}
+	indexRenamedNewToOld := make(map[string]string)
+	indexRenamedOld := make(map[string]struct{})
+	for _, e := range statusEntries {
+		if e.IndexStatus == repo.StatusRenamed && e.RenamedFrom != "" {
+			indexRenamedNewToOld[e.Path] = e.RenamedFrom
+			indexRenamedOld[e.RenamedFrom] = struct{}{}
+		}
+	}
 
 	// Build HEAD tree map: path -> TreeFileEntry.
 	headMap := make(map[string]repo.TreeFileEntry)
@@ -129,6 +155,10 @@ func diffStaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 
 	for _, p := range paths {
 		se := stg.Entries[p]
+		if oldPath, renamed := indexRenamedNewToOld[p]; renamed {
+			printRename(out, oldPath, p)
+			continue
+		}
 
 		headEntry, inHead := headMap[p]
 		if inHead && headEntry.BlobHash == se.BlobHash {
@@ -164,6 +194,9 @@ func diffStaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 	sort.Strings(deletedPaths)
 
 	for _, p := range deletedPaths {
+		if _, renamed := indexRenamedOld[p]; renamed {
+			continue
+		}
 		headEntry := headMap[p]
 		blob, err := r.Store.ReadBlob(headEntry.BlobHash)
 		if err != nil {
@@ -238,4 +271,10 @@ func printLineDiff(out io.Writer, path string, before, after []byte) error {
 	}
 
 	return nil
+}
+
+func printRename(out io.Writer, fromPath, toPath string) {
+	fmt.Fprintf(out, "diff --got a/%s b/%s\n", fromPath, toPath)
+	fmt.Fprintf(out, "rename from %s\n", fromPath)
+	fmt.Fprintf(out, "rename to %s\n", toPath)
 }

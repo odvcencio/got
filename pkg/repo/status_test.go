@@ -378,3 +378,116 @@ func TestStatus_IndexModifiedWhenExecutableBitStaged(t *testing.T) {
 		t.Fatalf("WorkStatus = %d, want %d", found.WorkStatus, StatusClean)
 	}
 }
+
+func TestStatus_DetectsIndexRename(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	oldPath := filepath.Join(dir, "old.txt")
+	if err := os.WriteFile(oldPath, []byte("rename me\n"), 0o644); err != nil {
+		t.Fatalf("write old.txt: %v", err)
+	}
+	if err := r.Add([]string{"old.txt"}); err != nil {
+		t.Fatalf("Add old.txt: %v", err)
+	}
+	if _, err := r.Commit("initial", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	newPath := filepath.Join(dir, "new.txt")
+	if err := os.Rename(oldPath, newPath); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if err := r.Add([]string{"new.txt"}); err != nil {
+		t.Fatalf("Add new.txt: %v", err)
+	}
+	if err := r.Remove([]string{"old.txt"}, true); err != nil {
+		t.Fatalf("Remove old.txt --cached: %v", err)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+
+	var found *StatusEntry
+	for i := range entries {
+		if entries[i].Path == "new.txt" {
+			found = &entries[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("missing new.txt in status")
+	}
+	if found.IndexStatus != StatusRenamed {
+		t.Fatalf("IndexStatus = %d, want %d", found.IndexStatus, StatusRenamed)
+	}
+	if found.RenamedFrom != "old.txt" {
+		t.Fatalf("RenamedFrom = %q, want %q", found.RenamedFrom, "old.txt")
+	}
+	if found.WorkStatus != StatusClean {
+		t.Fatalf("WorkStatus = %d, want %d", found.WorkStatus, StatusClean)
+	}
+
+	for _, e := range entries {
+		if e.Path == "old.txt" && e.IndexStatus == StatusDeleted {
+			t.Fatalf("old.txt should be folded into rename, got deleted entry")
+		}
+	}
+}
+
+func TestStatus_DetectsWorktreeRename(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	oldPath := filepath.Join(dir, "old.txt")
+	if err := os.WriteFile(oldPath, []byte("rename me\n"), 0o644); err != nil {
+		t.Fatalf("write old.txt: %v", err)
+	}
+	if err := r.Add([]string{"old.txt"}); err != nil {
+		t.Fatalf("Add old.txt: %v", err)
+	}
+	if _, err := r.Commit("initial", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	newPath := filepath.Join(dir, "new.txt")
+	if err := os.Rename(oldPath, newPath); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+
+	var found *StatusEntry
+	for i := range entries {
+		if entries[i].Path == "new.txt" {
+			found = &entries[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("missing new.txt in status")
+	}
+	if found.WorkStatus != StatusRenamed {
+		t.Fatalf("WorkStatus = %d, want %d", found.WorkStatus, StatusRenamed)
+	}
+	if found.RenamedFrom != "old.txt" {
+		t.Fatalf("RenamedFrom = %q, want %q", found.RenamedFrom, "old.txt")
+	}
+
+	for _, e := range entries {
+		if e.Path == "old.txt" && e.WorkStatus == StatusDeleted {
+			t.Fatalf("old.txt should be folded into rename, got deleted entry")
+		}
+	}
+}

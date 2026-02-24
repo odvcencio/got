@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/odvcencio/got/pkg/object"
 )
@@ -17,6 +18,7 @@ const (
 	StatusClean     FileStatus = iota // file matches between compared areas
 	StatusNew                         // in staging, not in HEAD tree
 	StatusModified                    // in staging, different from HEAD
+	StatusRenamed                     // same content, path changed
 	StatusDeleted                     // in HEAD but not in staging (or on disk but not in staging)
 	StatusUntracked                   // in working dir but not in staging
 	StatusDirty                       // staged but working copy differs from staged
@@ -25,6 +27,7 @@ const (
 // StatusEntry records the status of a single file.
 type StatusEntry struct {
 	Path        string     // repo-relative path
+	RenamedFrom string     // non-empty when IndexStatus or WorkStatus is StatusRenamed
 	IndexStatus FileStatus // staging vs HEAD comparison
 	WorkStatus  FileStatus // working tree vs staging comparison
 }
@@ -88,6 +91,10 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 
 	// Build the result map keyed by path.
 	result := make(map[string]*StatusEntry)
+	workRenamedNewToOld, workRenamedOldToNew, err := r.detectWorktreeRenames(stg, workFiles)
+	if err != nil {
+		return nil, fmt.Errorf("status: detect worktree renames: %w", err)
+	}
 
 	// --- Working tree vs staging comparison ---
 
@@ -95,6 +102,16 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	for path := range workFiles {
 		se, inStaging := stg.Entries[path]
 		if !inStaging {
+			if oldPath, renamed := workRenamedNewToOld[path]; renamed {
+				result[path] = &StatusEntry{
+					Path:        path,
+					RenamedFrom: oldPath,
+					IndexStatus: StatusUntracked,
+					WorkStatus:  StatusRenamed,
+				}
+				continue
+			}
+
 			// File exists on disk but not in staging → untracked.
 			result[path] = &StatusEntry{
 				Path:        path,
@@ -133,6 +150,9 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	// For each staged entry not on disk → deleted from working tree.
 	for path := range stg.Entries {
 		if _, onDisk := workFiles[path]; !onDisk {
+			if _, renamed := workRenamedOldToNew[path]; renamed {
+				continue
+			}
 			entry, exists := result[path]
 			if !exists {
 				entry = &StatusEntry{Path: path}
@@ -147,6 +167,7 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	// we treat HEAD as empty if there are no commits yet or if we cannot
 	// resolve the tree.
 	headEntries := r.headTreeEntries()
+	indexRenamedNewToOld, indexRenamedOldToNew := detectIndexRenames(stg, headEntries)
 
 	for path, se := range stg.Entries {
 		entry, exists := result[path]
@@ -157,7 +178,12 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 
 		headState, inHead := headEntries[path]
 		if !inHead {
-			entry.IndexStatus = StatusNew
+			if oldPath, renamed := indexRenamedNewToOld[path]; renamed {
+				entry.IndexStatus = StatusRenamed
+				entry.RenamedFrom = oldPath
+			} else {
+				entry.IndexStatus = StatusNew
+			}
 		} else if se.BlobHash != headState.BlobHash || normalizeFileMode(se.Mode) != normalizeFileMode(headState.Mode) {
 			entry.IndexStatus = StatusModified
 		} else {
@@ -168,6 +194,9 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	// For each HEAD entry not in staging → deleted from index.
 	for path := range headEntries {
 		if _, inStaging := stg.Entries[path]; !inStaging {
+			if _, renamed := indexRenamedOldToNew[path]; renamed {
+				continue
+			}
 			entry, exists := result[path]
 			if !exists {
 				entry = &StatusEntry{Path: path}
@@ -234,4 +263,92 @@ func (r *Repo) flattenTree(treeHash object.Hash, prefix string, entries map[stri
 			}
 		}
 	}
+}
+
+func detectIndexRenames(stg *Staging, headEntries map[string]headTreeState) (map[string]string, map[string]string) {
+	newByKey := make(map[string][]string)
+	oldByKey := make(map[string][]string)
+
+	for path, se := range stg.Entries {
+		if _, inHead := headEntries[path]; inHead {
+			continue
+		}
+		key := renameMatchKey(se.BlobHash, se.Mode)
+		newByKey[key] = append(newByKey[key], path)
+	}
+	for path, hs := range headEntries {
+		if _, inStaging := stg.Entries[path]; inStaging {
+			continue
+		}
+		key := renameMatchKey(hs.BlobHash, hs.Mode)
+		oldByKey[key] = append(oldByKey[key], path)
+	}
+
+	return pairRenameCandidates(newByKey, oldByKey)
+}
+
+func (r *Repo) detectWorktreeRenames(stg *Staging, workFiles map[string]bool) (map[string]string, map[string]string, error) {
+	oldByKey := make(map[string][]string)
+	newByKey := make(map[string][]string)
+
+	for path, se := range stg.Entries {
+		if workFiles[path] {
+			continue
+		}
+		key := renameMatchKey(se.BlobHash, se.Mode)
+		oldByKey[key] = append(oldByKey[key], path)
+	}
+
+	for path := range workFiles {
+		if _, inStaging := stg.Entries[path]; inStaging {
+			continue
+		}
+		absPath := filepath.Join(r.RootDir, filepath.FromSlash(path))
+		info, err := os.Stat(absPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		data, err := os.ReadFile(absPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		key := renameMatchKey(object.HashObject(object.TypeBlob, data), modeFromFileInfo(info))
+		newByKey[key] = append(newByKey[key], path)
+	}
+
+	newToOld, oldToNew := pairRenameCandidates(newByKey, oldByKey)
+	return newToOld, oldToNew, nil
+}
+
+func pairRenameCandidates(newByKey, oldByKey map[string][]string) (map[string]string, map[string]string) {
+	newToOld := make(map[string]string)
+	oldToNew := make(map[string]string)
+
+	for key, newPaths := range newByKey {
+		oldPaths := oldByKey[key]
+		if len(oldPaths) == 0 {
+			continue
+		}
+
+		sort.Strings(newPaths)
+		sort.Strings(oldPaths)
+
+		n := len(newPaths)
+		if len(oldPaths) < n {
+			n = len(oldPaths)
+		}
+
+		for i := 0; i < n; i++ {
+			newPath := newPaths[i]
+			oldPath := oldPaths[i]
+			newToOld[newPath] = oldPath
+			oldToNew[oldPath] = newPath
+		}
+	}
+
+	return newToOld, oldToNew
+}
+
+func renameMatchKey(blobHash object.Hash, mode string) string {
+	return string(blobHash) + "|" + normalizeFileMode(strings.TrimSpace(mode))
 }

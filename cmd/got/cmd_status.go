@@ -58,6 +58,8 @@ func newStatusCmd() *cobra.Command {
 					staged = append(staged, fmt.Sprintf("  + %s", filepath.ToSlash(e.Path)))
 				case repo.StatusModified:
 					staged = append(staged, fmt.Sprintf("  ~ %s", filepath.ToSlash(e.Path)))
+				case repo.StatusRenamed:
+					staged = append(staged, fmt.Sprintf("  R %s -> %s", filepath.ToSlash(e.RenamedFrom), filepath.ToSlash(e.Path)))
 				case repo.StatusDeleted:
 					staged = append(staged, fmt.Sprintf("  - %s", filepath.ToSlash(e.Path)))
 				}
@@ -66,6 +68,8 @@ func newStatusCmd() *cobra.Command {
 				switch e.WorkStatus {
 				case repo.StatusDirty:
 					unstaged = append(unstaged, fmt.Sprintf("  ~ %s", filepath.ToSlash(e.Path)))
+				case repo.StatusRenamed:
+					unstaged = append(unstaged, fmt.Sprintf("  R %s -> %s", filepath.ToSlash(e.RenamedFrom), filepath.ToSlash(e.Path)))
 				case repo.StatusDeleted:
 					// Only show as unstaged deletion if the file is actually staged
 					// (not untracked).
@@ -75,7 +79,7 @@ func newStatusCmd() *cobra.Command {
 				}
 
 				// Untracked: not in staging at all.
-				if e.IndexStatus == repo.StatusUntracked {
+				if e.IndexStatus == repo.StatusUntracked && e.WorkStatus != repo.StatusRenamed {
 					untracked = append(untracked, fmt.Sprintf("  %s", filepath.ToSlash(e.Path)))
 				}
 			}
