@@ -2,7 +2,9 @@ package object
 
 import (
 	"bytes"
+	"compress/zlib"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -33,11 +35,15 @@ func (s *Store) Has(h Hash) bool {
 }
 
 // Write stores an object and returns its content hash. The on-disk format
-// is "type len\0content". Writes are atomic: data is written to a temp
-// file and then renamed into place.
+// is zlib("type len\0content"). Writes are atomic: data is written to a
+// temp file and then renamed into place.
 func (s *Store) Write(objType ObjectType, data []byte) (Hash, error) {
 	envelope := fmt.Sprintf("%s %d\x00", objType, len(data))
 	raw := append([]byte(envelope), data...)
+	compressed, err := compressObject(raw)
+	if err != nil {
+		return "", fmt.Errorf("object write compress: %w", err)
+	}
 
 	h := HashObject(objType, data)
 
@@ -58,7 +64,7 @@ func (s *Store) Write(objType ObjectType, data []byte) (Hash, error) {
 	}
 	tmpName := tmp.Name()
 
-	if _, err := tmp.Write(raw); err != nil {
+	if _, err := tmp.Write(compressed); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
 		return "", fmt.Errorf("object write: %w", err)
@@ -79,11 +85,24 @@ func (s *Store) Write(objType ObjectType, data []byte) (Hash, error) {
 
 // Read retrieves an object by hash, returning its type and raw content.
 func (s *Store) Read(h Hash) (ObjectType, []byte, error) {
-	raw, err := os.ReadFile(s.objectPath(h))
+	onDisk, err := os.ReadFile(s.objectPath(h))
 	if err != nil {
 		return "", nil, fmt.Errorf("object read %s: %w", h, err)
 	}
 
+	// Backward compatibility: support legacy uncompressed objects.
+	if objType, content, err := parseObjectEnvelope(onDisk, h); err == nil {
+		return objType, content, nil
+	}
+
+	raw, err := decompressObject(onDisk)
+	if err != nil {
+		return "", nil, fmt.Errorf("object read %s: decompress: %w", h, err)
+	}
+	return parseObjectEnvelope(raw, h)
+}
+
+func parseObjectEnvelope(raw []byte, h Hash) (ObjectType, []byte, error) {
 	// Parse envelope: "type len\0content"
 	nulIdx := bytes.IndexByte(raw, 0)
 	if nulIdx < 0 {
@@ -106,6 +125,28 @@ func (s *Store) Read(h Hash) (ObjectType, []byte, error) {
 	}
 
 	return objType, content, nil
+}
+
+func compressObject(raw []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	zw := zlib.NewWriter(&buf)
+	if _, err := zw.Write(raw); err != nil {
+		_ = zw.Close()
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func decompressObject(compressed []byte) ([]byte, error) {
+	zr, err := zlib.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+	return io.ReadAll(zr)
 }
 
 // ---------------------------------------------------------------------------

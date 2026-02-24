@@ -2,6 +2,9 @@ package object
 
 import (
 	"bytes"
+	"compress/zlib"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -271,7 +274,7 @@ func TestStoreWriteReadCommit(t *testing.T) {
 }
 
 func TestStoreObjectFormat(t *testing.T) {
-	// Verify that the on-disk format is "type len\0content"
+	// Verify that the on-disk format is zlib("type len\0content").
 	s := tempStore(t)
 	data := []byte("format check")
 	h, err := s.Write(TypeBlob, data)
@@ -287,10 +290,47 @@ func TestStoreObjectFormat(t *testing.T) {
 		t.Fatalf("ReadFile: %v", err)
 	}
 
-	// Should start with "blob 12\0"
+	zr, err := zlib.NewReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("zlib.NewReader: %v", err)
+	}
+	decompressed, err := io.ReadAll(zr)
+	_ = zr.Close()
+	if err != nil {
+		t.Fatalf("ReadAll(zlib): %v", err)
+	}
+
 	expected := "blob 12\x00format check"
-	if string(raw) != expected {
-		t.Errorf("On-disk format: got %q, want %q", raw, expected)
+	if string(decompressed) != expected {
+		t.Errorf("On-disk format: got %q, want %q", decompressed, expected)
+	}
+}
+
+func TestStoreReadLegacyUncompressedObject(t *testing.T) {
+	s := tempStore(t)
+	data := []byte("legacy object payload")
+	hash := HashObject(TypeBlob, data)
+
+	legacyRaw := []byte(fmt.Sprintf("%s %d\x00", TypeBlob, len(data)))
+	legacyRaw = append(legacyRaw, data...)
+
+	objPath := s.objectPath(hash)
+	if err := os.MkdirAll(filepath.Dir(objPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(objPath, legacyRaw, 0o644); err != nil {
+		t.Fatalf("WriteFile legacy object: %v", err)
+	}
+
+	gotType, gotData, err := s.Read(hash)
+	if err != nil {
+		t.Fatalf("Read legacy object: %v", err)
+	}
+	if gotType != TypeBlob {
+		t.Fatalf("Type = %q, want %q", gotType, TypeBlob)
+	}
+	if !bytes.Equal(gotData, data) {
+		t.Fatalf("Data mismatch: got %q, want %q", gotData, data)
 	}
 }
 
