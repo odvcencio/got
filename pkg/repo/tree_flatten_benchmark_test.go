@@ -10,28 +10,38 @@ import (
 var benchmarkFlattenTreeEntryCount int
 
 func BenchmarkFlattenTree(b *testing.B) {
-	const (
-		dirCount    = 16
-		filesPerDir = 256
-	)
+	const dirCount = 16
+	const filesPerDir = 256
 
-	r, rootHash, wantEntries := buildFlattenBenchmarkTree(b, dirCount, filesPerDir)
+	cases := []struct {
+		name          string
+		uncleanPrefix bool
+	}{
+		{name: "simple-prefix", uncleanPrefix: false},
+		{name: "unclean-prefix", uncleanPrefix: true},
+	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		entries, err := r.FlattenTree(rootHash)
-		if err != nil {
-			b.Fatalf("FlattenTree: %v", err)
-		}
-		if len(entries) != wantEntries {
-			b.Fatalf("FlattenTree returned %d entries, want %d", len(entries), wantEntries)
-		}
-		benchmarkFlattenTreeEntryCount += len(entries)
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			r, rootHash, wantEntries := buildFlattenBenchmarkTree(b, dirCount, filesPerDir, tc.uncleanPrefix)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				entries, err := r.FlattenTree(rootHash)
+				if err != nil {
+					b.Fatalf("FlattenTree: %v", err)
+				}
+				if len(entries) != wantEntries {
+					b.Fatalf("FlattenTree returned %d entries, want %d", len(entries), wantEntries)
+				}
+				benchmarkFlattenTreeEntryCount += len(entries)
+			}
+		})
 	}
 }
 
-func buildFlattenBenchmarkTree(b *testing.B, dirCount, filesPerDir int) (*Repo, object.Hash, int) {
+func buildFlattenBenchmarkTree(b *testing.B, dirCount, filesPerDir int, uncleanPrefix bool) (*Repo, object.Hash, int) {
 	b.Helper()
 
 	r, err := Init(b.TempDir())
@@ -58,8 +68,13 @@ func buildFlattenBenchmarkTree(b *testing.B, dirCount, filesPerDir int) (*Repo, 
 			b.Fatalf("write subtree %d: %v", d, err)
 		}
 
+		dirName := fmt.Sprintf("dir-%02d", d)
+		if uncleanPrefix {
+			dirName = "./" + dirName
+		}
+
 		rootEntries = append(rootEntries, object.TreeEntry{
-			Name:        fmt.Sprintf("dir-%02d", d),
+			Name:        dirName,
 			IsDir:       true,
 			Mode:        object.TreeModeDir,
 			SubtreeHash: subtreeHash,
