@@ -56,5 +56,6 @@ type CommitObj struct {
 	Parents   []Hash
 	Author    string
 	Timestamp int64
+	Signature string
 	Message   string
 }

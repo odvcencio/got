@@ -312,3 +312,35 @@ func TestMarshalCommitDeterminism(t *testing.T) {
 		t.Error("Commit marshal not deterministic")
 	}
 }
+
+func TestMarshalUnmarshalCommitWithSignature(t *testing.T) {
+	orig := &CommitObj{
+		TreeHash:  Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		Parents:   []Hash{Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")},
+		Author:    "Signed <signed@example.com>",
+		Timestamp: 1700000003,
+		Signature: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIexample==",
+		Message:   "signed commit",
+	}
+	data := MarshalCommit(orig)
+	got, err := UnmarshalCommit(data)
+	if err != nil {
+		t.Fatalf("UnmarshalCommit: %v", err)
+	}
+	if got.Signature != orig.Signature {
+		t.Fatalf("Signature: got %q, want %q", got.Signature, orig.Signature)
+	}
+}
+
+func TestMarshalCommitOmitsEmptySignatureHeader(t *testing.T) {
+	c := &CommitObj{
+		TreeHash:  Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		Author:    "Unsigned <u@example.com>",
+		Timestamp: 1700000004,
+		Message:   "unsigned commit",
+	}
+	data := MarshalCommit(c)
+	if bytes.Contains(data, []byte("\nsignature ")) {
+		t.Fatalf("did not expect signature header in unsigned commit: %q", string(data))
+	}
+}

@@ -231,6 +231,7 @@ func UnmarshalTree(data []byte) (*TreeObj, error) {
 //	parent H     (zero or more)
 //	author A
 //	timestamp T
+//	signature S  (optional)
 //
 //	message
 func MarshalCommit(c *CommitObj) []byte {
@@ -241,6 +242,9 @@ func MarshalCommit(c *CommitObj) []byte {
 	}
 	fmt.Fprintf(&buf, "author %s\n", c.Author)
 	fmt.Fprintf(&buf, "timestamp %d\n", c.Timestamp)
+	if strings.TrimSpace(c.Signature) != "" {
+		fmt.Fprintf(&buf, "signature %s\n", c.Signature)
+	}
 	buf.WriteByte('\n')
 	buf.WriteString(c.Message)
 	return buf.Bytes()
@@ -274,6 +278,8 @@ func UnmarshalCommit(data []byte) (*CommitObj, error) {
 				return nil, fmt.Errorf("unmarshal commit: bad timestamp %q: %w", val, err)
 			}
 			c.Timestamp = ts
+		case "signature":
+			c.Signature = val
 		default:
 			return nil, fmt.Errorf("unmarshal commit: unknown header key %q", key)
 		}
