@@ -2,6 +2,7 @@ package repo
 
 import (
 	"bytes"
+	"container/heap"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,81 +39,265 @@ type mergeConflictState struct {
 
 const maxMergeBaseBFSSteps = 1_000_000
 
-// FindMergeBase finds the first common ancestor of two commits using a
-// two-queue BFS. It alternates BFS steps between sides a and b; the first
-// commit visited by both sides is the merge base. If no common ancestor
-// exists, an empty hash is returned.
+// FindMergeBase finds a common ancestor of two commits. It uses cached
+// generation numbers for pruning, fast ancestor checks for linear histories,
+// and a memoized pair cache for repeated queries.
 func (r *Repo) FindMergeBase(a, b object.Hash) (object.Hash, error) {
+	if a == "" || b == "" {
+		return "", nil
+	}
 	if a == b {
 		return a, nil
 	}
 
-	visitedA := map[object.Hash]bool{a: true}
-	visitedB := map[object.Hash]bool{b: true}
-	queueA := []object.Hash{a}
-	queueB := []object.Hash{b}
+	state := r.getMergeTraversalState()
+	if cached, ok := state.loadMergeBase(a, b); ok {
+		if cached.found {
+			return cached.base, nil
+		}
+		return "", nil
+	}
+
+	genA, err := state.generation(r, a)
+	if err != nil {
+		return "", err
+	}
+	genB, err := state.generation(r, b)
+	if err != nil {
+		return "", err
+	}
+
+	// Fast path: one side already contains the other.
+	if genA <= genB {
+		isAncestor, err := r.isAncestorWithGeneration(state, a, b, genA, genB)
+		if err != nil {
+			return "", err
+		}
+		if isAncestor {
+			state.storeMergeBase(a, b, a, true)
+			return a, nil
+		}
+		isAncestor, err = r.isAncestorWithGeneration(state, b, a, genB, genA)
+		if err != nil {
+			return "", err
+		}
+		if isAncestor {
+			state.storeMergeBase(a, b, b, true)
+			return b, nil
+		}
+	} else {
+		isAncestor, err := r.isAncestorWithGeneration(state, b, a, genB, genA)
+		if err != nil {
+			return "", err
+		}
+		if isAncestor {
+			state.storeMergeBase(a, b, b, true)
+			return b, nil
+		}
+		isAncestor, err = r.isAncestorWithGeneration(state, a, b, genA, genB)
+		if err != nil {
+			return "", err
+		}
+		if isAncestor {
+			state.storeMergeBase(a, b, a, true)
+			return a, nil
+		}
+	}
+
+	base, found, err := r.findMergeBaseWithPruning(state, a, b, genA, genB)
+	if err != nil {
+		return "", err
+	}
+	state.storeMergeBase(a, b, base, found)
+	if !found {
+		return "", nil
+	}
+	return base, nil
+}
+
+func (r *Repo) isAncestorWithGeneration(state *mergeBaseTraversalState, ancestor, descendant object.Hash, ancestorGeneration, descendantGeneration uint64) (bool, error) {
+	if ancestor == descendant {
+		return true, nil
+	}
+	if ancestorGeneration > descendantGeneration {
+		return false, nil
+	}
+
+	visited := map[object.Hash]struct{}{descendant: {}}
+	queue := []object.Hash{descendant}
 	steps := 0
 
-	for len(queueA) > 0 || len(queueB) > 0 {
-		// Step from side A.
-		if len(queueA) > 0 {
-			steps++
-			if steps > maxMergeBaseBFSSteps {
-				return "", fmt.Errorf("find merge base: traversal exceeded safety limit (%d steps)", maxMergeBaseBFSSteps)
-			}
-			cur := queueA[0]
-			queueA = queueA[1:]
+	for len(queue) > 0 {
+		steps++
+		if steps > maxMergeBaseBFSSteps {
+			return false, fmt.Errorf("find merge base: traversal exceeded safety limit (%d steps)", maxMergeBaseBFSSteps)
+		}
 
-			if visitedB[cur] {
-				return cur, nil
-			}
+		cur := queue[0]
+		queue = queue[1:]
+		if cur == ancestor {
+			return true, nil
+		}
 
-			c, err := r.Store.ReadCommit(cur)
+		curGeneration, err := state.generation(r, cur)
+		if err != nil {
+			return false, err
+		}
+		if curGeneration <= ancestorGeneration {
+			continue
+		}
+
+		commit, err := state.readCommit(r, cur)
+		if err != nil {
+			return false, err
+		}
+		for _, p := range commit.Parents {
+			if p == "" {
+				continue
+			}
+			if _, seen := visited[p]; seen {
+				continue
+			}
+			parentGeneration, err := state.generation(r, p)
 			if err != nil {
-				return "", fmt.Errorf("find merge base: read commit %s: %w", cur, err)
+				return false, err
 			}
-			for _, p := range c.Parents {
-				if !visitedA[p] {
-					visitedA[p] = true
-					queueA = append(queueA, p)
-					if visitedB[p] {
-						return p, nil
-					}
-				}
+			if parentGeneration < ancestorGeneration {
+				continue
+			}
+			visited[p] = struct{}{}
+			queue = append(queue, p)
+		}
+	}
+
+	return false, nil
+}
+
+func (r *Repo) findMergeBaseWithPruning(state *mergeBaseTraversalState, a, b object.Hash, genA, genB uint64) (object.Hash, bool, error) {
+	visitedA := map[object.Hash]struct{}{a: {}}
+	visitedB := map[object.Hash]struct{}{b: {}}
+
+	queueA := mergeBaseMaxHeap{{hash: a, generation: genA}}
+	queueB := mergeBaseMaxHeap{{hash: b, generation: genB}}
+	heap.Init(&queueA)
+	heap.Init(&queueB)
+
+	best := object.Hash("")
+	var bestGeneration uint64
+	steps := 0
+
+	for queueA.Len() > 0 || queueB.Len() > 0 {
+		if best != "" {
+			topA, okA := queueA.Peek()
+			topB, okB := queueB.Peek()
+			if (!okA || topA.generation < bestGeneration) && (!okB || topB.generation < bestGeneration) {
+				break
 			}
 		}
 
-		// Step from side B.
-		if len(queueB) > 0 {
-			steps++
-			if steps > maxMergeBaseBFSSteps {
-				return "", fmt.Errorf("find merge base: traversal exceeded safety limit (%d steps)", maxMergeBaseBFSSteps)
+		traverseA := false
+		switch {
+		case queueA.Len() == 0:
+			traverseA = false
+		case queueB.Len() == 0:
+			traverseA = true
+		default:
+			topA := queueA[0]
+			topB := queueB[0]
+			if topA.generation > topB.generation {
+				traverseA = true
+			} else if topA.generation < topB.generation {
+				traverseA = false
+			} else {
+				traverseA = topA.hash <= topB.hash
 			}
-			cur := queueB[0]
-			queueB = queueB[1:]
+		}
 
-			if visitedA[cur] {
-				return cur, nil
+		var item mergeBaseQueueItem
+		if traverseA {
+			item = heap.Pop(&queueA).(mergeBaseQueueItem)
+		} else {
+			item = heap.Pop(&queueB).(mergeBaseQueueItem)
+		}
+
+		steps++
+		if steps > maxMergeBaseBFSSteps {
+			return "", false, fmt.Errorf("find merge base: traversal exceeded safety limit (%d steps)", maxMergeBaseBFSSteps)
+		}
+		if best != "" && item.generation < bestGeneration {
+			continue
+		}
+
+		if traverseA {
+			if _, seen := visitedB[item.hash]; seen {
+				best, bestGeneration = chooseBetterMergeBase(best, bestGeneration, item.hash, item.generation)
+			}
+		} else {
+			if _, seen := visitedA[item.hash]; seen {
+				best, bestGeneration = chooseBetterMergeBase(best, bestGeneration, item.hash, item.generation)
+			}
+		}
+
+		commit, err := state.readCommit(r, item.hash)
+		if err != nil {
+			return "", false, err
+		}
+
+		for _, p := range commit.Parents {
+			if p == "" {
+				continue
 			}
 
-			c, err := r.Store.ReadCommit(cur)
+			parentGeneration, err := state.generation(r, p)
 			if err != nil {
-				return "", fmt.Errorf("find merge base: read commit %s: %w", cur, err)
+				return "", false, err
 			}
-			for _, p := range c.Parents {
-				if !visitedB[p] {
-					visitedB[p] = true
-					queueB = append(queueB, p)
-					if visitedA[p] {
-						return p, nil
-					}
+			if best != "" && parentGeneration < bestGeneration {
+				continue
+			}
+
+			if traverseA {
+				if _, seen := visitedA[p]; seen {
+					continue
+				}
+				visitedA[p] = struct{}{}
+				heap.Push(&queueA, mergeBaseQueueItem{hash: p, generation: parentGeneration})
+				if _, seen := visitedB[p]; seen {
+					best, bestGeneration = chooseBetterMergeBase(best, bestGeneration, p, parentGeneration)
+				}
+			} else {
+				if _, seen := visitedB[p]; seen {
+					continue
+				}
+				visitedB[p] = struct{}{}
+				heap.Push(&queueB, mergeBaseQueueItem{hash: p, generation: parentGeneration})
+				if _, seen := visitedA[p]; seen {
+					best, bestGeneration = chooseBetterMergeBase(best, bestGeneration, p, parentGeneration)
 				}
 			}
 		}
 	}
 
-	// No common ancestor found.
-	return "", nil
+	if best == "" {
+		return "", false, nil
+	}
+	return best, true, nil
+}
+
+func chooseBetterMergeBase(best object.Hash, bestGeneration uint64, candidate object.Hash, candidateGeneration uint64) (object.Hash, uint64) {
+	if best == "" {
+		return candidate, candidateGeneration
+	}
+	if candidateGeneration > bestGeneration {
+		return candidate, candidateGeneration
+	}
+	if candidateGeneration < bestGeneration {
+		return best, bestGeneration
+	}
+	if candidate < best {
+		return candidate, candidateGeneration
+	}
+	return best, bestGeneration
 }
 
 // Merge merges the named branch into the current HEAD.
