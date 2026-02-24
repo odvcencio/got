@@ -252,3 +252,26 @@ func TestBuildTree_FlattenTree_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestCommitWithSigner_PersistsSignature(t *testing.T) {
+	r := initRepoWithFile(t, "main.go", []byte("package main\n\nfunc main() {}\n"))
+
+	const sigValue = "sshsig-v1:ssh-ed25519:cHVibGlj:sWduYXR1cmU="
+	h, err := r.CommitWithSigner("signed commit", "test-author", func(payload []byte) (string, error) {
+		if len(payload) == 0 {
+			t.Fatalf("expected non-empty commit payload")
+		}
+		return sigValue, nil
+	})
+	if err != nil {
+		t.Fatalf("CommitWithSigner: %v", err)
+	}
+
+	c, err := r.Store.ReadCommit(h)
+	if err != nil {
+		t.Fatalf("ReadCommit(%s): %v", h, err)
+	}
+	if c.Signature != sigValue {
+		t.Fatalf("Signature = %q, want %q", c.Signature, sigValue)
+	}
+}

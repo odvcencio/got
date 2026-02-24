@@ -10,6 +10,10 @@ import (
 	"github.com/odvcencio/got/pkg/object"
 )
 
+// CommitSigner signs canonical commit payload bytes and returns an encoded
+// signature string to be persisted in CommitObj.Signature.
+type CommitSigner func(payload []byte) (string, error)
+
 // Commit creates a new commit from the current staging area.
 //
 //  1. Read staging
@@ -20,6 +24,11 @@ import (
 //  6. Update current branch ref to new commit hash
 //  7. Return commit hash
 func (r *Repo) Commit(message, author string) (object.Hash, error) {
+	return r.CommitWithSigner(message, author, nil)
+}
+
+// CommitWithSigner creates a new commit and signs it when signer is provided.
+func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (object.Hash, error) {
 	// 1. Read staging.
 	stg, err := r.ReadStaging()
 	if err != nil {
@@ -50,6 +59,14 @@ func (r *Repo) Commit(message, author string) (object.Hash, error) {
 		Author:    author,
 		Timestamp: time.Now().Unix(),
 		Message:   message,
+	}
+	if signer != nil {
+		payload := object.CommitSigningPayload(commitObj)
+		signature, err := signer(payload)
+		if err != nil {
+			return "", fmt.Errorf("commit: sign commit: %w", err)
+		}
+		commitObj.Signature = signature
 	}
 
 	// 5. Write commit to store.
