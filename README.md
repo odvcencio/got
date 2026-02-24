@@ -87,17 +87,26 @@ got merge feature
 ```
 got init [path]              Create a new repository
 got add <files...>           Stage files for commit
+got reset [paths...]         Unstage paths (restore index from HEAD)
+got rm [--cached] <paths...> Remove paths from index and/or working tree
 got status                   Show working tree status
 got commit -m <message>      Record changes
 got log [--oneline] [-n N]   Show commit history
+got show [commit-ish]        Show commit metadata and changed files
+got blame [path]             Show structural blame for a file
 got diff [--staged] [--entity]  Show changes
 got branch [name] [-d name]  List, create, or delete branches
+got tag [name]               List, create, or delete tags
 got checkout <target> [-b]   Switch branches
 got merge <branch>           Three-way structural merge
+got cherrypick-entity ...    Apply entity-scoped changes from another commit
 got remote                   Manage remotes
 got clone <url> [dir]        Clone from Got protocol endpoint
 got pull [remote] [branch]   Fetch and fast-forward local branch
 got push [remote] [branch]   Push local branch to remote
+got reflog                   Show local ref update history
+got gc                       Pack loose objects and prune unreachable data
+got verify                   Verify repository object integrity
 ```
 
 ### Structural diff
@@ -149,7 +158,7 @@ Any language with a tree-sitter grammar can be parsed. Declaration classificatio
 
 ## Status
 
-Early development. 160 tests passing across 6 packages. The core structural merge works and produces fewer false conflicts than Git on independent additions to the same file.
+Active development. 300+ tests passing across core packages. Structural merge is production-grade for supported scenarios, with pack files, object verification, remote sync, and entity-aware history workflows.
 
 What exists:
 - Content-addressed object store (SHA-256)
@@ -157,14 +166,15 @@ What exists:
 - Three-way structural merge with entity-level resolution
 - Set-union import merging
 - Entity-level and line-level diff
-- Full CLI: init, add, status, commit, log, diff, branch, checkout, merge
+- Pack files with delta support (`got gc`) and repository verification (`got verify`)
+- Full CLI: init, add, reset, rm, status, commit, log, show, blame, diff, branch, tag, checkout, merge, cherrypick-entity, remote, clone, pull, push, reflog, gc, verify
 - `.gotignore` support
 
 What doesn't exist yet:
-- Pack files (objects are loose)
-- Rename detection
+- Stash workflow
+- Rebase/cherry-pick (commit-level porcelain)
+- SSH transport for remotes
 - Submodules
-- Compression
 
 ## Dependencies
 

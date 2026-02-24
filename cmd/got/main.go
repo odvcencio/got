@@ -7,6 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var version = "0.2.3-dev"
+
 func main() {
 	root := &cobra.Command{
 		Use:   "got",
@@ -16,10 +18,12 @@ func main() {
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newAddCmd())
+	root.AddCommand(newResetCmd())
 	root.AddCommand(newRmCmd())
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newCommitCmd())
 	root.AddCommand(newLogCmd())
+	root.AddCommand(newShowCmd())
 	root.AddCommand(newBlameCmd())
 	root.AddCommand(newDiffCmd())
 	root.AddCommand(newBranchCmd())
@@ -46,7 +50,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("got 0.1.0-dev")
+			fmt.Println("got " + version)
 		},
 	}
 }
