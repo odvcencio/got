@@ -3,6 +3,7 @@ package object
 import (
 	"bytes"
 	"compress/zlib"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -85,6 +86,18 @@ func (s *Store) Write(objType ObjectType, data []byte) (Hash, error) {
 
 // Read retrieves an object by hash, returning its type and raw content.
 func (s *Store) Read(h Hash) (ObjectType, []byte, error) {
+	objType, content, err := s.readLoose(h)
+	if err == nil {
+		return objType, content, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", nil, err
+	}
+
+	return s.readFromPacks(h)
+}
+
+func (s *Store) readLoose(h Hash) (ObjectType, []byte, error) {
 	onDisk, err := os.ReadFile(s.objectPath(h))
 	if err != nil {
 		return "", nil, fmt.Errorf("object read %s: %w", h, err)

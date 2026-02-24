@@ -32,6 +32,8 @@ func main() {
 	root.AddCommand(newPullCmd())
 	root.AddCommand(newPushCmd())
 	root.AddCommand(newReflogCmd())
+	root.AddCommand(newGcCmd())
+	root.AddCommand(newVerifyCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
