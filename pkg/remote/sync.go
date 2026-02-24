@@ -12,6 +12,8 @@ import (
 const (
 	// MaxBatchObjects mirrors gothub's current server-side cap.
 	MaxBatchObjects = 50000
+	// MaxBatchHaveHashes keeps batch request payloads under server body limits.
+	MaxBatchHaveHashes = 20000
 )
 
 // FetchIntoStore fetches all objects reachable from wants into the local store.
@@ -24,38 +26,78 @@ func FetchIntoStore(ctx context.Context, c *Client, store *object.Store, wants, 
 		return 0, fmt.Errorf("at least one want hash is required")
 	}
 
-	batchObjects, truncated, err := c.BatchObjects(ctx, roots, uniqueHashes(haves), MaxBatchObjects)
-	if err != nil {
-		return 0, err
-	}
-
+	knownHaves, knownHaveSet := initKnownHaves(haves)
 	written := 0
-	for _, obj := range batchObjects {
-		n, err := writeVerifiedObject(store, obj)
+	for round := 0; round < 1024; round++ {
+		batchObjects, truncated, err := c.BatchObjects(ctx, roots, selectBatchHaves(knownHaves, MaxBatchHaveHashes), MaxBatchObjects)
 		if err != nil {
 			return written, err
 		}
-		written += n
-	}
 
-	// If truncated, finish via point fetches to keep correctness.
-	// This avoids re-request loops that can exceed request body limits for haves.
-	if truncated {
-		n, err := ensureGraphClosure(ctx, c, store, roots)
-		if err != nil {
-			return written, err
+		newInRound := 0
+		for _, obj := range batchObjects {
+			n, err := writeVerifiedObject(store, obj)
+			if err != nil {
+				return written, err
+			}
+			written += n
+			if n > 0 {
+				newInRound++
+			}
+			knownHaves, knownHaveSet = appendKnownHave(knownHaves, knownHaveSet, obj.Hash)
 		}
-		written += n
-		return written, nil
+
+		if !truncated {
+			break
+		}
+		// If the server keeps truncating without new objects, finish via point
+		// fetches to avoid spinning on duplicate batches.
+		if newInRound == 0 {
+			break
+		}
 	}
 
-	// Also run closure for robustness against partial/corrupted local state.
+	// Always run closure for robustness against partial state and truncated batches.
 	n, err := ensureGraphClosure(ctx, c, store, roots)
 	if err != nil {
 		return written, err
 	}
 	written += n
 	return written, nil
+}
+
+func initKnownHaves(haves []object.Hash) ([]object.Hash, map[object.Hash]struct{}) {
+	haveSet := make(map[object.Hash]struct{}, len(haves))
+	haveList := make([]object.Hash, 0, len(haves))
+	for _, h := range uniqueHashes(haves) {
+		haveList = append(haveList, h)
+		haveSet[h] = struct{}{}
+	}
+	return haveList, haveSet
+}
+
+func appendKnownHave(haveList []object.Hash, haveSet map[object.Hash]struct{}, h object.Hash) ([]object.Hash, map[object.Hash]struct{}) {
+	h = object.Hash(strings.TrimSpace(string(h)))
+	if h == "" {
+		return haveList, haveSet
+	}
+	if _, ok := haveSet[h]; ok {
+		return haveList, haveSet
+	}
+	haveSet[h] = struct{}{}
+	haveList = append(haveList, h)
+	return haveList, haveSet
+}
+
+func selectBatchHaves(haves []object.Hash, max int) []object.Hash {
+	if max <= 0 || len(haves) <= max {
+		out := make([]object.Hash, len(haves))
+		copy(out, haves)
+		return out
+	}
+	out := make([]object.Hash, max)
+	copy(out, haves[len(haves)-max:])
+	return out
 }
 
 // CollectObjectsForPush returns objects reachable from roots excluding objects

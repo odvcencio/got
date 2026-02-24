@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path"
@@ -88,6 +89,126 @@ func TestFetchIntoStoreBatchThenGetFallback(t *testing.T) {
 		t.Fatalf("written = %d, want 3", written)
 	}
 
+	for _, h := range []object.Hash{commitHash, treeHash, blobHash} {
+		if !localStore.Has(h) {
+			t.Fatalf("missing expected object %s", h)
+		}
+	}
+}
+
+func TestFetchIntoStoreUsesMultipleBatchRounds(t *testing.T) {
+	remoteRoot := t.TempDir()
+	remoteStore := object.NewStore(remoteRoot)
+
+	blobHash, err := remoteStore.WriteBlob(&object.Blob{Data: []byte("hello\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	treeHash, err := remoteStore.WriteTree(&object.TreeObj{Entries: []object.TreeEntry{{Name: "README.md", BlobHash: blobHash}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitHash, err := remoteStore.WriteCommit(&object.CommitObj{
+		TreeHash:  treeHash,
+		Author:    "Alice <alice@example.com>",
+		Timestamp: 1700000000,
+		Message:   "init",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	commitType, commitData, err := remoteStore.Read(commitHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	treeType, treeData, err := remoteStore.Read(treeHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobType, blobData, err := remoteStore.Read(blobHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	batchCalls := 0
+	getCalls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch":
+			batchCalls++
+			body, readErr := io.ReadAll(r.Body)
+			if readErr != nil {
+				http.Error(w, "invalid body", http.StatusBadRequest)
+				return
+			}
+			var req struct {
+				Haves []string `json:"haves"`
+			}
+			_ = json.Unmarshal(body, &req)
+			haveSet := make(map[string]struct{}, len(req.Haves))
+			for _, h := range req.Haves {
+				haveSet[strings.TrimSpace(h)] = struct{}{}
+			}
+
+			type obj struct {
+				Hash string `json:"hash"`
+				Type string `json:"type"`
+				Data []byte `json:"data"`
+			}
+			resp := struct {
+				Objects   []obj `json:"objects"`
+				Truncated bool  `json:"truncated"`
+			}{}
+
+			_, hasCommit := haveSet[string(commitHash)]
+			_, hasTree := haveSet[string(treeHash)]
+			_, hasBlob := haveSet[string(blobHash)]
+
+			switch {
+			case !hasCommit:
+				resp.Objects = append(resp.Objects, obj{Hash: string(commitHash), Type: string(commitType), Data: commitData})
+				resp.Truncated = true
+			case !hasTree:
+				resp.Objects = append(resp.Objects, obj{Hash: string(treeHash), Type: string(treeType), Data: treeData})
+				resp.Truncated = true
+			case !hasBlob:
+				resp.Objects = append(resp.Objects, obj{Hash: string(blobHash), Type: string(blobType), Data: blobData})
+				resp.Truncated = false
+			default:
+				resp.Truncated = false
+			}
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/got/alice/repo/objects/"):
+			getCalls++
+			http.Error(w, "unexpected get", http.StatusInternalServerError)
+			return
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	localStore := object.NewStore(t.TempDir())
+
+	written, err := FetchIntoStore(context.Background(), client, localStore, []object.Hash{commitHash}, nil)
+	if err != nil {
+		t.Fatalf("FetchIntoStore: %v", err)
+	}
+	if written != 3 {
+		t.Fatalf("written = %d, want 3", written)
+	}
+	if batchCalls < 3 {
+		t.Fatalf("expected at least 3 batch rounds, got %d", batchCalls)
+	}
+	if getCalls != 0 {
+		t.Fatalf("expected 0 GET fallback calls, got %d", getCalls)
+	}
 	for _, h := range []object.Hash{commitHash, treeHash, blobHash} {
 		if !localStore.Has(h) {
 			t.Fatalf("missing expected object %s", h)
