@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -17,11 +19,11 @@ func newCloneCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "clone <remote-url> [directory]",
-		Short: "Clone a repository from a Got protocol endpoint",
+		Short: "Clone a repository from a Got endpoint or local path",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			remoteURL := args[0]
-			client, err := remote.NewClient(remoteURL)
+			source := args[0]
+			localSourceRoot, isLocalSource, err := resolveLocalCloneSource(source)
 			if err != nil {
 				return err
 			}
@@ -29,7 +31,13 @@ func newCloneCmd() *cobra.Command {
 			dest := ""
 			if len(args) == 2 {
 				dest = args[1]
+			} else if isLocalSource {
+				dest = filepath.Base(localSourceRoot)
 			} else {
+				client, err := remote.NewClient(source)
+				if err != nil {
+					return err
+				}
 				dest = client.Endpoint().Repo
 			}
 			if strings.TrimSpace(dest) == "" {
@@ -43,11 +51,19 @@ func newCloneCmd() *cobra.Command {
 				return err
 			}
 
+			if isLocalSource {
+				return cloneFromLocalSource(cmd, localSourceRoot, source, absDest, remoteName, branch)
+			}
+
+			client, err := remote.NewClient(source)
+			if err != nil {
+				return err
+			}
 			r, err := repo.Init(absDest)
 			if err != nil {
 				return err
 			}
-			if err := r.SetRemote(remoteName, remoteURL); err != nil {
+			if err := r.SetRemote(remoteName, source); err != nil {
 				return err
 			}
 
@@ -109,7 +125,7 @@ func newCloneCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", remoteURL, absDest)
+			fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", source, absDest)
 			return nil
 		},
 	}
@@ -117,4 +133,101 @@ func newCloneCmd() *cobra.Command {
 	cmd.Flags().StringVar(&remoteName, "remote-name", "origin", "name to assign to the cloned remote")
 	cmd.Flags().StringVarP(&branch, "branch", "b", "", "branch to checkout after clone")
 	return cmd
+}
+
+func resolveLocalCloneSource(source string) (string, bool, error) {
+	if looksLikeRemoteURL(source) {
+		return "", false, nil
+	}
+	absSource, err := filepath.Abs(source)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve source: %w", err)
+	}
+	srcRepo, err := repo.Open(absSource)
+	if err != nil {
+		return "", false, nil
+	}
+	return srcRepo.RootDir, true, nil
+}
+
+func cloneFromLocalSource(cmd *cobra.Command, sourceRoot, sourceSpec, absDest, remoteName, branch string) error {
+	srcGotDir := filepath.Join(sourceRoot, ".got")
+	dstGotDir := filepath.Join(absDest, ".got")
+	if err := copyDir(srcGotDir, dstGotDir); err != nil {
+		return err
+	}
+
+	r, err := repo.Open(absDest)
+	if err != nil {
+		return err
+	}
+	if err := r.SetRemote(remoteName, sourceSpec); err != nil {
+		return err
+	}
+
+	selectedBranch := strings.TrimSpace(branch)
+	if selectedBranch != "" {
+		if _, err := r.ResolveRef("refs/heads/" + selectedBranch); err != nil {
+			return fmt.Errorf("local branch %q not found", selectedBranch)
+		}
+		if err := r.Checkout(selectedBranch); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", sourceSpec, absDest)
+		return nil
+	}
+
+	if currentBranch, err := r.CurrentBranch(); err == nil && strings.TrimSpace(currentBranch) != "" {
+		if err := r.Checkout(currentBranch); err != nil {
+			return err
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", sourceSpec, absDest)
+		return nil
+	}
+
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		return fmt.Errorf("resolve HEAD: %w", err)
+	}
+	if err := r.Checkout(string(headHash)); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", sourceSpec, absDest)
+	return nil
+}
+
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+		return copyFile(path, target, info.Mode())
+	})
+}
+
+func copyFile(src, dst string, perm os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, perm)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return nil
 }

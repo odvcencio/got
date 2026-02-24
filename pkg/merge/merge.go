@@ -1,6 +1,7 @@
 package merge
 
 import (
+	"bytes"
 	"path/filepath"
 	"strings"
 
@@ -39,17 +40,24 @@ type MergeResult struct {
 //  4. Reconstruct output via Reconstruct
 //  5. Count stats and conflicts
 func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
-	baseEL, err := entity.Extract(path, base)
-	if err != nil {
-		return nil, err
+	// Structural merge is undefined for binary content. Use safe binary-level
+	// semantics instead of attempting parser-driven extraction.
+	if isBinaryContent(base) || isBinaryContent(ours) || isBinaryContent(theirs) {
+		return mergeBinaryFallback(base, ours, theirs), nil
 	}
-	oursEL, err := entity.Extract(path, ours)
-	if err != nil {
-		return nil, err
+
+	baseEL, baseErr := entity.Extract(path, base)
+	oursEL, oursErr := entity.Extract(path, ours)
+	theirsEL, theirsErr := entity.Extract(path, theirs)
+	if baseErr != nil || oursErr != nil || theirsErr != nil {
+		// If structural extraction fails (unsupported grammar or parse failure),
+		// fall back to line-level diff3 merge for text files.
+		return mergeTextFallback(base, ours, theirs), nil
 	}
-	theirsEL, err := entity.Extract(path, theirs)
-	if err != nil {
-		return nil, err
+	if !hasDeclaration(baseEL) || !hasDeclaration(oursEL) || !hasDeclaration(theirsEL) {
+		// If any side has no declaration entities, structural matching becomes
+		// unreliable. Prefer a safe line-level three-way merge.
+		return mergeTextFallback(base, ours, theirs), nil
 	}
 
 	matches := MatchEntities(baseEL, oursEL, theirsEL)
@@ -244,4 +252,120 @@ func detectLanguage(path string) string {
 	default:
 		return ""
 	}
+}
+
+func mergeTextFallback(base, ours, theirs []byte) *MergeResult {
+	result := diff3.Merge(base, ours, theirs)
+	merged, conflictCount := resolveTextConflicts(result)
+	stats := MergeStats{TotalEntities: 1}
+	if conflictCount > 0 {
+		stats.Conflicts = conflictCount
+	} else {
+		stats.BothModified = 1
+	}
+	return &MergeResult{
+		Merged:        merged,
+		HasConflicts:  conflictCount > 0,
+		ConflictCount: conflictCount,
+		Stats:         stats,
+	}
+}
+
+func mergeBinaryFallback(base, ours, theirs []byte) *MergeResult {
+	stats := MergeStats{TotalEntities: 1}
+	switch {
+	case bytes.Equal(ours, theirs):
+		stats.Unchanged = 1
+		return &MergeResult{
+			Merged: append([]byte(nil), ours...),
+			Stats:  stats,
+		}
+	case bytes.Equal(base, ours):
+		stats.TheirsModified = 1
+		return &MergeResult{
+			Merged: append([]byte(nil), theirs...),
+			Stats:  stats,
+		}
+	case bytes.Equal(base, theirs):
+		stats.OursModified = 1
+		return &MergeResult{
+			Merged: append([]byte(nil), ours...),
+			Stats:  stats,
+		}
+	default:
+		// Keep ours bytes intact and force an explicit conflict state.
+		stats.Conflicts = 1
+		return &MergeResult{
+			Merged:        append([]byte(nil), ours...),
+			HasConflicts:  true,
+			ConflictCount: 1,
+			Stats:         stats,
+		}
+	}
+}
+
+func isBinaryContent(data []byte) bool {
+	return bytes.IndexByte(data, 0) >= 0
+}
+
+func hasDeclaration(el *entity.EntityList) bool {
+	for _, e := range el.Entities {
+		if e.Kind == entity.KindDeclaration {
+			return true
+		}
+	}
+	return false
+}
+
+func resolveTextConflicts(result diff3.Result) ([]byte, int) {
+	if !result.HasConflicts {
+		return result.Merged, 0
+	}
+
+	var merged bytes.Buffer
+	conflictCount := 0
+	for _, h := range result.Hunks {
+		if h.Type != diff3.HunkConflict {
+			merged.Write(h.Merged)
+			continue
+		}
+		if canResolveParallelInsertion(h) {
+			merged.Write(mergeParallelInsertions(h.Ours, h.Theirs))
+			continue
+		}
+		conflictCount++
+		merged.WriteString("<<<<<<< ours\n")
+		merged.Write(h.Ours)
+		merged.WriteString("=======\n")
+		merged.Write(h.Theirs)
+		merged.WriteString(">>>>>>> theirs\n")
+	}
+
+	return merged.Bytes(), conflictCount
+}
+
+func canResolveParallelInsertion(h diff3.Hunk) bool {
+	return len(bytes.TrimSpace(h.Base)) == 0 &&
+		len(bytes.TrimSpace(h.Ours)) > 0 &&
+		len(bytes.TrimSpace(h.Theirs)) > 0
+}
+
+func mergeParallelInsertions(ours, theirs []byte) []byte {
+	ours = append([]byte(nil), ours...)
+	if bytes.Equal(bytes.TrimSpace(ours), bytes.TrimSpace(theirs)) {
+		return ours
+	}
+	if len(ours) == 0 {
+		return append([]byte(nil), theirs...)
+	}
+	if len(theirs) == 0 {
+		return ours
+	}
+
+	out := ours
+	if out[len(out)-1] != '\n' {
+		out = append(out, '\n')
+	}
+	out = append(out, theirs...)
+	return out
 }

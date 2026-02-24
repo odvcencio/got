@@ -1,6 +1,7 @@
 package merge
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -323,6 +324,61 @@ func A() {
 	// func A should still be present (unchanged)
 	if !strings.Contains(string(result.Merged), "func A()") {
 		t.Errorf("func A() should be present in merged output")
+	}
+}
+
+func TestMergeUnsupportedTextFallsBackToDiff3(t *testing.T) {
+	base := []byte("line-a\nline-b\nline-c\n")
+	ours := []byte("line-a-ours\nline-b\nline-c\n")
+	theirs := []byte("line-a\nline-b\ntheirs-line-c\n")
+
+	result, err := MergeFiles("notes.txt", base, ours, theirs)
+	if err != nil {
+		t.Fatalf("MergeFiles failed: %v", err)
+	}
+	if result.HasConflicts {
+		t.Fatalf("expected clean line-merge fallback, got conflicts: %+v", result)
+	}
+	merged := string(result.Merged)
+	if !strings.Contains(merged, "line-a-ours") {
+		t.Fatalf("merged output missing ours change: %q", merged)
+	}
+	if !strings.Contains(merged, "theirs-line-c") {
+		t.Fatalf("merged output missing theirs change: %q", merged)
+	}
+}
+
+func TestMergeBinaryConflictPreservesOurs(t *testing.T) {
+	base := []byte{0x00, 0x01, 0x02, 0x03}
+	ours := []byte{0x00, 0x09, 0x02, 0x03}
+	theirs := []byte{0x00, 0x01, 0x08, 0x03}
+
+	result, err := MergeFiles("data.bin", base, ours, theirs)
+	if err != nil {
+		t.Fatalf("MergeFiles failed: %v", err)
+	}
+	if !result.HasConflicts || result.ConflictCount == 0 {
+		t.Fatalf("expected binary conflict, got %+v", result)
+	}
+	if !bytes.Equal(result.Merged, ours) {
+		t.Fatalf("expected ours bytes to be preserved, got %v", result.Merged)
+	}
+}
+
+func TestMergeBinaryWhenOneSideUnchanged(t *testing.T) {
+	base := []byte{0x00, 0x01, 0x02}
+	ours := []byte{0x00, 0x01, 0x02}
+	theirs := []byte{0x00, 0x07, 0x02}
+
+	result, err := MergeFiles("data.bin", base, ours, theirs)
+	if err != nil {
+		t.Fatalf("MergeFiles failed: %v", err)
+	}
+	if result.HasConflicts {
+		t.Fatalf("expected clean binary merge when one side unchanged, got %+v", result)
+	}
+	if !bytes.Equal(result.Merged, theirs) {
+		t.Fatalf("expected theirs bytes, got %v", result.Merged)
 	}
 }
 

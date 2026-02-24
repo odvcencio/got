@@ -268,6 +268,30 @@ func TestExtractTypeScript(t *testing.T) {
 	verifyUniqueKeys(t, el)
 }
 
+func TestExtractTypeScriptClassMethods(t *testing.T) {
+	src := "class OrderService {\n  process() {}\n  validate() {}\n}\n"
+	el, err := Extract("service.ts", []byte(src))
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+
+	found := map[string]bool{}
+	for _, e := range el.Entities {
+		if e.Kind == KindDeclaration {
+			found[e.Name] = true
+		}
+	}
+	if !found["process"] {
+		t.Fatalf("expected method declaration 'process', got %+v", found)
+	}
+	if !found["validate"] {
+		t.Fatalf("expected method declaration 'validate', got %+v", found)
+	}
+
+	verifyByteCoverage(t, el)
+	verifyUniqueKeys(t, el)
+}
+
 func TestExtractUnknownExtension(t *testing.T) {
 	_, err := Extract("test.xyz", []byte("hello"))
 	if err == nil {

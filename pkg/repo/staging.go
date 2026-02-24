@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/odvcencio/got/pkg/entity"
 	"github.com/odvcencio/got/pkg/object"
@@ -95,13 +98,16 @@ func (r *Repo) Add(paths []string) error {
 		return fmt.Errorf("add: %w", err)
 	}
 
-	for _, p := range paths {
-		relPath, err := r.repoRelPath(p)
-		if err != nil {
-			return fmt.Errorf("add: resolve path %q: %w", p, err)
-		}
+	toAdd, err := r.expandAddPaths(paths)
+	if err != nil {
+		return fmt.Errorf("add: %w", err)
+	}
+	if len(toAdd) == 0 {
+		return fmt.Errorf("add: no files matched")
+	}
 
-		absPath := filepath.Join(r.RootDir, relPath)
+	for _, relPath := range toAdd {
+		absPath := filepath.Join(r.RootDir, filepath.FromSlash(relPath))
 		content, err := os.ReadFile(absPath)
 		if err != nil {
 			return fmt.Errorf("add: read %q: %w", relPath, err)
@@ -140,6 +146,40 @@ func (r *Repo) Add(paths []string) error {
 
 	if err := r.WriteStaging(stg); err != nil {
 		return fmt.Errorf("add: %w", err)
+	}
+	return nil
+}
+
+// Remove stages file deletions and optionally removes files from disk.
+func (r *Repo) Remove(paths []string, cached bool) error {
+	stg, err := r.ReadStaging()
+	if err != nil {
+		return fmt.Errorf("rm: %w", err)
+	}
+
+	toRemove, err := r.expandRemovePaths(paths, stg)
+	if err != nil {
+		return fmt.Errorf("rm: %w", err)
+	}
+	if len(toRemove) == 0 {
+		return fmt.Errorf("rm: no tracked files matched")
+	}
+
+	for _, relPath := range toRemove {
+		delete(stg.Entries, relPath)
+		if cached {
+			continue
+		}
+
+		absPath := filepath.Join(r.RootDir, filepath.FromSlash(relPath))
+		if err := os.Remove(absPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("rm: remove %q: %w", relPath, err)
+		}
+		r.removeEmptyParents(filepath.Dir(absPath))
+	}
+
+	if err := r.WriteStaging(stg); err != nil {
+		return fmt.Errorf("rm: %w", err)
 	}
 	return nil
 }
@@ -205,4 +245,177 @@ func (r *Repo) repoRelPath(p string) (string, error) {
 	}
 
 	return filepath.ToSlash(rel), nil
+}
+
+func (r *Repo) expandAddPaths(inputs []string) ([]string, error) {
+	ic := NewIgnoreChecker(r.RootDir)
+	seen := make(map[string]struct{})
+
+	for _, input := range inputs {
+		input = strings.TrimSpace(input)
+		if input == "" {
+			continue
+		}
+
+		if hasGlobMeta(input) {
+			spec, err := r.repoRelPath(input)
+			if err != nil {
+				return nil, fmt.Errorf("resolve path %q: %w", input, err)
+			}
+			if isOutsideRepo(spec) {
+				return nil, fmt.Errorf("path %q is outside repository", input)
+			}
+			globPattern := filepath.Join(r.RootDir, filepath.FromSlash(spec))
+			matches, err := filepath.Glob(globPattern)
+			if err != nil {
+				return nil, fmt.Errorf("glob %q: %w", input, err)
+			}
+			if len(matches) == 0 {
+				return nil, fmt.Errorf("pathspec %q did not match any files", input)
+			}
+			for _, m := range matches {
+				if err := r.collectAddPath(m, ic, seen); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		if err := r.collectAddPath(input, ic, seen); err != nil {
+			return nil, err
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (r *Repo) collectAddPath(input string, ic *IgnoreChecker, seen map[string]struct{}) error {
+	relPath, err := r.repoRelPath(input)
+	if err != nil {
+		return fmt.Errorf("resolve path %q: %w", input, err)
+	}
+	if isOutsideRepo(relPath) {
+		return fmt.Errorf("path %q is outside repository", input)
+	}
+	if relPath == "." {
+		relPath = ""
+	}
+
+	absPath := filepath.Join(r.RootDir, filepath.FromSlash(relPath))
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return fmt.Errorf("stat %q: %w", relPath, err)
+	}
+	if !info.IsDir() {
+		rel := filepath.ToSlash(relPath)
+		if ic.IsIgnored(rel) {
+			return nil
+		}
+		seen[rel] = struct{}{}
+		return nil
+	}
+
+	return filepath.WalkDir(absPath, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(r.RootDir, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "." {
+			return nil
+		}
+		if d.IsDir() {
+			if ic.IsIgnored(rel) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if ic.IsIgnored(rel) {
+			return nil
+		}
+		seen[rel] = struct{}{}
+		return nil
+	})
+}
+
+func (r *Repo) expandRemovePaths(inputs []string, stg *Staging) ([]string, error) {
+	tracked := make([]string, 0, len(stg.Entries))
+	for p := range stg.Entries {
+		tracked = append(tracked, filepath.ToSlash(p))
+	}
+	sort.Strings(tracked)
+
+	seen := make(map[string]struct{})
+	for _, input := range inputs {
+		input = strings.TrimSpace(input)
+		if input == "" {
+			continue
+		}
+
+		spec, err := r.repoRelPath(input)
+		if err != nil {
+			return nil, fmt.Errorf("resolve path %q: %w", input, err)
+		}
+		spec = filepath.ToSlash(spec)
+		if isOutsideRepo(spec) {
+			return nil, fmt.Errorf("path %q is outside repository", input)
+		}
+
+		matched := false
+		if spec == "." || spec == "" {
+			for _, p := range tracked {
+				seen[p] = struct{}{}
+			}
+			matched = len(tracked) > 0
+		} else if hasGlobMeta(spec) {
+			for _, p := range tracked {
+				if matchPathspec(spec, p) {
+					seen[p] = struct{}{}
+					matched = true
+				}
+			}
+		} else {
+			for _, p := range tracked {
+				if p == spec || strings.HasPrefix(p, spec+"/") {
+					seen[p] = struct{}{}
+					matched = true
+				}
+			}
+		}
+		if !matched {
+			return nil, fmt.Errorf("pathspec %q did not match tracked files", input)
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func hasGlobMeta(path string) bool {
+	return strings.ContainsAny(path, "*?[")
+}
+
+func matchPathspec(spec, path string) bool {
+	if strings.Contains(spec, "/") {
+		ok, _ := filepath.Match(spec, path)
+		return ok
+	}
+	ok, _ := filepath.Match(spec, filepath.Base(path))
+	return ok
+}
+
+func isOutsideRepo(rel string) bool {
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	return rel == ".." || strings.HasPrefix(rel, "../")
 }

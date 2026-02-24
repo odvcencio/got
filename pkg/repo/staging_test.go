@@ -118,9 +118,9 @@ func TestAdd_MultipleFiles(t *testing.T) {
 	}
 
 	files := map[string][]byte{
-		"a.go":   []byte("package a\n\nfunc A() {}\n"),
-		"b.go":   []byte("package b\n\nfunc B() {}\n"),
-		"c.txt":  []byte("hello world"),
+		"a.go":  []byte("package a\n\nfunc A() {}\n"),
+		"b.go":  []byte("package b\n\nfunc B() {}\n"),
+		"c.txt": []byte("hello world"),
 	}
 	for name, data := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
@@ -342,6 +342,204 @@ func TestAdd_SubdirectoryPath(t *testing.T) {
 
 	if _, ok := stg.Entries["pkg/util/util.go"]; !ok {
 		t.Errorf("expected entry keyed as 'pkg/util/util.go', got keys: %v", keys(stg.Entries))
+	}
+}
+
+func TestAdd_DotStagesRecursivelyAndHonorsIgnore(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, ".gotignore"), []byte("ignored.txt\nbuild/\n"), 0o644); err != nil {
+		t.Fatalf("write .gotignore: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
+		t.Fatalf("mkdir pkg: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "build"), 0o755); err != nil {
+		t.Fatalf("mkdir build: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "util.go"), []byte("package pkg\n"), 0o644); err != nil {
+		t.Fatalf("write pkg/util.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ignored.txt"), []byte("nope\n"), 0o644); err != nil {
+		t.Fatalf("write ignored.txt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "build", "gen.go"), []byte("package build\n"), 0o644); err != nil {
+		t.Fatalf("write build/gen.go: %v", err)
+	}
+
+	if err := r.Add([]string{"."}); err != nil {
+		t.Fatalf("Add .: %v", err)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+
+	if _, ok := stg.Entries["main.go"]; !ok {
+		t.Fatalf("expected main.go to be staged; keys: %v", keys(stg.Entries))
+	}
+	if _, ok := stg.Entries["pkg/util.go"]; !ok {
+		t.Fatalf("expected pkg/util.go to be staged; keys: %v", keys(stg.Entries))
+	}
+	if _, ok := stg.Entries["ignored.txt"]; ok {
+		t.Fatalf("ignored.txt should not be staged")
+	}
+	if _, ok := stg.Entries["build/gen.go"]; ok {
+		t.Fatalf("build/gen.go should not be staged")
+	}
+}
+
+func TestAdd_GlobPathspecStagesMatchingFiles(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package b\n"), 0o644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "c.txt"), []byte("plain\n"), 0o644); err != nil {
+		t.Fatalf("write c.txt: %v", err)
+	}
+
+	if err := r.Add([]string{"*.go"}); err != nil {
+		t.Fatalf("Add *.go: %v", err)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+
+	if len(stg.Entries) != 2 {
+		t.Fatalf("expected 2 staged files, got %d: %v", len(stg.Entries), keys(stg.Entries))
+	}
+	if _, ok := stg.Entries["a.go"]; !ok {
+		t.Fatalf("expected a.go staged; keys: %v", keys(stg.Entries))
+	}
+	if _, ok := stg.Entries["b.go"]; !ok {
+		t.Fatalf("expected b.go staged; keys: %v", keys(stg.Entries))
+	}
+	if _, ok := stg.Entries["c.txt"]; ok {
+		t.Fatalf("did not expect c.txt staged")
+	}
+}
+
+func TestRemove_RemovesFromIndexAndWorktree(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	path := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(path, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	if err := r.Remove([]string{"main.go"}, false); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected main.go removed from worktree, stat err=%v", err)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	if _, ok := stg.Entries["main.go"]; ok {
+		t.Fatalf("main.go should be removed from staging")
+	}
+}
+
+func TestRemove_CachedKeepsWorktreeFile(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	path := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(path, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	if err := r.Remove([]string{"main.go"}, true); err != nil {
+		t.Fatalf("Remove --cached: %v", err)
+	}
+
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected main.go to remain on disk, stat err=%v", err)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	if _, ok := stg.Entries["main.go"]; ok {
+		t.Fatalf("main.go should be removed from staging")
+	}
+}
+
+func TestRemove_DirectoryPathRemovesTrackedPrefix(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
+		t.Fatalf("mkdir pkg: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "a.go"), []byte("package pkg\n"), 0o644); err != nil {
+		t.Fatalf("write pkg/a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "b.go"), []byte("package pkg\n"), 0o644); err != nil {
+		t.Fatalf("write pkg/b.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := r.Add([]string{"main.go", "pkg/a.go", "pkg/b.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	if err := r.Remove([]string{"pkg"}, true); err != nil {
+		t.Fatalf("Remove pkg --cached: %v", err)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	if _, ok := stg.Entries["main.go"]; !ok {
+		t.Fatalf("expected main.go to remain staged")
+	}
+	if _, ok := stg.Entries["pkg/a.go"]; ok {
+		t.Fatalf("expected pkg/a.go to be removed from staging")
+	}
+	if _, ok := stg.Entries["pkg/b.go"]; ok {
+		t.Fatalf("expected pkg/b.go to be removed from staging")
 	}
 }
 

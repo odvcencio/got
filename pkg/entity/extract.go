@@ -2,6 +2,8 @@ package entity
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	gotreesitter "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/grammars"
@@ -10,10 +12,10 @@ import (
 
 // Aliases for the shared node type classification maps.
 var (
-	importTypes        = classify.ImportNodeTypes
-	declarationTypes   = classify.DeclarationNodeTypes
-	preambleTypes      = classify.PreambleNodeTypes
-	commentTypes       = classify.CommentNodeTypes
+	importTypes         = classify.ImportNodeTypes
+	declarationTypes    = classify.DeclarationNodeTypes
+	preambleTypes       = classify.PreambleNodeTypes
+	commentTypes        = classify.CommentNodeTypes
 	nameIdentifierTypes = classify.NameIdentifierTypes
 )
 
@@ -62,8 +64,25 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 	for i := 0; i < childCount; i++ {
 		child := root.Child(i)
 		kind := classifyNode(bt, child)
+		if kind == KindDeclaration && isContainerDeclaration(bt.NodeType(child)) {
+			nested := collectNestedDeclarationNodes(bt, child)
+			if len(nested) > 0 {
+				for _, n := range nested {
+					nodes = append(nodes, classifiedNode{node: n, kind: KindDeclaration})
+				}
+				continue
+			}
+		}
 		nodes = append(nodes, classifiedNode{node: child, kind: kind})
 	}
+	sort.Slice(nodes, func(i, j int) bool {
+		li := nodes[i].node.StartByte()
+		lj := nodes[j].node.StartByte()
+		if li == lj {
+			return nodes[i].node.EndByte() < nodes[j].node.EndByte()
+		}
+		return li < lj
+	})
 
 	// Build entities, filling gaps as interstitials.
 	var cursor uint32 // tracks current position in source
@@ -117,25 +136,81 @@ func classifyNode(bt *gotreesitter.BoundTree, node *gotreesitter.Node) EntityKin
 	if importTypes[nodeType] {
 		return KindImportBlock
 	}
-	if declarationTypes[nodeType] {
+	if isDeclarationNode(bt, node) {
 		return KindDeclaration
 	}
 	if commentTypes[nodeType] {
 		return KindInterstitial
 	}
 
-	// Fallback: if the node is named and has a child that looks like a name
-	// identifier, treat it as a declaration.
-	if node.IsNamed() {
-		for i := 0; i < node.NamedChildCount(); i++ {
-			childType := bt.NodeType(node.NamedChild(i))
-			if nameIdentifierTypes[childType] {
-				return KindDeclaration
-			}
+	return KindInterstitial
+}
+
+func isDeclarationNode(bt *gotreesitter.BoundTree, node *gotreesitter.Node) bool {
+	nodeType := bt.NodeType(node)
+	if declarationTypes[nodeType] {
+		return true
+	}
+	// Some grammars use node names not covered by the shared table.
+	if nodeType == "method_definition" {
+		return true
+	}
+	if !node.IsNamed() || !looksLikeDeclarationNodeType(nodeType) {
+		return false
+	}
+	return hasNameIdentifierDescendant(bt, node)
+}
+
+func looksLikeDeclarationNodeType(nodeType string) bool {
+	return strings.Contains(nodeType, "declaration") ||
+		strings.Contains(nodeType, "definition")
+}
+
+func hasNameIdentifierDescendant(bt *gotreesitter.BoundTree, node *gotreesitter.Node) bool {
+	for i := 0; i < node.NamedChildCount(); i++ {
+		child := node.NamedChild(i)
+		childType := bt.NodeType(child)
+		if nameIdentifierTypes[childType] {
+			return true
+		}
+		if hasNameIdentifierDescendant(bt, child) {
+			return true
 		}
 	}
+	return false
+}
 
-	return KindInterstitial
+func isContainerDeclaration(nodeType string) bool {
+	switch nodeType {
+	case "class_definition", "class_declaration", "interface_declaration":
+		return true
+	}
+	// Cover additional grammars where container declarations use other node names.
+	return strings.Contains(nodeType, "class") ||
+		strings.Contains(nodeType, "interface") ||
+		strings.Contains(nodeType, "trait") ||
+		strings.Contains(nodeType, "impl")
+}
+
+func collectNestedDeclarationNodes(bt *gotreesitter.BoundTree, node *gotreesitter.Node) []*gotreesitter.Node {
+	var out []*gotreesitter.Node
+	for i := 0; i < node.NamedChildCount(); i++ {
+		child := node.NamedChild(i)
+		if isDeclarationNode(bt, child) {
+			childType := bt.NodeType(child)
+			if isContainerDeclaration(childType) {
+				nested := collectNestedDeclarationNodes(bt, child)
+				if len(nested) > 0 {
+					out = append(out, nested...)
+					continue
+				}
+			}
+			out = append(out, child)
+			continue
+		}
+		out = append(out, collectNestedDeclarationNodes(bt, child)...)
+	}
+	return out
 }
 
 // extractNameAndReceiver extracts the declaration name and optional receiver
@@ -222,6 +297,9 @@ func extractFirstIdentifierName(bt *gotreesitter.BoundTree, node *gotreesitter.N
 		childType := bt.NodeType(child)
 		if nameIdentifierTypes[childType] {
 			return bt.NodeText(child)
+		}
+		if nested := extractFirstIdentifierName(bt, child); nested != "" {
+			return nested
 		}
 	}
 	return ""

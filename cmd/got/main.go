@@ -16,6 +16,7 @@ func main() {
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newInitCmd())
 	root.AddCommand(newAddCmd())
+	root.AddCommand(newRmCmd())
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newCommitCmd())
 	root.AddCommand(newLogCmd())
