@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,13 +15,14 @@ import (
 // It writes the hash to .got/refs/heads/<name>. Returns an error if the
 // branch already exists.
 func (r *Repo) CreateBranch(name string, target object.Hash) error {
-	refPath := filepath.Join(r.GotDir, "refs", "heads", name)
-
-	// Fail if branch already exists.
-	if _, err := os.Stat(refPath); err == nil {
-		return fmt.Errorf("create branch: branch %q already exists", name)
+	refName := filepath.ToSlash(filepath.Join("refs", "heads", name))
+	if err := r.UpdateRefCAS(refName, target, ""); err != nil {
+		if errors.Is(err, ErrRefCASMismatch) {
+			return fmt.Errorf("create branch: branch %q already exists", name)
+		}
+		return fmt.Errorf("create branch %q: %w", name, err)
 	}
-	return r.UpdateRef(filepath.ToSlash(filepath.Join("refs", "heads", name)), target)
+	return nil
 }
 
 // DeleteBranch removes the branch ref file .got/refs/heads/<name>.

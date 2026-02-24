@@ -1,12 +1,21 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/odvcencio/got/pkg/object"
+)
+
+var ErrRefCASMismatch = errors.New("ref compare-and-swap mismatch")
+
+const (
+	refLockRetryDelay = 5 * time.Millisecond
+	refLockWaitLimit  = 2 * time.Second
 )
 
 // Init creates a new Got repository at path. It creates the .got/ directory
@@ -127,45 +136,109 @@ func (r *Repo) ResolveRef(name string) (object.Hash, error) {
 }
 
 // UpdateRef writes a hash to the named ref file under .got/. Parent
-// directories are created as needed. The write is atomic: data is written
-// to a temporary file and then renamed into place.
+// directories are created as needed.
 func (r *Repo) UpdateRef(name string, h object.Hash) error {
-	refPath := filepath.Join(r.GotDir, name)
-	oldHash := object.Hash("")
-	if oldRaw, err := os.ReadFile(refPath); err == nil {
-		oldHash = object.Hash(strings.TrimSpace(string(oldRaw)))
+	return r.UpdateRefCAS(name, h)
+}
+
+// UpdateRefCAS writes a hash to the named ref file under .got/ using
+// lockfile + rename atomic semantics. If expectedOld is provided, the
+// update only succeeds when the current ref hash matches it.
+func (r *Repo) UpdateRefCAS(name string, h object.Hash, expectedOld ...object.Hash) error {
+	if len(expectedOld) > 1 {
+		return fmt.Errorf("update ref %q: expected at most one old hash", name)
 	}
+	hasExpectedOld := len(expectedOld) == 1
+	wantOldHash := object.Hash("")
+	if hasExpectedOld {
+		wantOldHash = expectedOld[0]
+	}
+
+	refPath := filepath.Join(r.GotDir, name)
 
 	dir := filepath.Dir(refPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("update ref %q: mkdir: %w", name, err)
 	}
 
-	// Atomic write: temp file + rename.
-	tmp, err := os.CreateTemp(dir, ".ref-tmp-*")
+	lockPath := refPath + ".lock"
+	lockFile, err := acquireRefLock(lockPath)
 	if err != nil {
-		return fmt.Errorf("update ref %q: tmpfile: %w", name, err)
+		return fmt.Errorf("update ref %q: lock: %w", name, err)
 	}
-	tmpName := tmp.Name()
+	cleanupLock := true
+	defer func() {
+		if lockFile != nil {
+			_ = lockFile.Close()
+		}
+		if cleanupLock {
+			_ = os.Remove(lockPath)
+		}
+	}()
 
-	if _, err := tmp.WriteString(string(h) + "\n"); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+	oldHash, err := readRefHash(refPath)
+	if err != nil {
+		return fmt.Errorf("update ref %q: read old hash: %w", name, err)
+	}
+	if hasExpectedOld && oldHash != wantOldHash {
+		return fmt.Errorf(
+			"update ref %q: %w (expected %s, found %s)",
+			name,
+			ErrRefCASMismatch,
+			wantOldHash,
+			oldHash,
+		)
+	}
+
+	if _, err := lockFile.WriteString(string(h) + "\n"); err != nil {
 		return fmt.Errorf("update ref %q: write: %w", name, err)
 	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+	if err := lockFile.Sync(); err != nil {
+		return fmt.Errorf("update ref %q: sync: %w", name, err)
+	}
+	if err := lockFile.Close(); err != nil {
+		lockFile = nil
 		return fmt.Errorf("update ref %q: close: %w", name, err)
 	}
+	lockFile = nil
 
-	if err := os.Rename(tmpName, refPath); err != nil {
-		os.Remove(tmpName)
+	if err := os.Rename(lockPath, refPath); err != nil {
 		return fmt.Errorf("update ref %q: rename: %w", name, err)
 	}
+	cleanupLock = false
 
 	if err := r.appendReflog(name, oldHash, h, "update"); err != nil {
 		fmt.Fprintf(os.Stderr, "got: warning: append reflog for %s failed: %v\n", name, err)
 	}
 
 	return nil
+}
+
+func acquireRefLock(lockPath string) (*os.File, error) {
+	deadline := time.Now().Add(refLockWaitLimit)
+	for {
+		f, err := os.OpenFile(lockPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err == nil {
+			return f, nil
+		}
+		if os.IsExist(err) {
+			if time.Now().After(deadline) {
+				return nil, fmt.Errorf("timeout waiting for lock %q", lockPath)
+			}
+			time.Sleep(refLockRetryDelay)
+			continue
+		}
+		return nil, err
+	}
+}
+
+func readRefHash(refPath string) (object.Hash, error) {
+	data, err := os.ReadFile(refPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return object.Hash(strings.TrimSpace(string(data))), nil
 }

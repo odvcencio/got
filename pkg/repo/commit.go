@@ -83,14 +83,19 @@ func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (ob
 
 	// head is either a ref path ("refs/heads/main") or a detached hash.
 	if strings.HasPrefix(head, "refs/") {
-		if err := r.UpdateRef(head, commitHash); err != nil {
-			return "", fmt.Errorf("commit: update ref %q: %w", head, err)
+		var updateErr error
+		if parentHash == "" {
+			updateErr = r.UpdateRefCAS(head, commitHash)
+		} else {
+			updateErr = r.UpdateRefCAS(head, commitHash, parentHash)
+		}
+		if updateErr != nil {
+			return "", fmt.Errorf("commit: update ref %q: %w", head, updateErr)
 		}
 	} else {
-		// Detached HEAD: write the hash directly to HEAD.
-		headPath := fmt.Sprintf("%s/HEAD", r.GotDir)
-		if err := os.WriteFile(headPath, []byte(string(commitHash)+"\n"), 0o644); err != nil {
-			return "", fmt.Errorf("commit: update HEAD: %w", err)
+		// Detached HEAD: update HEAD directly with a CAS against the old hash.
+		if err := r.UpdateRefCAS("HEAD", commitHash, object.Hash(strings.TrimSpace(head))); err != nil {
+			return "", fmt.Errorf("commit: update detached HEAD: %w", err)
 		}
 	}
 

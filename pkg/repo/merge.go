@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/odvcencio/got/pkg/merge"
@@ -742,8 +743,14 @@ func (r *Repo) commitMerge(message, author string, parent1, parent2 object.Hash)
 	if err != nil {
 		return "", fmt.Errorf("merge commit: read HEAD: %w", err)
 	}
-	if err := r.UpdateRef(head, commitHash); err != nil {
-		return "", fmt.Errorf("merge commit: update ref %q: %w", head, err)
+	if strings.HasPrefix(head, "refs/") {
+		if err := r.UpdateRefCAS(head, commitHash, parent1); err != nil {
+			return "", fmt.Errorf("merge commit: update ref %q: %w", head, err)
+		}
+	} else {
+		if err := r.UpdateRefCAS("HEAD", commitHash, parent1); err != nil {
+			return "", fmt.Errorf("merge commit: update detached HEAD: %w", err)
+		}
 	}
 
 	return commitHash, nil
