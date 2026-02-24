@@ -20,6 +20,7 @@ func main() {
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newCommitCmd())
 	root.AddCommand(newLogCmd())
+	root.AddCommand(newBlameCmd())
 	root.AddCommand(newDiffCmd())
 	root.AddCommand(newBranchCmd())
 	root.AddCommand(newTagCmd())
