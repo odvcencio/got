@@ -18,6 +18,7 @@ type ignorePattern struct {
 	negated  bool
 	dirOnly  bool
 	hasSlash bool // pattern contains a slash, so match against full path
+	regex    *regexp.Regexp
 }
 
 // NewIgnoreChecker creates an IgnoreChecker for the given repository root.
@@ -87,6 +88,11 @@ func parseLine(line string) *ignorePattern {
 	p.hasSlash = strings.Contains(line, "/")
 
 	p.pattern = line
+	if strings.Contains(line, "**") {
+		if re, err := regexp.Compile(globToRegex(line)); err == nil {
+			p.regex = re
+		}
+	}
 	return p
 }
 
@@ -125,26 +131,20 @@ func (p *ignorePattern) matches(path string) bool {
 
 	if p.hasSlash {
 		// Pattern contains a slash: match against the full relative path.
-		return matchIgnoreGlob(p.pattern, path)
+		return p.match(path)
 	}
 
 	// Pattern without a slash: match against the filename component only.
 	filename := filepath.Base(path)
-	return matchIgnoreGlob(p.pattern, filename)
+	return p.match(filename)
 }
 
-func matchIgnoreGlob(pattern, target string) bool {
-	// Fast path for standard filepath glob behavior when no globstar is used.
-	if !strings.Contains(pattern, "**") {
-		matched, _ := filepath.Match(pattern, target)
-		return matched
+func (p *ignorePattern) match(target string) bool {
+	if p.regex != nil {
+		return p.regex.MatchString(target)
 	}
-
-	re, err := regexp.Compile(globToRegex(pattern))
-	if err != nil {
-		return false
-	}
-	return re.MatchString(target)
+	matched, _ := filepath.Match(p.pattern, target)
+	return matched
 }
 
 func globToRegex(pattern string) string {

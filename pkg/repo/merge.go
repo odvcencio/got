@@ -36,6 +36,8 @@ type mergeConflictState struct {
 	mode       string
 }
 
+const maxMergeBaseBFSSteps = 1_000_000
+
 // FindMergeBase finds the first common ancestor of two commits using a
 // two-queue BFS. It alternates BFS steps between sides a and b; the first
 // commit visited by both sides is the merge base. If no common ancestor
@@ -49,10 +51,15 @@ func (r *Repo) FindMergeBase(a, b object.Hash) (object.Hash, error) {
 	visitedB := map[object.Hash]bool{b: true}
 	queueA := []object.Hash{a}
 	queueB := []object.Hash{b}
+	steps := 0
 
 	for len(queueA) > 0 || len(queueB) > 0 {
 		// Step from side A.
 		if len(queueA) > 0 {
+			steps++
+			if steps > maxMergeBaseBFSSteps {
+				return "", fmt.Errorf("find merge base: traversal exceeded safety limit (%d steps)", maxMergeBaseBFSSteps)
+			}
 			cur := queueA[0]
 			queueA = queueA[1:]
 
@@ -77,6 +84,10 @@ func (r *Repo) FindMergeBase(a, b object.Hash) (object.Hash, error) {
 
 		// Step from side B.
 		if len(queueB) > 0 {
+			steps++
+			if steps > maxMergeBaseBFSSteps {
+				return "", fmt.Errorf("find merge base: traversal exceeded safety limit (%d steps)", maxMergeBaseBFSSteps)
+			}
 			cur := queueB[0]
 			queueB = queueB[1:]
 

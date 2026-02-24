@@ -14,6 +14,8 @@ const (
 	MaxBatchObjects = 50000
 	// MaxBatchHaveHashes keeps batch request payloads under server body limits.
 	MaxBatchHaveHashes = 20000
+	// MaxBatchNegotiationRounds prevents unbounded negotiation loops.
+	MaxBatchNegotiationRounds = 1024
 )
 
 // FetchIntoStore fetches all objects reachable from wants into the local store.
@@ -28,7 +30,8 @@ func FetchIntoStore(ctx context.Context, c *Client, store *object.Store, wants, 
 
 	knownHaves, knownHaveSet := initKnownHaves(haves)
 	written := 0
-	for round := 0; round < 1024; round++ {
+	negotiationCompleted := false
+	for round := 0; round < MaxBatchNegotiationRounds; round++ {
 		batchObjects, truncated, err := c.BatchObjects(ctx, roots, selectBatchHaves(knownHaves, MaxBatchHaveHashes), MaxBatchObjects)
 		if err != nil {
 			return written, err
@@ -48,13 +51,18 @@ func FetchIntoStore(ctx context.Context, c *Client, store *object.Store, wants, 
 		}
 
 		if !truncated {
+			negotiationCompleted = true
 			break
 		}
 		// If the server keeps truncating without new objects, finish via point
 		// fetches to avoid spinning on duplicate batches.
 		if newInRound == 0 {
+			negotiationCompleted = true
 			break
 		}
+	}
+	if !negotiationCompleted {
+		return written, fmt.Errorf("batch negotiation exceeded %d rounds", MaxBatchNegotiationRounds)
 	}
 
 	// Always run closure for robustness against partial state and truncated batches.

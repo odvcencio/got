@@ -110,16 +110,19 @@ func (r *Repo) buildTreeDir(s *Staging, prefix string) (object.Hash, error) {
 // FlattenTree walks a tree object recursively, returning all file entries
 // with their full paths (using forward slashes).
 func (r *Repo) FlattenTree(h object.Hash) ([]TreeFileEntry, error) {
-	return r.flattenTreeRec(h, "")
+	result := make([]TreeFileEntry, 0, 64)
+	if err := r.flattenTreeInto(h, "", &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
-func (r *Repo) flattenTreeRec(h object.Hash, prefix string) ([]TreeFileEntry, error) {
+func (r *Repo) flattenTreeInto(h object.Hash, prefix string, out *[]TreeFileEntry) error {
 	treeObj, err := r.Store.ReadTree(h)
 	if err != nil {
-		return nil, fmt.Errorf("flatten tree: read %s: %w", h, err)
+		return fmt.Errorf("flatten tree: read %s: %w", h, err)
 	}
 
-	var result []TreeFileEntry
 	for _, entry := range treeObj.Entries {
 		fullPath := entry.Name
 		if prefix != "" {
@@ -127,13 +130,11 @@ func (r *Repo) flattenTreeRec(h object.Hash, prefix string) ([]TreeFileEntry, er
 		}
 
 		if entry.IsDir {
-			sub, err := r.flattenTreeRec(entry.SubtreeHash, fullPath)
-			if err != nil {
-				return nil, err
+			if err := r.flattenTreeInto(entry.SubtreeHash, fullPath, out); err != nil {
+				return err
 			}
-			result = append(result, sub...)
 		} else {
-			result = append(result, TreeFileEntry{
+			*out = append(*out, TreeFileEntry{
 				Path:           fullPath,
 				BlobHash:       entry.BlobHash,
 				EntityListHash: entry.EntityListHash,
@@ -141,5 +142,5 @@ func (r *Repo) flattenTreeRec(h object.Hash, prefix string) ([]TreeFileEntry, er
 			})
 		}
 	}
-	return result, nil
+	return nil
 }

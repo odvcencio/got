@@ -16,9 +16,9 @@ const objectSerializationVersion = "1"
 
 // MarshalBlob serializes a Blob to raw bytes (identity).
 func MarshalBlob(b *Blob) []byte {
-	out := make([]byte, len(b.Data))
-	copy(out, b.Data)
-	return out
+	// Keep zero-copy on write path to avoid doubling memory for large blobs.
+	// Callers must treat returned bytes as immutable until write is complete.
+	return b.Data
 }
 
 // UnmarshalBlob deserializes raw bytes into a Blob.

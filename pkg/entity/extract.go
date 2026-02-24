@@ -69,6 +69,24 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 
 	for i := 0; i < childCount; i++ {
 		child := root.Child(i)
+		childType := bt.NodeType(child)
+		// Some TypeScript parses surface "class" as a token plus adjacent
+		// identifier instead of a single class_declaration node. Synthesize a
+		// class declaration entity so class-level identity remains available.
+		if childType == "class" && i+1 < childCount {
+			next := root.Child(i + 1)
+			if next != nil && bt.NodeType(next) == "identifier" {
+				nodes = append(nodes, classifiedNode{
+					kind:     KindDeclaration,
+					start:    child.StartByte(),
+					end:      child.EndByte(),
+					declKind: "class_declaration",
+					name:     bt.NodeText(next),
+				})
+				continue
+			}
+		}
+
 		kind := classifyNode(bt, child)
 		if kind == KindDeclaration && isContainerDeclaration(bt.NodeType(child)) {
 			nested := collectNestedDeclarationNodes(bt, child)
@@ -94,6 +112,15 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 					receiver: receiver,
 				})
 
+				for _, n := range nested {
+					nodes = append(nodes, classifiedNode{node: n, kind: KindDeclaration})
+				}
+				continue
+			}
+		}
+		if kind == KindInterstitial {
+			nested := collectNestedDeclarationNodes(bt, child)
+			if len(nested) > 0 {
 				for _, n := range nested {
 					nodes = append(nodes, classifiedNode{node: n, kind: KindDeclaration})
 				}
@@ -213,8 +240,11 @@ func looksLikeDeclarationNodeType(nodeType string) bool {
 }
 
 func hasNameIdentifierDescendant(bt *gotreesitter.BoundTree, node *gotreesitter.Node) bool {
-	for i := 0; i < node.NamedChildCount(); i++ {
-		child := node.NamedChild(i)
+	for i := 0; i < node.ChildCount(); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
 		childType := bt.NodeType(child)
 		if nameIdentifierTypes[childType] {
 			return true
@@ -248,8 +278,11 @@ func isContainerDeclaration(nodeType string) bool {
 
 func collectNestedDeclarationNodes(bt *gotreesitter.BoundTree, node *gotreesitter.Node) []*gotreesitter.Node {
 	var out []*gotreesitter.Node
-	for i := 0; i < node.NamedChildCount(); i++ {
-		child := node.NamedChild(i)
+	for i := 0; i < node.ChildCount(); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
 		if isDeclarationNode(bt, child) {
 			childType := bt.NodeType(child)
 			if isContainerDeclaration(childType) {
@@ -346,8 +379,11 @@ func extractDeclaratorName(bt *gotreesitter.BoundTree, node *gotreesitter.Node) 
 // extractFirstIdentifierName finds the first named child that looks like an
 // identifier and returns its text.
 func extractFirstIdentifierName(bt *gotreesitter.BoundTree, node *gotreesitter.Node) string {
-	for i := 0; i < node.NamedChildCount(); i++ {
-		child := node.NamedChild(i)
+	for i := 0; i < node.ChildCount(); i++ {
+		child := node.Child(i)
+		if child == nil {
+			continue
+		}
 		childType := bt.NodeType(child)
 		if nameIdentifierTypes[childType] {
 			return bt.NodeText(child)

@@ -163,8 +163,9 @@ func (r *Repo) UpdateRef(name string, h object.Hash) error {
 		return fmt.Errorf("update ref %q: rename: %w", name, err)
 	}
 
-	// Reflog writes are best-effort; ref update already succeeded.
-	_ = r.appendReflog(name, oldHash, h, "update")
+	if err := r.appendReflog(name, oldHash, h, "update"); err != nil {
+		fmt.Fprintf(os.Stderr, "got: warning: append reflog for %s failed: %v\n", name, err)
+	}
 
 	return nil
 }
