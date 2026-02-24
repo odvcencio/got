@@ -97,13 +97,15 @@ func newCloneCmd() *cobra.Command {
 				selectedHash = h
 			}
 
+			// First checkout by commit hash while HEAD still points to an
+			// unborn branch, so clean-tree checks do not fail on initial clone.
+			if err := r.Checkout(string(selectedHash)); err != nil {
+				return err
+			}
 			if err := r.UpdateRef("refs/heads/"+selectedBranch, selectedHash); err != nil {
 				return err
 			}
 			if err := writeSymbolicHead(r, selectedBranch); err != nil {
-				return err
-			}
-			if err := r.Checkout(selectedBranch); err != nil {
 				return err
 			}
 

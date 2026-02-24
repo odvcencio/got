@@ -101,6 +101,15 @@ func newPullCmd() *cobra.Command {
 				}
 			}
 
+			needsWorktreeUpdate := currentBranch == branch && (!hasLocal || localHash != remoteHash)
+			if needsWorktreeUpdate {
+				// Checkout by commit hash before moving branch ref so clean-tree
+				// checks compare against the pre-pull HEAD state.
+				if err := r.Checkout(string(remoteHash)); err != nil {
+					return err
+				}
+			}
+
 			if err := r.UpdateRef(localRef, remoteHash); err != nil {
 				return err
 			}
@@ -108,8 +117,8 @@ func newPullCmd() *cobra.Command {
 				return err
 			}
 
-			if currentBranch == branch {
-				if err := r.Checkout(branch); err != nil {
+			if needsWorktreeUpdate {
+				if err := writeSymbolicHead(r, branch); err != nil {
 					return err
 				}
 			}
