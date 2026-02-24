@@ -26,6 +26,23 @@ func TestMarshalBlobDeterminism(t *testing.T) {
 	}
 }
 
+func TestMarshalBlobSharesBackingSlice(t *testing.T) {
+	orig := &Blob{Data: []byte("shared backing data")}
+	data := MarshalBlob(orig)
+
+	if !bytes.Equal(data, orig.Data) {
+		t.Fatalf("marshal bytes changed: got %q, want %q", data, orig.Data)
+	}
+	if len(data) > 0 && &data[0] != &orig.Data[0] {
+		t.Fatalf("MarshalBlob copied blob data")
+	}
+
+	data[0] = 'S'
+	if orig.Data[0] != 'S' {
+		t.Fatalf("MarshalBlob output does not alias Blob.Data")
+	}
+}
+
 func TestMarshalUnmarshalTag(t *testing.T) {
 	orig := &TagObj{
 		TargetHash: Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
