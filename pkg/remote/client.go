@@ -323,10 +323,16 @@ func (c *Client) PushObjects(ctx context.Context, objects []ObjectRecord) error 
 		if _, err := parseObjectType(string(obj.Type)); err != nil {
 			return fmt.Errorf("push object %d: %w", i, err)
 		}
+		computedHash := object.HashObject(obj.Type, obj.Data)
+		if provided := object.Hash(strings.TrimSpace(string(obj.Hash))); provided != "" && provided != computedHash {
+			return fmt.Errorf("push object %d: hash mismatch (provided %s, computed %s)", i, provided, computedHash)
+		}
 		payload := struct {
+			Hash string `json:"hash"`
 			Type string `json:"type"`
 			Data []byte `json:"data"`
 		}{
+			Hash: string(computedHash),
 			Type: string(obj.Type),
 			Data: obj.Data,
 		}
