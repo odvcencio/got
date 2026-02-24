@@ -230,8 +230,16 @@ var containerDeclarationNodeTypes = map[string]bool{
 	"class_definition":      true,
 	"class_declaration":     true,
 	"interface_declaration": true,
+	"struct_declaration":    true,
+	"struct_item":           true,
+	"enum_declaration":      true,
+	"enum_item":             true,
+	"trait_declaration":     true,
 	"trait_item":            true,
 	"impl_item":             true,
+	"object_declaration":    true,
+	"record_declaration":    true,
+	"protocol_declaration":  true,
 }
 
 func isContainerDeclaration(nodeType string) bool {
@@ -285,10 +293,10 @@ func extractNameAndReceiver(bt *gotreesitter.BoundTree, node *gotreesitter.Node)
 	case "class_definition", "class_declaration":
 		return extractFirstIdentifierName(bt, node), ""
 
-	case "struct_item", "enum_item", "trait_item", "impl_item":
+	case "struct_item", "struct_declaration", "enum_item", "enum_declaration", "trait_item", "trait_declaration", "impl_item":
 		return extractFirstIdentifierName(bt, node), ""
 
-	case "interface_declaration":
+	case "interface_declaration", "protocol_declaration", "record_declaration", "object_declaration":
 		return extractFirstIdentifierName(bt, node), ""
 
 	case "var_declaration":
