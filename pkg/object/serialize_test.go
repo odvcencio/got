@@ -367,3 +367,33 @@ func TestMarshalCommitOmitsEmptySignatureHeader(t *testing.T) {
 		t.Fatalf("did not expect signature header in unsigned commit: %q", string(data))
 	}
 }
+
+func TestMarshalUnmarshalCommitWithCommitterMetadata(t *testing.T) {
+	orig := &CommitObj{
+		TreeHash:           Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		Author:             "Alice <alice@example.com>",
+		Timestamp:          1700001234,
+		AuthorTimezone:     "+0200",
+		Committer:          "Bob <bob@example.com>",
+		CommitterTimestamp: 1700005678,
+		CommitterTimezone:  "-0700",
+		Message:            "preserve committer metadata",
+	}
+	data := MarshalCommit(orig)
+	got, err := UnmarshalCommit(data)
+	if err != nil {
+		t.Fatalf("UnmarshalCommit: %v", err)
+	}
+	if got.AuthorTimezone != orig.AuthorTimezone {
+		t.Fatalf("AuthorTimezone: got %q, want %q", got.AuthorTimezone, orig.AuthorTimezone)
+	}
+	if got.Committer != orig.Committer {
+		t.Fatalf("Committer: got %q, want %q", got.Committer, orig.Committer)
+	}
+	if got.CommitterTimestamp != orig.CommitterTimestamp {
+		t.Fatalf("CommitterTimestamp: got %d, want %d", got.CommitterTimestamp, orig.CommitterTimestamp)
+	}
+	if got.CommitterTimezone != orig.CommitterTimezone {
+		t.Fatalf("CommitterTimezone: got %q, want %q", got.CommitterTimezone, orig.CommitterTimezone)
+	}
+}

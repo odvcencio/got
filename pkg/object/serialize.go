@@ -287,10 +287,14 @@ func parseTreeMode(mode string) (bool, string, error) {
 // MarshalCommit serializes a CommitObj:
 //
 //	tree H
-//	parent H     (zero or more)
+//	parent H               (zero or more)
 //	author A
 //	timestamp T
-//	signature S  (optional)
+//	author_tz TZ           (optional)
+//	committer C            (optional)
+//	committer_timestamp T  (optional)
+//	committer_tz TZ        (optional)
+//	signature S            (optional)
 //
 //	message
 func MarshalCommit(c *CommitObj) []byte {
@@ -302,6 +306,18 @@ func MarshalCommit(c *CommitObj) []byte {
 	}
 	fmt.Fprintf(&buf, "author %s\n", c.Author)
 	fmt.Fprintf(&buf, "timestamp %d\n", c.Timestamp)
+	if strings.TrimSpace(c.AuthorTimezone) != "" {
+		fmt.Fprintf(&buf, "author_tz %s\n", c.AuthorTimezone)
+	}
+	if strings.TrimSpace(c.Committer) != "" {
+		fmt.Fprintf(&buf, "committer %s\n", c.Committer)
+	}
+	if c.CommitterTimestamp != 0 {
+		fmt.Fprintf(&buf, "committer_timestamp %d\n", c.CommitterTimestamp)
+	}
+	if strings.TrimSpace(c.CommitterTimezone) != "" {
+		fmt.Fprintf(&buf, "committer_tz %s\n", c.CommitterTimezone)
+	}
 	if strings.TrimSpace(c.Signature) != "" {
 		fmt.Fprintf(&buf, "signature %s\n", c.Signature)
 	}
@@ -342,6 +358,18 @@ func UnmarshalCommit(data []byte) (*CommitObj, error) {
 				return nil, fmt.Errorf("unmarshal commit: bad timestamp %q: %w", val, err)
 			}
 			c.Timestamp = ts
+		case "author_tz":
+			c.AuthorTimezone = val
+		case "committer":
+			c.Committer = val
+		case "committer_timestamp":
+			ts, err := strconv.ParseInt(val, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("unmarshal commit: bad committer timestamp %q: %w", val, err)
+			}
+			c.CommitterTimestamp = ts
+		case "committer_tz":
+			c.CommitterTimezone = val
 		case "signature":
 			c.Signature = val
 		default:

@@ -60,10 +60,14 @@ type TreeObj struct {
 
 // CommitObj represents a commit pointing to a tree with metadata.
 type CommitObj struct {
-	TreeHash  Hash
-	Parents   []Hash
-	Author    string
-	Timestamp int64
-	Signature string
-	Message   string
+	TreeHash           Hash
+	Parents            []Hash
+	Author             string
+	Timestamp          int64
+	AuthorTimezone     string
+	Committer          string
+	CommitterTimestamp int64
+	CommitterTimezone  string
+	Signature          string
+	Message            string
 }
