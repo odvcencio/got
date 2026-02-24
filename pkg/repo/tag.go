@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/odvcencio/got/pkg/object"
 )
@@ -30,6 +31,66 @@ func (r *Repo) CreateTag(name string, target object.Hash, force bool) error {
 		return fmt.Errorf("create tag: %w", err)
 	}
 	return nil
+}
+
+// CreateAnnotatedTag creates or updates an annotated tag ref under refs/tags/.
+// The ref points at a stored tag object, which in turn points at target.
+func (r *Repo) CreateAnnotatedTag(name string, target object.Hash, tagger, message string, force bool) (object.Hash, error) {
+	name = strings.TrimSpace(name)
+	if err := validateTagName(name); err != nil {
+		return "", fmt.Errorf("create annotated tag: %w", err)
+	}
+	if strings.TrimSpace(string(target)) == "" {
+		return "", fmt.Errorf("create annotated tag: target hash is required")
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return "", fmt.Errorf("create annotated tag: message is required")
+	}
+	tagger = strings.TrimSpace(tagger)
+	if tagger == "" {
+		tagger = "unknown"
+	}
+
+	targetType, _, err := r.Store.Read(target)
+	if err != nil {
+		return "", fmt.Errorf("create annotated tag: read target %s: %w", target, err)
+	}
+
+	refName := "refs/tags/" + name
+	if !force {
+		if _, err := r.ResolveRef(refName); err == nil {
+			return "", fmt.Errorf("create annotated tag: tag %q already exists", name)
+		}
+	}
+
+	now := time.Now()
+	payload := fmt.Sprintf(
+		"object %s\n"+
+			"type %s\n"+
+			"tag %s\n"+
+			"tagger %s %d %s\n\n"+
+			"%s\n",
+		target,
+		targetType,
+		name,
+		tagger,
+		now.Unix(),
+		formatTimezoneOffset(now),
+		message,
+	)
+	tagHash, err := r.Store.WriteTag(&object.TagObj{
+		TargetHash: target,
+		Data:       []byte(payload),
+	})
+	if err != nil {
+		return "", fmt.Errorf("create annotated tag: write tag object: %w", err)
+	}
+
+	if err := r.UpdateRef(refName, tagHash); err != nil {
+		return "", fmt.Errorf("create annotated tag: %w", err)
+	}
+	return tagHash, nil
 }
 
 // DeleteTag removes a tag ref from refs/tags/.
@@ -103,4 +164,16 @@ func validateTagName(name string) error {
 		return fmt.Errorf("invalid tag name %q", name)
 	}
 	return nil
+}
+
+func formatTimezoneOffset(t time.Time) string {
+	_, offset := t.Zone()
+	sign := "+"
+	if offset < 0 {
+		sign = "-"
+		offset = -offset
+	}
+	hours := offset / 3600
+	minutes := (offset % 3600) / 60
+	return fmt.Sprintf("%s%02d%02d", sign, hours, minutes)
 }

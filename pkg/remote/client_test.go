@@ -150,3 +150,13 @@ func TestPushObjectsRejectsProvidedHashMismatch(t *testing.T) {
 		t.Fatalf("expected no HTTP requests on local hash mismatch, got %d", requests)
 	}
 }
+
+func TestParseObjectTypeAcceptsTag(t *testing.T) {
+	got, err := parseObjectType("tag")
+	if err != nil {
+		t.Fatalf("parseObjectType(tag): %v", err)
+	}
+	if got != object.TypeTag {
+		t.Fatalf("parseObjectType(tag) = %q, want %q", got, object.TypeTag)
+	}
+}

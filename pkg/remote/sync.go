@@ -260,6 +260,12 @@ func referencedHashes(objType object.ObjectType, data []byte) ([]object.Hash, er
 	switch objType {
 	case object.TypeBlob, object.TypeEntity:
 		return nil, nil
+	case object.TypeTag:
+		tag, err := object.UnmarshalTag(data)
+		if err != nil {
+			return nil, err
+		}
+		return []object.Hash{tag.TargetHash}, nil
 	case object.TypeCommit:
 		commit, err := object.UnmarshalCommit(data)
 		if err != nil {

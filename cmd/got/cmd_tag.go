@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -14,10 +15,13 @@ func newTagCmd() *cobra.Command {
 	var deleteTag string
 	var force bool
 	var showHash bool
+	var annotate bool
+	var message string
+	var tagger string
 
 	cmd := &cobra.Command{
 		Use:   "tag [name] [target]",
-		Short: "List, create, or delete lightweight tags",
+		Short: "List, create, or delete tags",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := repo.Open(".")
@@ -70,6 +74,23 @@ func newTagCmd() *cobra.Command {
 				target = head
 			}
 
+			if strings.TrimSpace(message) != "" {
+				annotate = true
+			}
+			if annotate {
+				if strings.TrimSpace(message) == "" {
+					return fmt.Errorf("annotated tags require --message")
+				}
+				tagIdentity := strings.TrimSpace(tagger)
+				if tagIdentity == "" {
+					tagIdentity = strings.TrimSpace(os.Getenv("USER"))
+				}
+				if tagIdentity == "" {
+					tagIdentity = "unknown"
+				}
+				_, err := r.CreateAnnotatedTag(name, target, tagIdentity, message, force)
+				return err
+			}
 			return r.CreateTag(name, target, force)
 		},
 	}
@@ -77,6 +98,9 @@ func newTagCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&deleteTag, "delete", "d", "", "delete the named tag")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "replace an existing tag")
 	cmd.Flags().BoolVar(&showHash, "show-hash", false, "show tag target hashes when listing")
+	cmd.Flags().BoolVarP(&annotate, "annotate", "a", false, "create an annotated tag object")
+	cmd.Flags().StringVarP(&message, "message", "m", "", "tag message (implies --annotate)")
+	cmd.Flags().StringVar(&tagger, "tagger", "", "override tagger identity (default: $USER)")
 
 	return cmd
 }

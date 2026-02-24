@@ -315,6 +315,53 @@ func TestCollectObjectsForPushStopsAtReachableRoots(t *testing.T) {
 	}
 }
 
+func TestCollectObjectsForPushTraversesTagTargets(t *testing.T) {
+	store := object.NewStore(t.TempDir())
+
+	blobHash, err := store.WriteBlob(&object.Blob{Data: []byte("hello\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	treeHash, err := store.WriteTree(&object.TreeObj{
+		Entries: []object.TreeEntry{{Name: "README.md", BlobHash: blobHash}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitHash, err := store.WriteCommit(&object.CommitObj{
+		TreeHash:  treeHash,
+		Author:    "Alice",
+		Timestamp: 1700000000,
+		Message:   "init",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tagHash, err := store.WriteTag(&object.TagObj{
+		TargetHash: commitHash,
+		Data: []byte("object " + string(commitHash) + "\n" +
+			"type commit\n" +
+			"tag v1.0.0\n\nrelease\n"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	objs, err := CollectObjectsForPush(store, []object.Hash{tagHash}, nil)
+	if err != nil {
+		t.Fatalf("CollectObjectsForPush: %v", err)
+	}
+	got := make(map[object.Hash]struct{}, len(objs))
+	for _, obj := range objs {
+		got[obj.Hash] = struct{}{}
+	}
+	for _, want := range []object.Hash{tagHash, commitHash, treeHash, blobHash} {
+		if _, ok := got[want]; !ok {
+			t.Fatalf("expected object %s in traversal", want)
+		}
+	}
+}
+
 func TestReachableSetIgnoresMissingRoots(t *testing.T) {
 	store := object.NewStore(t.TempDir())
 	blobHash, err := store.WriteBlob(&object.Blob{Data: []byte("hello")})

@@ -456,7 +456,7 @@ func (c *Client) applyAuth(req *http.Request) {
 
 func parseObjectType(raw string) (object.ObjectType, error) {
 	switch object.ObjectType(strings.TrimSpace(raw)) {
-	case object.TypeBlob, object.TypeTree, object.TypeCommit, object.TypeEntity, object.TypeEntityList:
+	case object.TypeBlob, object.TypeTag, object.TypeTree, object.TypeCommit, object.TypeEntity, object.TypeEntityList:
 		return object.ObjectType(strings.TrimSpace(raw)), nil
 	default:
 		return "", fmt.Errorf("unsupported object type %q", raw)
