@@ -26,6 +26,7 @@ func main() {
 	root.AddCommand(newTagCmd())
 	root.AddCommand(newCheckoutCmd())
 	root.AddCommand(newMergeCmd())
+	root.AddCommand(newCherryPickCmd())
 	root.AddCommand(newRemoteCmd())
 	root.AddCommand(newCloneCmd())
 	root.AddCommand(newPullCmd())
