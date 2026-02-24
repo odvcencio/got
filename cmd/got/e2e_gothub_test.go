@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,6 +67,13 @@ func TestGotCLIClonePushPullAgainstGothub(t *testing.T) {
 	updated := readText(t, filepath.Join(repo1, "main.go"))
 	if !strings.Contains(updated, "func feature() {}") {
 		t.Fatalf("pull did not update working tree:\n%s", updated)
+	}
+
+	runCommand(t, cloneDir, gotBin, "tag", "-a", "-m", "release 1.0.0", "v1.0.0")
+	runCommand(t, cloneDir, gotBin, "push", "origin", "refs/tags/v1.0.0")
+	refs := listProtocolRefs(t, remoteURL)
+	if strings.TrimSpace(refs["tags/v1.0.0"]) == "" {
+		t.Fatalf("expected pushed tag refs/tags/v1.0.0 to exist on remote, refs=%v", refs)
 	}
 }
 
@@ -246,4 +254,40 @@ func createRepo(t *testing.T, baseURL, token, name string) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create repo failed (%d): %s", resp.StatusCode, string(body))
 	}
+}
+
+func listProtocolRefs(t *testing.T, remoteURL string) map[string]string {
+	t.Helper()
+	parsed, err := url.Parse(remoteURL)
+	if err != nil {
+		t.Fatalf("parse remote url %q: %v", remoteURL, err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(remoteURL, "/")+"/refs", nil)
+	if err != nil {
+		t.Fatalf("build refs request: %v", err)
+	}
+	if parsed.User != nil {
+		user := parsed.User.Username()
+		pass, _ := parsed.User.Password()
+		if strings.TrimSpace(user) != "" {
+			req.SetBasicAuth(user, pass)
+		}
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("list refs request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list refs failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	out := map[string]string{}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode refs response: %v", err)
+	}
+	return out
 }
