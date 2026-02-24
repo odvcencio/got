@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,19 +11,61 @@ import (
 )
 
 const (
-	// MaxBatchObjects mirrors gothub's current server-side cap.
-	MaxBatchObjects = 50000
-	// MaxBatchHaveHashes keeps batch request payloads under server body limits.
-	MaxBatchHaveHashes = 20000
-	// MaxBatchNegotiationRounds prevents unbounded negotiation loops.
-	MaxBatchNegotiationRounds = 1024
+	// DefaultMaxBatchObjects mirrors gothub's current server-side cap.
+	DefaultMaxBatchObjects = 50000
+	// DefaultMaxBatchHaveHashes keeps batch request payloads under server body limits.
+	DefaultMaxBatchHaveHashes = 20000
+	// DefaultMaxBatchNegotiationRounds prevents unbounded negotiation loops.
+	DefaultMaxBatchNegotiationRounds = 1024
+
+	// MaxBatchObjects is kept for backward compatibility.
+	MaxBatchObjects = DefaultMaxBatchObjects
+	// MaxBatchHaveHashes is kept for backward compatibility.
+	MaxBatchHaveHashes = DefaultMaxBatchHaveHashes
+	// MaxBatchNegotiationRounds is kept for backward compatibility.
+	MaxBatchNegotiationRounds = DefaultMaxBatchNegotiationRounds
+
+	collectObjectsInitialCapacity = 1024
 )
+
+// ErrBatchNegotiationRoundLimitExceeded indicates the batch negotiation loop
+// reached the configured round limit while the server continued truncating.
+var ErrBatchNegotiationRoundLimitExceeded = errors.New("batch negotiation exceeded round limit")
+
+// FetchConfig controls batch negotiation behavior during FetchIntoStore.
+//
+// Zero values use package defaults.
+type FetchConfig struct {
+	MaxBatchObjects           int
+	MaxBatchHaveHashes        int
+	MaxBatchNegotiationRounds int
+}
+
+// DefaultFetchConfig returns the default FetchIntoStore settings.
+func DefaultFetchConfig() FetchConfig {
+	return FetchConfig{
+		MaxBatchObjects:           DefaultMaxBatchObjects,
+		MaxBatchHaveHashes:        DefaultMaxBatchHaveHashes,
+		MaxBatchNegotiationRounds: DefaultMaxBatchNegotiationRounds,
+	}
+}
 
 // FetchIntoStore fetches all objects reachable from wants into the local store.
 //
 // It starts with batch negotiation, then guarantees closure by walking the
 // object graph locally and fetching any still-missing object via GetObject.
 func FetchIntoStore(ctx context.Context, c *Client, store *object.Store, wants, haves []object.Hash) (int, error) {
+	return FetchIntoStoreWithConfig(ctx, c, store, wants, haves, FetchConfig{})
+}
+
+// FetchIntoStoreWithConfig fetches all objects reachable from wants into the
+// local store while honoring a caller-provided batch negotiation configuration.
+func FetchIntoStoreWithConfig(ctx context.Context, c *Client, store *object.Store, wants, haves []object.Hash, cfg FetchConfig) (int, error) {
+	cfg, err := resolveFetchConfig(cfg)
+	if err != nil {
+		return 0, err
+	}
+
 	roots := uniqueHashes(wants)
 	if len(roots) == 0 {
 		return 0, fmt.Errorf("at least one want hash is required")
@@ -31,8 +74,8 @@ func FetchIntoStore(ctx context.Context, c *Client, store *object.Store, wants, 
 	knownHaves, knownHaveSet := initKnownHaves(haves)
 	written := 0
 	negotiationCompleted := false
-	for round := 0; round < MaxBatchNegotiationRounds; round++ {
-		batchObjects, truncated, err := c.BatchObjects(ctx, roots, selectBatchHaves(knownHaves, MaxBatchHaveHashes), MaxBatchObjects)
+	for round := 0; round < cfg.MaxBatchNegotiationRounds; round++ {
+		batchObjects, truncated, err := c.BatchObjects(ctx, roots, selectBatchHaves(knownHaves, cfg.MaxBatchHaveHashes), cfg.MaxBatchObjects)
 		if err != nil {
 			return written, err
 		}
@@ -62,7 +105,7 @@ func FetchIntoStore(ctx context.Context, c *Client, store *object.Store, wants, 
 		}
 	}
 	if !negotiationCompleted {
-		return written, fmt.Errorf("batch negotiation exceeded %d rounds", MaxBatchNegotiationRounds)
+		return written, fmt.Errorf("%w: limit=%d", ErrBatchNegotiationRoundLimitExceeded, cfg.MaxBatchNegotiationRounds)
 	}
 
 	// Always run closure for robustness against partial state and truncated batches.
@@ -72,6 +115,37 @@ func FetchIntoStore(ctx context.Context, c *Client, store *object.Store, wants, 
 	}
 	written += n
 	return written, nil
+}
+
+func resolveFetchConfig(cfg FetchConfig) (FetchConfig, error) {
+	out := DefaultFetchConfig()
+
+	if cfg.MaxBatchObjects < 0 {
+		return out, fmt.Errorf("max batch objects must be >= 0 (got %d)", cfg.MaxBatchObjects)
+	}
+	if cfg.MaxBatchObjects > 0 {
+		out.MaxBatchObjects = cfg.MaxBatchObjects
+	}
+
+	if cfg.MaxBatchHaveHashes < 0 {
+		return out, fmt.Errorf("max batch have hashes must be >= 0 (got %d)", cfg.MaxBatchHaveHashes)
+	}
+	if cfg.MaxBatchHaveHashes > 0 {
+		out.MaxBatchHaveHashes = cfg.MaxBatchHaveHashes
+	}
+
+	if cfg.MaxBatchNegotiationRounds < 0 {
+		return out, fmt.Errorf("max batch negotiation rounds must be >= 0 (got %d)", cfg.MaxBatchNegotiationRounds)
+	}
+	if cfg.MaxBatchNegotiationRounds > 0 {
+		out.MaxBatchNegotiationRounds = cfg.MaxBatchNegotiationRounds
+	}
+
+	if out.MaxBatchNegotiationRounds == 0 {
+		return out, fmt.Errorf("max batch negotiation rounds must be > 0")
+	}
+
+	return out, nil
 }
 
 func initKnownHaves(haves []object.Hash) ([]object.Hash, map[object.Hash]struct{}) {
@@ -125,7 +199,7 @@ func CollectObjectsForPush(store *object.Store, roots, stopRoots []object.Hash) 
 	stack := make([]object.Hash, 0, len(roots))
 	stack = append(stack, roots...)
 
-	objects := make([]ObjectRecord, 0, 1024)
+	objects := make([]ObjectRecord, 0, collectObjectsInitialCapacity)
 	for len(stack) > 0 {
 		h := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]

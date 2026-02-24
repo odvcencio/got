@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -213,6 +214,68 @@ func TestFetchIntoStoreUsesMultipleBatchRounds(t *testing.T) {
 		if !localStore.Has(h) {
 			t.Fatalf("missing expected object %s", h)
 		}
+	}
+}
+
+func TestFetchIntoStoreRoundLimitExceeded(t *testing.T) {
+	remoteRoot := t.TempDir()
+	remoteStore := object.NewStore(remoteRoot)
+
+	blobHash, err := remoteStore.WriteBlob(&object.Blob{Data: []byte("hello\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobType, blobData, err := remoteStore.Read(blobHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	batchCalls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch":
+			batchCalls++
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"objects": []map[string]any{
+					{"hash": string(blobHash), "type": string(blobType), "data": blobData},
+				},
+				"truncated": true,
+			})
+			return
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/got/alice/repo/objects/"):
+			http.Error(w, "unexpected get", http.StatusInternalServerError)
+			return
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	localStore := object.NewStore(t.TempDir())
+
+	_, err = FetchIntoStoreWithConfig(
+		context.Background(),
+		client,
+		localStore,
+		[]object.Hash{blobHash},
+		nil,
+		FetchConfig{MaxBatchNegotiationRounds: 1},
+	)
+	if err == nil {
+		t.Fatalf("expected round limit exceeded error")
+	}
+	if !errors.Is(err, ErrBatchNegotiationRoundLimitExceeded) {
+		t.Fatalf("expected ErrBatchNegotiationRoundLimitExceeded, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "limit=1") {
+		t.Fatalf("expected limit details in error, got %v", err)
+	}
+	if batchCalls != 1 {
+		t.Fatalf("expected one batch call before stopping, got %d", batchCalls)
 	}
 }
 
