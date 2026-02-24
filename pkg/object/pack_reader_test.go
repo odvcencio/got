@@ -42,6 +42,80 @@ func TestReadPackRoundTrip(t *testing.T) {
 	if pf.Entries[1].Type != PackCommit || string(pf.Entries[1].Data) != "tree abc\n\nmsg\n" {
 		t.Fatalf("entry[1] mismatch: %+v", pf.Entries[1])
 	}
+	if pf.EntityTrailer != nil {
+		t.Fatalf("EntityTrailer = %+v, want nil", pf.EntityTrailer)
+	}
+}
+
+func TestReadPackRoundTripWithEntityTrailer(t *testing.T) {
+	var buf bytes.Buffer
+
+	blobData := []byte("hello")
+	blobHash := HashObject(TypeBlob, blobData)
+	pw, err := NewPackWriter(&buf, 1)
+	if err != nil {
+		t.Fatalf("NewPackWriter: %v", err)
+	}
+	if err := pw.WriteEntry(PackBlob, blobData); err != nil {
+		t.Fatalf("WriteEntry blob: %v", err)
+	}
+
+	entityEntries := []PackEntityTrailerEntry{
+		{
+			ObjectHash: blobHash,
+			StableID:   "decl:function_definition::Hello",
+		},
+	}
+	if _, err := pw.FinishWithEntityTrailer(entityEntries); err != nil {
+		t.Fatalf("FinishWithEntityTrailer: %v", err)
+	}
+
+	pf, err := ReadPack(buf.Bytes())
+	if err != nil {
+		t.Fatalf("ReadPack: %v", err)
+	}
+	if pf.EntityTrailer == nil {
+		t.Fatal("expected non-nil EntityTrailer")
+	}
+	if got := pf.EntityTrailer.Version; got != packEntityTrailerVersion {
+		t.Fatalf("EntityTrailer.Version = %d, want %d", got, packEntityTrailerVersion)
+	}
+	if len(pf.EntityTrailer.Entries) != 1 {
+		t.Fatalf("len(EntityTrailer.Entries) = %d, want 1", len(pf.EntityTrailer.Entries))
+	}
+	if got := pf.EntityTrailer.Entries[0].ObjectHash; got != blobHash {
+		t.Fatalf("EntityTrailer.Entries[0].ObjectHash = %s, want %s", got, blobHash)
+	}
+	if got := pf.EntityTrailer.Entries[0].StableID; got != "decl:function_definition::Hello" {
+		t.Fatalf("EntityTrailer.Entries[0].StableID = %q, want %q", got, "decl:function_definition::Hello")
+	}
+}
+
+func TestReadPackRejectsMalformedEntityTrailer(t *testing.T) {
+	var buf bytes.Buffer
+
+	pw, err := NewPackWriter(&buf, 1)
+	if err != nil {
+		t.Fatalf("NewPackWriter: %v", err)
+	}
+	if err := pw.WriteEntry(PackBlob, []byte("hello")); err != nil {
+		t.Fatalf("WriteEntry: %v", err)
+	}
+	if _, err := pw.FinishWithEntityTrailer([]PackEntityTrailerEntry{
+		{
+			ObjectHash: HashObject(TypeBlob, []byte("hello")),
+			StableID:   "decl:function_definition::Hello",
+		},
+	}); err != nil {
+		t.Fatalf("FinishWithEntityTrailer: %v", err)
+	}
+
+	data := append([]byte(nil), buf.Bytes()...)
+	data[len(data)-1] ^= 0xff
+
+	if _, err := ReadPack(data); err == nil {
+		t.Fatal("expected malformed entity trailer error")
+	}
 }
 
 func TestReadPackRejectsChecksumMismatch(t *testing.T) {

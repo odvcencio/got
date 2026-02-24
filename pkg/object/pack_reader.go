@@ -22,9 +22,10 @@ type PackEntry struct {
 
 // PackFile is the decoded content of a full pack stream.
 type PackFile struct {
-	Header   PackHeader
-	Entries  []PackEntry
-	Checksum Hash
+	Header        PackHeader
+	Entries       []PackEntry
+	Checksum      Hash
+	EntityTrailer *PackEntityTrailer
 }
 
 // ReadPack parses a full pack file byte slice, verifies trailer checksum, and
@@ -34,15 +35,7 @@ func ReadPack(data []byte) (*PackFile, error) {
 		return nil, fmt.Errorf("pack too short: %d", len(data))
 	}
 
-	payload := data[:len(data)-sha256.Size]
-	trailer := data[len(data)-sha256.Size:]
-
-	sum := sha256.Sum256(payload)
-	if !bytes.Equal(sum[:], trailer) {
-		return nil, fmt.Errorf("pack checksum mismatch")
-	}
-
-	header, err := UnmarshalPackHeader(payload[:packHeaderSize])
+	header, err := UnmarshalPackHeader(data[:packHeaderSize])
 	if err != nil {
 		return nil, err
 	}
@@ -51,18 +44,18 @@ func ReadPack(data []byte) (*PackFile, error) {
 	entries := make([]PackEntry, 0, header.NumObjects)
 	for i := uint32(0); i < header.NumObjects; i++ {
 		entryOffset := offset
-		objType, size, n, err := decodePackEntryHeaderStrict(payload[offset:])
+		objType, size, n, err := decodePackEntryHeaderStrict(data[offset:])
 		if err != nil {
 			return nil, fmt.Errorf("entry %d: %w", i, err)
 		}
 		offset += n
-		if offset >= len(payload) {
+		if offset >= len(data) {
 			return nil, fmt.Errorf("entry %d: missing compressed payload", i)
 		}
 		baseDistance := uint64(0)
 		baseRef := Hash("")
 		if objType == PackOfsDelta {
-			dist, dn, err := decodeOfsDeltaDistance(payload[offset:])
+			dist, dn, err := decodeOfsDeltaDistance(data[offset:])
 			if err != nil {
 				return nil, fmt.Errorf("entry %d: decode ofs-delta distance: %w", i, err)
 			}
@@ -70,14 +63,14 @@ func ReadPack(data []byte) (*PackFile, error) {
 			offset += dn
 		}
 		if objType == PackRefDelta {
-			if offset+32 > len(payload) {
+			if offset+32 > len(data) {
 				return nil, fmt.Errorf("entry %d: truncated ref-delta base hash", i)
 			}
-			baseRef = Hash(hex.EncodeToString(payload[offset : offset+32]))
+			baseRef = Hash(hex.EncodeToString(data[offset : offset+32]))
 			offset += 32
 		}
 
-		sub := bytes.NewReader(payload[offset:])
+		sub := bytes.NewReader(data[offset:])
 		zr, err := zlib.NewReader(sub)
 		if err != nil {
 			return nil, fmt.Errorf("entry %d: zlib reader: %w", i, err)
@@ -94,7 +87,7 @@ func ReadPack(data []byte) (*PackFile, error) {
 			return nil, fmt.Errorf("entry %d: size mismatch header=%d decoded=%d", i, size, len(raw))
 		}
 
-		consumed := len(payload[offset:]) - sub.Len()
+		consumed := len(data[offset:]) - sub.Len()
 		offset += consumed
 
 		entries = append(entries, PackEntry{
@@ -108,14 +101,33 @@ func ReadPack(data []byte) (*PackFile, error) {
 		})
 	}
 
-	if offset != len(payload) {
-		return nil, fmt.Errorf("pack has trailing undecoded bytes: %d", len(payload)-offset)
+	if offset+sha256.Size > len(data) {
+		return nil, fmt.Errorf("missing pack trailer checksum")
+	}
+
+	checksumRaw := data[offset : offset+sha256.Size]
+	sum := sha256.Sum256(data[:offset])
+	if !bytes.Equal(sum[:], checksumRaw) {
+		return nil, fmt.Errorf("pack checksum mismatch")
+	}
+
+	remaining := data[offset+sha256.Size:]
+	var entityTrailer *PackEntityTrailer
+	if len(remaining) > 0 {
+		if !bytes.Equal(remaining[:min(4, len(remaining))], packEntityTrailerMagic[:min(4, len(remaining))]) {
+			return nil, fmt.Errorf("pack has trailing undecoded bytes: %d", len(remaining))
+		}
+		entityTrailer, err = ReadPackEntityTrailer(remaining)
+		if err != nil {
+			return nil, fmt.Errorf("read entity trailer: %w", err)
+		}
 	}
 
 	return &PackFile{
-		Header:   *header,
-		Entries:  entries,
-		Checksum: Hash(hex.EncodeToString(trailer)),
+		Header:        *header,
+		Entries:       entries,
+		Checksum:      Hash(hex.EncodeToString(checksumRaw)),
+		EntityTrailer: entityTrailer,
 	}, nil
 }
 

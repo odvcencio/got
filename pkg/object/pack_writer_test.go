@@ -90,3 +90,47 @@ func TestPackWriterRejectsWriteAfterFinish(t *testing.T) {
 		t.Fatal("expected write-after-finish error")
 	}
 }
+
+func TestPackWriterFinishWithEntityTrailer(t *testing.T) {
+	var buf bytes.Buffer
+	pw, err := NewPackWriter(&buf, 1)
+	if err != nil {
+		t.Fatalf("NewPackWriter: %v", err)
+	}
+
+	blob := []byte("hello world")
+	blobHash := HashObject(TypeBlob, blob)
+	if err := pw.WriteEntry(PackBlob, blob); err != nil {
+		t.Fatalf("WriteEntry: %v", err)
+	}
+
+	checksum, err := pw.FinishWithEntityTrailer([]PackEntityTrailerEntry{
+		{
+			ObjectHash: blobHash,
+			StableID:   "decl:function_definition::Hello",
+		},
+	})
+	if err != nil {
+		t.Fatalf("FinishWithEntityTrailer: %v", err)
+	}
+	if checksum == "" {
+		t.Fatal("expected non-empty pack checksum")
+	}
+
+	pf, err := ReadPack(buf.Bytes())
+	if err != nil {
+		t.Fatalf("ReadPack: %v", err)
+	}
+	if got := pf.Checksum; got != checksum {
+		t.Fatalf("Pack checksum = %s, want %s", got, checksum)
+	}
+	if pf.EntityTrailer == nil {
+		t.Fatal("expected non-nil EntityTrailer")
+	}
+	if len(pf.EntityTrailer.Entries) != 1 {
+		t.Fatalf("len(EntityTrailer.Entries) = %d, want 1", len(pf.EntityTrailer.Entries))
+	}
+	if got := pf.EntityTrailer.Entries[0].ObjectHash; got != blobHash {
+		t.Fatalf("EntityTrailer.Entries[0].ObjectHash = %s, want %s", got, blobHash)
+	}
+}

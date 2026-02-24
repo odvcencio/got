@@ -139,9 +139,19 @@ func (p *PackWriter) WriteOfsDelta(baseOffset uint64, baseData, targetData []byt
 	return nil
 }
 
-// Finish validates object count, writes the trailing checksum, and returns the
-// checksum as a hex digest.
+// Finish validates object count, writes the trailing pack checksum, and returns
+// that checksum as a hex digest.
 func (p *PackWriter) Finish() (Hash, error) {
+	return p.finish(nil)
+}
+
+// FinishWithEntityTrailer behaves like Finish and additionally appends the
+// Got-specific entity trailer after the standard pack checksum.
+func (p *PackWriter) FinishWithEntityTrailer(entries []PackEntityTrailerEntry) (Hash, error) {
+	return p.finish(entries)
+}
+
+func (p *PackWriter) finish(entityTrailerEntries []PackEntityTrailerEntry) (Hash, error) {
 	if p.finished {
 		return "", fmt.Errorf("pack writer already finished")
 	}
@@ -149,9 +159,23 @@ func (p *PackWriter) Finish() (Hash, error) {
 		return "", fmt.Errorf("pack object count mismatch: wrote %d, expected %d", p.written, p.expected)
 	}
 
+	var entityTrailerRaw []byte
+	var err error
+	if len(entityTrailerEntries) > 0 {
+		entityTrailerRaw, err = MarshalPackEntityTrailer(entityTrailerEntries)
+		if err != nil {
+			return "", fmt.Errorf("marshal entity trailer: %w", err)
+		}
+	}
+
 	sum := p.hasher.Sum(nil)
 	if _, err := p.out.Write(sum); err != nil {
 		return "", fmt.Errorf("write pack trailer checksum: %w", err)
+	}
+	if len(entityTrailerRaw) > 0 {
+		if _, err := p.out.Write(entityTrailerRaw); err != nil {
+			return "", fmt.Errorf("write entity trailer: %w", err)
+		}
 	}
 
 	p.finished = true
