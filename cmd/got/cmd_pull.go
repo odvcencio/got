@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/odvcencio/got/pkg/object"
 	"github.com/odvcencio/got/pkg/remote"
@@ -12,9 +13,11 @@ import (
 )
 
 func newPullCmd() *cobra.Command {
+	var allowMerge bool
+
 	cmd := &cobra.Command{
 		Use:   "pull [remote] [branch]",
-		Short: "Fetch from remote and fast-forward a local branch",
+		Short: "Fetch from remote and fast-forward (or merge with --merge)",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := repo.Open(".")
@@ -96,8 +99,42 @@ func newPullCmd() *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("pull: merge-base: %w", err)
 				}
+				// Local already contains remote commit(s).
+				if base == remoteHash {
+					if err := r.UpdateRef(remoteTrackingRefName(remoteName, remoteRef), remoteHash); err != nil {
+						return err
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "already up to date (local %s is ahead of remote %s)\n", shortHash(localHash), shortHash(remoteHash))
+					return nil
+				}
+
+				// Diverged: require explicit merge mode.
 				if base != localHash {
-					return fmt.Errorf("pull would not fast-forward %s (local %s, remote %s)", branch, shortHash(localHash), shortHash(remoteHash))
+					if !allowMerge {
+						return fmt.Errorf("pull would not fast-forward %s (local %s, remote %s); retry with --merge", branch, shortHash(localHash), shortHash(remoteHash))
+					}
+					if currentBranch != branch {
+						return fmt.Errorf("pull --merge requires checked out branch %q (current: %q)", branch, currentBranch)
+					}
+
+					tempBranch := temporaryPullBranch(branch)
+					if err := r.UpdateRef("refs/heads/"+tempBranch, remoteHash); err != nil {
+						return fmt.Errorf("pull: create temp branch: %w", err)
+					}
+					defer func() { _ = r.DeleteBranch(tempBranch) }()
+
+					report, err := r.Merge(tempBranch)
+					if err != nil {
+						return fmt.Errorf("pull: merge: %w", err)
+					}
+					if err := r.UpdateRef(remoteTrackingRefName(remoteName, remoteRef), remoteHash); err != nil {
+						return err
+					}
+					if report.HasConflicts {
+						return fmt.Errorf("pull: merge completed with %d conflict(s); resolve conflicts and commit", report.TotalConflicts)
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "merged %s into %s (%d objects fetched)\n", shortHash(remoteHash), branch, fetched)
+					return nil
 				}
 			}
 
@@ -135,6 +172,7 @@ func newPullCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&allowMerge, "merge", false, "allow a merge commit when fast-forward is not possible")
 	return cmd
 }
 
@@ -144,4 +182,13 @@ func shortHash(h object.Hash) string {
 		return s
 	}
 	return s[:8]
+}
+
+func temporaryPullBranch(branch string) string {
+	replacer := strings.NewReplacer("/", "-", "\\", "-", " ", "-", ":", "-")
+	safe := replacer.Replace(strings.TrimSpace(branch))
+	if safe == "" {
+		safe = "branch"
+	}
+	return fmt.Sprintf("__pull_%s_%d", safe, time.Now().UnixNano())
 }
