@@ -11,9 +11,10 @@ import (
 
 // PackEntry represents one object entry in a pack stream.
 type PackEntry struct {
-	Type PackObjectType
-	Size uint64
-	Data []byte
+	Type         PackObjectType
+	Size         uint64
+	Data         []byte
+	BaseDistance uint64 // populated for OFS_DELTA entries
 }
 
 // PackFile is the decoded content of a full pack stream.
@@ -54,6 +55,18 @@ func ReadPack(data []byte) (*PackFile, error) {
 		if offset >= len(payload) {
 			return nil, fmt.Errorf("entry %d: missing compressed payload", i)
 		}
+		baseDistance := uint64(0)
+		if objType == PackOfsDelta {
+			dist, dn, err := decodeOfsDeltaDistance(payload[offset:])
+			if err != nil {
+				return nil, fmt.Errorf("entry %d: decode ofs-delta distance: %w", i, err)
+			}
+			baseDistance = dist
+			offset += dn
+		}
+		if objType == PackRefDelta {
+			return nil, fmt.Errorf("entry %d: ref-delta decode is not implemented", i)
+		}
 
 		sub := bytes.NewReader(payload[offset:])
 		zr, err := zlib.NewReader(sub)
@@ -76,9 +89,10 @@ func ReadPack(data []byte) (*PackFile, error) {
 		offset += consumed
 
 		entries = append(entries, PackEntry{
-			Type: objType,
-			Size: size,
-			Data: raw,
+			Type:         objType,
+			Size:         size,
+			Data:         raw,
+			BaseDistance: baseDistance,
 		})
 	}
 

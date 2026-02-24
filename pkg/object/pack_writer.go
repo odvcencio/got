@@ -1,6 +1,7 @@
 package object
 
 import (
+	"bytes"
 	"compress/zlib"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,12 +10,41 @@ import (
 	"io"
 )
 
+type packCountedWriter struct {
+	w io.Writer
+	n uint64
+}
+
+func (cw *packCountedWriter) Write(p []byte) (int, error) {
+	n, err := cw.w.Write(p)
+	cw.n += uint64(n)
+	return n, err
+}
+
+func (cw *packCountedWriter) Count() uint64 {
+	return cw.n
+}
+
+func compressPackPayload(raw []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	zw := zlib.NewWriter(&buf)
+	if _, err := zw.Write(raw); err != nil {
+		_ = zw.Close()
+		return nil, err
+	}
+	if err := zw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 // PackWriter writes Git-compatible pack streams with zlib-compressed object
 // entries. The trailer checksum is SHA-256 over all bytes preceding the trailer.
 type PackWriter struct {
 	out      io.Writer
 	hasher   hash.Hash
 	hashedW  io.Writer
+	counter  *packCountedWriter
 	expected uint32
 	written  uint32
 	finished bool
@@ -23,10 +53,12 @@ type PackWriter struct {
 // NewPackWriter initializes a new writer and writes the fixed pack header.
 func NewPackWriter(out io.Writer, numObjects uint32) (*PackWriter, error) {
 	hasher := sha256.New()
+	counter := &packCountedWriter{w: out}
 	pw := &PackWriter{
 		out:      out,
 		hasher:   hasher,
-		hashedW:  io.MultiWriter(out, hasher),
+		hashedW:  io.MultiWriter(counter, hasher),
+		counter:  counter,
 		expected: numObjects,
 	}
 
@@ -38,6 +70,12 @@ func NewPackWriter(out io.Writer, numObjects uint32) (*PackWriter, error) {
 		return nil, fmt.Errorf("write pack header: %w", err)
 	}
 	return pw, nil
+}
+
+// CurrentOffset returns the current byte offset in the pack stream (from pack
+// start), excluding the trailing checksum written by Finish().
+func (p *PackWriter) CurrentOffset() uint64 {
+	return p.counter.Count()
 }
 
 // WriteEntry appends one object entry to the pack stream.
@@ -54,13 +92,47 @@ func (p *PackWriter) WriteEntry(objType PackObjectType, data []byte) error {
 		return fmt.Errorf("write pack entry header: %w", err)
 	}
 
-	zw := zlib.NewWriter(p.hashedW)
-	if _, err := zw.Write(data); err != nil {
-		_ = zw.Close()
+	compressed, err := compressPackPayload(data)
+	if err != nil {
+		return fmt.Errorf("compress pack entry: %w", err)
+	}
+	if _, err := p.hashedW.Write(compressed); err != nil {
 		return fmt.Errorf("write compressed pack entry: %w", err)
 	}
-	if err := zw.Close(); err != nil {
-		return fmt.Errorf("close compressed pack entry: %w", err)
+
+	p.written++
+	return nil
+}
+
+// WriteOfsDelta writes an OFS_DELTA entry using an insert-only delta stream.
+func (p *PackWriter) WriteOfsDelta(baseOffset uint64, baseData, targetData []byte) error {
+	if p.finished {
+		return fmt.Errorf("pack writer already finished")
+	}
+	if p.written >= p.expected {
+		return fmt.Errorf("pack object count exceeded: expected %d", p.expected)
+	}
+	current := p.CurrentOffset()
+	if baseOffset >= current {
+		return fmt.Errorf("base offset %d must be before current offset %d", baseOffset, current)
+	}
+
+	delta := buildInsertOnlyDelta(baseData, targetData)
+	header := encodePackEntryHeader(PackOfsDelta, uint64(len(delta)))
+	ofs := encodeOfsDeltaDistance(current - baseOffset)
+	compressed, err := compressPackPayload(delta)
+	if err != nil {
+		return fmt.Errorf("compress delta payload: %w", err)
+	}
+
+	if _, err := p.hashedW.Write(header); err != nil {
+		return fmt.Errorf("write ofs-delta header: %w", err)
+	}
+	if _, err := p.hashedW.Write(ofs); err != nil {
+		return fmt.Errorf("write ofs-delta base distance: %w", err)
+	}
+	if _, err := p.hashedW.Write(compressed); err != nil {
+		return fmt.Errorf("write ofs-delta payload: %w", err)
 	}
 
 	p.written++
