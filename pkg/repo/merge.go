@@ -38,7 +38,44 @@ type mergeConflictState struct {
 	mode       string
 }
 
-const maxMergeBaseBFSSteps = 1_000_000
+const (
+	maxMergeBaseBFSSteps = 1_000_000
+	maxMergeBaseBFSDepth = 1_000_000
+)
+
+// These vars allow tests to tighten safety limits without affecting
+// production defaults.
+var (
+	mergeBaseBFSStepsLimit = maxMergeBaseBFSSteps
+	mergeBaseBFSDepthLimit = maxMergeBaseBFSDepth
+)
+
+type mergeBaseTraversalQueueItem struct {
+	hash  object.Hash
+	depth int
+}
+
+func mergeBaseTraversalLimits() (maxSteps int, maxDepth int) {
+	maxSteps = mergeBaseBFSStepsLimit
+	if maxSteps <= 0 {
+		maxSteps = maxMergeBaseBFSSteps
+	}
+
+	maxDepth = mergeBaseBFSDepthLimit
+	if maxDepth <= 0 {
+		maxDepth = maxMergeBaseBFSDepth
+	}
+
+	return maxSteps, maxDepth
+}
+
+func mergeBaseStepsLimitError(limit int) error {
+	return fmt.Errorf("find merge base: traversal exceeded maximum steps (%d)", limit)
+}
+
+func mergeBaseDepthLimitError(limit int) error {
+	return fmt.Errorf("find merge base: traversal exceeded maximum depth (%d)", limit)
+}
 
 // FindMergeBase finds a common ancestor of two commits. It uses cached
 // generation numbers for pruning, fast ancestor checks for linear histories,
@@ -124,18 +161,24 @@ func (r *Repo) isAncestorWithGeneration(state *mergeBaseTraversalState, ancestor
 		return false, nil
 	}
 
+	maxSteps, maxDepth := mergeBaseTraversalLimits()
 	visited := map[object.Hash]struct{}{descendant: {}}
-	queue := []object.Hash{descendant}
+	queue := []mergeBaseTraversalQueueItem{{hash: descendant, depth: 0}}
 	steps := 0
 
 	for len(queue) > 0 {
+		item := queue[0]
+		queue = queue[1:]
+
 		steps++
-		if steps > maxMergeBaseBFSSteps {
-			return false, fmt.Errorf("find merge base: traversal exceeded safety limit (%d steps)", maxMergeBaseBFSSteps)
+		if steps > maxSteps {
+			return false, mergeBaseStepsLimitError(maxSteps)
+		}
+		if item.depth > maxDepth {
+			return false, mergeBaseDepthLimitError(maxDepth)
 		}
 
-		cur := queue[0]
-		queue = queue[1:]
+		cur := item.hash
 		if cur == ancestor {
 			return true, nil
 		}
@@ -166,8 +209,12 @@ func (r *Repo) isAncestorWithGeneration(state *mergeBaseTraversalState, ancestor
 			if parentGeneration < ancestorGeneration {
 				continue
 			}
+			childDepth := item.depth + 1
+			if childDepth > maxDepth {
+				return false, mergeBaseDepthLimitError(maxDepth)
+			}
 			visited[p] = struct{}{}
-			queue = append(queue, p)
+			queue = append(queue, mergeBaseTraversalQueueItem{hash: p, depth: childDepth})
 		}
 	}
 
@@ -175,8 +222,12 @@ func (r *Repo) isAncestorWithGeneration(state *mergeBaseTraversalState, ancestor
 }
 
 func (r *Repo) findMergeBaseWithPruning(state *mergeBaseTraversalState, a, b object.Hash, genA, genB uint64) (object.Hash, bool, error) {
+	maxSteps, maxDepth := mergeBaseTraversalLimits()
+
 	visitedA := map[object.Hash]struct{}{a: {}}
 	visitedB := map[object.Hash]struct{}{b: {}}
+	depthA := map[object.Hash]int{a: 0}
+	depthB := map[object.Hash]int{b: 0}
 
 	queueA := mergeBaseMaxHeap{{hash: a, generation: genA}}
 	queueB := mergeBaseMaxHeap{{hash: b, generation: genB}}
@@ -222,11 +273,21 @@ func (r *Repo) findMergeBaseWithPruning(state *mergeBaseTraversalState, a, b obj
 		}
 
 		steps++
-		if steps > maxMergeBaseBFSSteps {
-			return "", false, fmt.Errorf("find merge base: traversal exceeded safety limit (%d steps)", maxMergeBaseBFSSteps)
+		if steps > maxSteps {
+			return "", false, mergeBaseStepsLimitError(maxSteps)
 		}
 		if best != "" && item.generation < bestGeneration {
 			continue
+		}
+
+		itemDepth := 0
+		if traverseA {
+			itemDepth = depthA[item.hash]
+		} else {
+			itemDepth = depthB[item.hash]
+		}
+		if itemDepth > maxDepth {
+			return "", false, mergeBaseDepthLimitError(maxDepth)
 		}
 
 		if traverseA {
@@ -257,11 +318,17 @@ func (r *Repo) findMergeBaseWithPruning(state *mergeBaseTraversalState, a, b obj
 				continue
 			}
 
+			childDepth := itemDepth + 1
+			if childDepth > maxDepth {
+				return "", false, mergeBaseDepthLimitError(maxDepth)
+			}
+
 			if traverseA {
 				if _, seen := visitedA[p]; seen {
 					continue
 				}
 				visitedA[p] = struct{}{}
+				depthA[p] = childDepth
 				heap.Push(&queueA, mergeBaseQueueItem{hash: p, generation: parentGeneration})
 				if _, seen := visitedB[p]; seen {
 					best, bestGeneration = chooseBetterMergeBase(best, bestGeneration, p, parentGeneration)
@@ -271,6 +338,7 @@ func (r *Repo) findMergeBaseWithPruning(state *mergeBaseTraversalState, a, b obj
 					continue
 				}
 				visitedB[p] = struct{}{}
+				depthB[p] = childDepth
 				heap.Push(&queueB, mergeBaseQueueItem{hash: p, generation: parentGeneration})
 				if _, seen := visitedA[p]; seen {
 					best, bestGeneration = chooseBetterMergeBase(best, bestGeneration, p, parentGeneration)
