@@ -49,9 +49,14 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			// Categorize entries.
-			var staged, unstaged, untracked []string
+			var conflicts, staged, unstaged, untracked []string
 
 			for _, e := range entries {
+				if e.IndexStatus == repo.StatusConflict || e.WorkStatus == repo.StatusConflict {
+					conflicts = append(conflicts, fmt.Sprintf("  ! %s", filepath.ToSlash(e.Path)))
+					continue
+				}
+
 				// Staged: changes in index relative to HEAD.
 				switch e.IndexStatus {
 				case repo.StatusNew:
@@ -81,6 +86,14 @@ func newStatusCmd() *cobra.Command {
 				// Untracked: not in staging at all.
 				if e.IndexStatus == repo.StatusUntracked && e.WorkStatus != repo.StatusRenamed {
 					untracked = append(untracked, fmt.Sprintf("  %s", filepath.ToSlash(e.Path)))
+				}
+			}
+
+			if len(conflicts) > 0 {
+				fmt.Fprintln(out)
+				fmt.Fprintln(out, "conflicts:")
+				for _, s := range conflicts {
+					fmt.Fprintln(out, s)
 				}
 			}
 

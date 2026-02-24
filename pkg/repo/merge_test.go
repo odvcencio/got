@@ -203,6 +203,36 @@ func A() { println("theirs") }
 	if !strings.Contains(mergedStr, ">>>>>>>") {
 		t.Errorf("expected conflict markers in file, got:\n%s", mergedStr)
 	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	entry := stg.Entries["main.go"]
+	if entry == nil {
+		t.Fatalf("expected main.go in staging after conflicted merge")
+	}
+	if !entry.Conflict {
+		t.Fatalf("expected main.go conflict flag in staging")
+	}
+	if entry.BaseBlobHash == "" || entry.OursBlobHash == "" || entry.TheirsBlobHash == "" {
+		t.Fatalf("expected conflict blob hashes populated, got base=%q ours=%q theirs=%q", entry.BaseBlobHash, entry.OursBlobHash, entry.TheirsBlobHash)
+	}
+
+	statusEntries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	foundConflict := false
+	for _, e := range statusEntries {
+		if e.Path == "main.go" && (e.IndexStatus == StatusConflict || e.WorkStatus == StatusConflict) {
+			foundConflict = true
+			break
+		}
+	}
+	if !foundConflict {
+		t.Fatalf("expected status to expose conflict state for main.go")
+	}
 }
 
 // TestMerge_CommitWithTwoParents verifies that a clean merge creates a

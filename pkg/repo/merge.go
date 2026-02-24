@@ -27,6 +27,14 @@ type MergeReport struct {
 	MergeCommit    object.Hash // set if auto-committed (clean merge)
 }
 
+type mergeConflictState struct {
+	path       string
+	baseHash   object.Hash
+	oursHash   object.Hash
+	theirsHash object.Hash
+	mode       string
+}
+
 // FindMergeBase finds the first common ancestor of two commits using a
 // two-queue BFS. It alternates BFS steps between sides a and b; the first
 // commit visited by both sides is the merge base. If no common ancestor
@@ -168,8 +176,10 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 	type mergedFile struct {
 		path    string
 		content []byte
+		mode    string
 	}
 	var mergedFiles []mergedFile
+	var conflictedFiles []mergeConflictState
 	var deletedPaths []string
 
 	for _, path := range allPaths {
@@ -188,8 +198,19 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 			if fr.Status == "conflict" {
 				report.HasConflicts = true
 				report.TotalConflicts += fr.ConflictCount
+				conflictedFiles = append(conflictedFiles, mergeConflictState{
+					path:       path,
+					baseHash:   baseMap[path].BlobHash,
+					oursHash:   oursMap[path].BlobHash,
+					theirsHash: theirsMap[path].BlobHash,
+					mode:       normalizeFileMode(oursMap[path].Mode),
+				})
 			}
-			mergedFiles = append(mergedFiles, mergedFile{path: path, content: content})
+			mergedFiles = append(mergedFiles, mergedFile{
+				path:    path,
+				content: content,
+				mode:    normalizeFileMode(oursMap[path].Mode),
+			})
 
 		case !inBase && inOurs && inTheirs:
 			// New in both branches (not in base).
@@ -203,7 +224,11 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 					Path:   path,
 					Status: "clean",
 				})
-				mergedFiles = append(mergedFiles, mergedFile{path: path, content: content})
+				mergedFiles = append(mergedFiles, mergedFile{
+					path:    path,
+					content: content,
+					mode:    normalizeFileMode(oursMap[path].Mode),
+				})
 			} else {
 				// Different content: conflict.
 				oursData, err := r.readBlobData(oursMap[path].BlobHash)
@@ -223,8 +248,19 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 				if fr.Status == "conflict" {
 					report.HasConflicts = true
 					report.TotalConflicts += fr.ConflictCount
+					conflictedFiles = append(conflictedFiles, mergeConflictState{
+						path:       path,
+						baseHash:   "",
+						oursHash:   oursMap[path].BlobHash,
+						theirsHash: theirsMap[path].BlobHash,
+						mode:       normalizeFileMode(oursMap[path].Mode),
+					})
 				}
-				mergedFiles = append(mergedFiles, mergedFile{path: path, content: content})
+				mergedFiles = append(mergedFiles, mergedFile{
+					path:    path,
+					content: content,
+					mode:    normalizeFileMode(oursMap[path].Mode),
+				})
 			}
 
 		case inBase && inOurs && !inTheirs:
@@ -253,7 +289,11 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 				Path:   path,
 				Status: "added",
 			})
-			mergedFiles = append(mergedFiles, mergedFile{path: path, content: content})
+			mergedFiles = append(mergedFiles, mergedFile{
+				path:    path,
+				content: content,
+				mode:    normalizeFileMode(oursMap[path].Mode),
+			})
 
 		case !inBase && !inOurs && inTheirs:
 			// New in theirs only: add.
@@ -265,7 +305,11 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 				Path:   path,
 				Status: "added",
 			})
-			mergedFiles = append(mergedFiles, mergedFile{path: path, content: content})
+			mergedFiles = append(mergedFiles, mergedFile{
+				path:    path,
+				content: content,
+				mode:    normalizeFileMode(theirsMap[path].Mode),
+			})
 
 		case inBase && !inOurs && !inTheirs:
 			// Both deleted: remove.
@@ -284,7 +328,7 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("merge: mkdir %q: %w", dir, err)
 		}
-		if err := os.WriteFile(absPath, mf.content, 0o644); err != nil {
+		if err := os.WriteFile(absPath, mf.content, filePermFromMode(mf.mode)); err != nil {
 			return nil, fmt.Errorf("merge: write %q: %w", mf.path, err)
 		}
 	}
@@ -335,9 +379,59 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 			return nil, fmt.Errorf("merge: commit: %w", err)
 		}
 		report.MergeCommit = mergeHash
+	} else {
+		if err := r.stageConflictState(conflictedFiles, deletedPaths); err != nil {
+			return nil, fmt.Errorf("merge: stage conflicts: %w", err)
+		}
 	}
 
 	return report, nil
+}
+
+func (r *Repo) stageConflictState(conflicted []mergeConflictState, deletedPaths []string) error {
+	stg, err := r.ReadStaging()
+	if err != nil {
+		return fmt.Errorf("read staging: %w", err)
+	}
+
+	for _, p := range deletedPaths {
+		delete(stg.Entries, p)
+	}
+
+	for _, cf := range conflicted {
+		absPath := filepath.Join(r.RootDir, filepath.FromSlash(cf.path))
+		info, err := os.Stat(absPath)
+		if err != nil {
+			return fmt.Errorf("stat conflicted file %q: %w", cf.path, err)
+		}
+		data, err := os.ReadFile(absPath)
+		if err != nil {
+			return fmt.Errorf("read conflicted file %q: %w", cf.path, err)
+		}
+
+		blobHash, err := r.Store.WriteBlob(&object.Blob{Data: data})
+		if err != nil {
+			return fmt.Errorf("write conflicted blob %q: %w", cf.path, err)
+		}
+
+		stg.Entries[cf.path] = &StagingEntry{
+			Path:           cf.path,
+			BlobHash:       blobHash,
+			EntityListHash: "",
+			Mode:           normalizeFileMode(cf.mode),
+			Conflict:       true,
+			BaseBlobHash:   cf.baseHash,
+			OursBlobHash:   cf.oursHash,
+			TheirsBlobHash: cf.theirsHash,
+			ModTime:        info.ModTime().Unix(),
+			Size:           info.Size(),
+		}
+	}
+
+	if err := r.WriteStaging(stg); err != nil {
+		return fmt.Errorf("write staging: %w", err)
+	}
+	return nil
 }
 
 // commitMerge creates a commit with two parents (for merge commits).

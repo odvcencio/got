@@ -19,6 +19,7 @@ const (
 	StatusNew                         // in staging, not in HEAD tree
 	StatusModified                    // in staging, different from HEAD
 	StatusRenamed                     // same content, path changed
+	StatusConflict                    // file has unresolved merge conflicts in index
 	StatusDeleted                     // in HEAD but not in staging (or on disk but not in staging)
 	StatusUntracked                   // in working dir but not in staging
 	StatusDirty                       // staged but working copy differs from staged
@@ -121,6 +122,14 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 			continue
 		}
 
+		if se.Conflict {
+			result[path] = &StatusEntry{
+				Path:       path,
+				WorkStatus: StatusConflict,
+			}
+			continue
+		}
+
 		// File is in staging — compare content hash.
 		absPath := filepath.Join(r.RootDir, filepath.FromSlash(path))
 		info, err := os.Stat(absPath)
@@ -148,7 +157,7 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	}
 
 	// For each staged entry not on disk → deleted from working tree.
-	for path := range stg.Entries {
+	for path, se := range stg.Entries {
 		if _, onDisk := workFiles[path]; !onDisk {
 			if _, renamed := workRenamedOldToNew[path]; renamed {
 				continue
@@ -158,7 +167,11 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 				entry = &StatusEntry{Path: path}
 				result[path] = entry
 			}
-			entry.WorkStatus = StatusDeleted
+			if se.Conflict {
+				entry.WorkStatus = StatusConflict
+			} else {
+				entry.WorkStatus = StatusDeleted
+			}
 		}
 	}
 
@@ -177,7 +190,9 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 		}
 
 		headState, inHead := headEntries[path]
-		if !inHead {
+		if se.Conflict {
+			entry.IndexStatus = StatusConflict
+		} else if !inHead {
 			if oldPath, renamed := indexRenamedNewToOld[path]; renamed {
 				entry.IndexStatus = StatusRenamed
 				entry.RenamedFrom = oldPath

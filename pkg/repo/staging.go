@@ -20,6 +20,10 @@ type StagingEntry struct {
 	BlobHash       object.Hash `json:"blob_hash"`
 	EntityListHash object.Hash `json:"entity_list_hash,omitempty"`
 	Mode           string      `json:"mode,omitempty"`
+	Conflict       bool        `json:"conflict,omitempty"`
+	BaseBlobHash   object.Hash `json:"base_blob_hash,omitempty"`
+	OursBlobHash   object.Hash `json:"ours_blob_hash,omitempty"`
+	TheirsBlobHash object.Hash `json:"theirs_blob_hash,omitempty"`
 	ModTime        int64       `json:"mod_time"`
 	Size           int64       `json:"size"`
 }

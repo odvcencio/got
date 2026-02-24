@@ -302,6 +302,52 @@ func TestStaging_ReadWriteRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStaging_RoundTripConflictMetadata(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	stg := &Staging{
+		Entries: map[string]*StagingEntry{
+			"main.go": {
+				Path:           "main.go",
+				BlobHash:       object.Hash("aaaaaaaa"),
+				Mode:           object.TreeModeFile,
+				Conflict:       true,
+				BaseBlobHash:   object.Hash("bbbbbbbb"),
+				OursBlobHash:   object.Hash("cccccccc"),
+				TheirsBlobHash: object.Hash("dddddddd"),
+			},
+		},
+	}
+	if err := r.WriteStaging(stg); err != nil {
+		t.Fatalf("WriteStaging: %v", err)
+	}
+
+	got, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	e := got.Entries["main.go"]
+	if e == nil {
+		t.Fatalf("missing main.go entry")
+	}
+	if !e.Conflict {
+		t.Fatalf("Conflict = false, want true")
+	}
+	if e.BaseBlobHash != object.Hash("bbbbbbbb") {
+		t.Fatalf("BaseBlobHash = %q", e.BaseBlobHash)
+	}
+	if e.OursBlobHash != object.Hash("cccccccc") {
+		t.Fatalf("OursBlobHash = %q", e.OursBlobHash)
+	}
+	if e.TheirsBlobHash != object.Hash("dddddddd") {
+		t.Fatalf("TheirsBlobHash = %q", e.TheirsBlobHash)
+	}
+}
+
 // Test 6: ReadStaging on empty repo returns empty Staging (no error).
 func TestStaging_ReadEmpty(t *testing.T) {
 	dir := t.TempDir()
