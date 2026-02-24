@@ -29,6 +29,61 @@ func UnmarshalBlob(data []byte) (*Blob, error) {
 }
 
 // ---------------------------------------------------------------------------
+// TagObj
+// ---------------------------------------------------------------------------
+
+// MarshalTag serializes a TagObj:
+//
+//	version X
+//	target H
+//
+//	<tag bytes>
+func MarshalTag(t *TagObj) []byte {
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "version %s\n", objectSerializationVersion)
+	fmt.Fprintf(&buf, "target %s\n", t.TargetHash)
+	buf.WriteByte('\n')
+	buf.Write(t.Data)
+	return buf.Bytes()
+}
+
+// UnmarshalTag parses a TagObj from its serialized form.
+func UnmarshalTag(data []byte) (*TagObj, error) {
+	idx := bytes.Index(data, []byte("\n\n"))
+	if idx < 0 {
+		return nil, fmt.Errorf("unmarshal tag: missing header/body separator")
+	}
+	header := string(data[:idx])
+	body := data[idx+2:]
+
+	out := &TagObj{
+		Data: make([]byte, len(body)),
+	}
+	copy(out.Data, body)
+
+	for _, line := range strings.Split(header, "\n") {
+		key, val, ok := strings.Cut(line, " ")
+		if !ok {
+			return nil, fmt.Errorf("unmarshal tag: malformed header line %q", line)
+		}
+		switch key {
+		case "version":
+			if val != objectSerializationVersion {
+				return nil, fmt.Errorf("unmarshal tag: unsupported version %q", val)
+			}
+		case "target":
+			out.TargetHash = Hash(strings.TrimSpace(val))
+		default:
+			return nil, fmt.Errorf("unmarshal tag: unknown header key %q", key)
+		}
+	}
+	if out.TargetHash == "" {
+		return nil, fmt.Errorf("unmarshal tag: missing target hash")
+	}
+	return out, nil
+}
+
+// ---------------------------------------------------------------------------
 // EntityObj
 // ---------------------------------------------------------------------------
 

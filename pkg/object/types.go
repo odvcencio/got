@@ -8,6 +8,7 @@ type ObjectType string
 
 const (
 	TypeBlob       ObjectType = "blob"
+	TypeTag        ObjectType = "tag"
 	TypeEntity     ObjectType = "entity"
 	TypeEntityList ObjectType = "entitylist"
 	TypeTree       ObjectType = "tree"
@@ -24,6 +25,14 @@ const (
 // Blob holds raw file data.
 type Blob struct {
 	Data []byte
+}
+
+// TagObj preserves annotated tag payload while tracking the referenced object.
+// Data stores the canonical tag bytes, where the "object" header points at the
+// got hash (not git hash) so graph traversal can stay in got object space.
+type TagObj struct {
+	TargetHash Hash
+	Data       []byte
 }
 
 // EntityObj represents a single code entity (function, type, etc.).

@@ -26,6 +26,40 @@ func TestMarshalBlobDeterminism(t *testing.T) {
 	}
 }
 
+func TestMarshalUnmarshalTag(t *testing.T) {
+	orig := &TagObj{
+		TargetHash: Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+		Data: []byte("object aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n" +
+			"type commit\n" +
+			"tag v1.0.0\n" +
+			"tagger Alice <alice@example.com> 1700000000 +0000\n\n" +
+			"release\n"),
+	}
+	data := MarshalTag(orig)
+	got, err := UnmarshalTag(data)
+	if err != nil {
+		t.Fatalf("UnmarshalTag: %v", err)
+	}
+	if got.TargetHash != orig.TargetHash {
+		t.Fatalf("TargetHash: got %q, want %q", got.TargetHash, orig.TargetHash)
+	}
+	if !bytes.Equal(got.Data, orig.Data) {
+		t.Fatalf("Data mismatch: got %q want %q", string(got.Data), string(orig.Data))
+	}
+}
+
+func TestMarshalTagDeterminism(t *testing.T) {
+	tag := &TagObj{
+		TargetHash: Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+		Data:       []byte("object bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n\ntag\n"),
+	}
+	d1 := MarshalTag(tag)
+	d2 := MarshalTag(tag)
+	if !bytes.Equal(d1, d2) {
+		t.Error("Tag marshal not deterministic")
+	}
+}
+
 func TestMarshalUnmarshalEntity(t *testing.T) {
 	orig := &EntityObj{
 		Kind:     "function",

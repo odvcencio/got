@@ -170,6 +170,23 @@ func (s *Store) ReadBlob(h Hash) (*Blob, error) {
 	return UnmarshalBlob(data)
 }
 
+// WriteTag serializes and stores a TagObj.
+func (s *Store) WriteTag(t *TagObj) (Hash, error) {
+	return s.Write(TypeTag, MarshalTag(t))
+}
+
+// ReadTag reads and deserializes a TagObj.
+func (s *Store) ReadTag(h Hash) (*TagObj, error) {
+	objType, data, err := s.Read(h)
+	if err != nil {
+		return nil, err
+	}
+	if objType != TypeTag {
+		return nil, fmt.Errorf("object %s: type mismatch: got %q, want %q", h, objType, TypeTag)
+	}
+	return UnmarshalTag(data)
+}
+
 // WriteEntity serializes and stores an EntityObj.
 func (s *Store) WriteEntity(e *EntityObj) (Hash, error) {
 	return s.Write(TypeEntity, MarshalEntity(e))
