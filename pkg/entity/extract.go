@@ -5,62 +5,17 @@ import (
 
 	gotreesitter "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/grammars"
+	classify "github.com/odvcencio/gts-suite/pkg/lang/treesitter"
 )
 
-// Node type classification sets.
+// Aliases for the shared node type classification maps.
 var (
-	importTypes = map[string]bool{
-		"import_declaration":     true,
-		"import_statement":       true,
-		"import_from_statement":  true,
-		"use_declaration":        true,
-		"preproc_include":        true,
-	}
-
-	declarationTypes = map[string]bool{
-		"function_declaration":  true,
-		"function_definition":  true,
-		"function_item":        true,
-		"method_declaration":   true,
-		"type_declaration":     true,
-		"class_definition":     true,
-		"class_declaration":    true,
-		"struct_item":          true,
-		"enum_item":            true,
-		"trait_item":           true,
-		"impl_item":            true,
-		"interface_declaration": true,
-		"const_declaration":    true,
-		"var_declaration":      true,
-		"decorated_definition": true,
-		"export_statement":     true,
-		"lexical_declaration":  true,
-		"type_spec":            true,
-		"short_var_declaration": true,
-	}
-
-	preambleTypes = map[string]bool{
-		"package_clause":      true,
-		"package_declaration": true,
-		"module":              true,
-	}
-
-	commentTypes = map[string]bool{
-		"comment":       true,
-		"block_comment": true,
-		"line_comment":  true,
-	}
+	importTypes        = classify.ImportNodeTypes
+	declarationTypes   = classify.DeclarationNodeTypes
+	preambleTypes      = classify.PreambleNodeTypes
+	commentTypes       = classify.CommentNodeTypes
+	nameIdentifierTypes = classify.NameIdentifierTypes
 )
-
-// nameIdentifierTypes lists node types that represent name identifiers
-// found as named children of declarations.
-var nameIdentifierTypes = map[string]bool{
-	"identifier":         true,
-	"type_identifier":    true,
-	"field_identifier":   true,
-	"package_identifier": true,
-	"property_identifier": true,
-}
 
 // Extract parses source using tree-sitter and returns an EntityList
 // containing structural entities. The critical invariant is that
