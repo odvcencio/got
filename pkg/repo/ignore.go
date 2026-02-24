@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -13,9 +14,9 @@ type IgnoreChecker struct {
 }
 
 type ignorePattern struct {
-	pattern string
-	negated bool
-	dirOnly bool
+	pattern  string
+	negated  bool
+	dirOnly  bool
 	hasSlash bool // pattern contains a slash, so match against full path
 }
 
@@ -124,12 +125,57 @@ func (p *ignorePattern) matches(path string) bool {
 
 	if p.hasSlash {
 		// Pattern contains a slash: match against the full relative path.
-		matched, _ := filepath.Match(p.pattern, path)
-		return matched
+		return matchIgnoreGlob(p.pattern, path)
 	}
 
 	// Pattern without a slash: match against the filename component only.
 	filename := filepath.Base(path)
-	matched, _ := filepath.Match(p.pattern, filename)
-	return matched
+	return matchIgnoreGlob(p.pattern, filename)
+}
+
+func matchIgnoreGlob(pattern, target string) bool {
+	// Fast path for standard filepath glob behavior when no globstar is used.
+	if !strings.Contains(pattern, "**") {
+		matched, _ := filepath.Match(pattern, target)
+		return matched
+	}
+
+	re, err := regexp.Compile(globToRegex(pattern))
+	if err != nil {
+		return false
+	}
+	return re.MatchString(target)
+}
+
+func globToRegex(pattern string) string {
+	var b strings.Builder
+	b.WriteString("^")
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		if ch == '*' {
+			if i+1 < len(pattern) && pattern[i+1] == '*' {
+				if i+2 < len(pattern) && pattern[i+2] == '/' {
+					// Globstar directory segment: match zero or more path segments.
+					b.WriteString("(?:.*/)?")
+					i += 2
+				} else {
+					b.WriteString(".*")
+					i++
+				}
+				continue
+			}
+			b.WriteString("[^/]*")
+			continue
+		}
+		if ch == '?' {
+			b.WriteString("[^/]")
+			continue
+		}
+		if strings.ContainsRune(`.+()|[]{}^$\\`, rune(ch)) {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(ch)
+	}
+	b.WriteString("$")
+	return b.String()
 }

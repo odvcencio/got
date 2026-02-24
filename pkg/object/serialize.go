@@ -160,7 +160,8 @@ func UnmarshalEntityList(data []byte) (*EntityListObj, error) {
 //
 //	name mode blobhash entitylisthash subtreehash
 //
-// where mode is "dir" or "file", and empty hashes are represented as "-".
+// where mode is a Git-compatible mode string (e.g. 40000, 100644, 100755),
+// and empty hashes are represented as "-".
 func MarshalTree(tr *TreeObj) []byte {
 	// Sort entries by Name for determinism.
 	sorted := make([]TreeEntry, len(tr.Entries))
@@ -171,10 +172,7 @@ func MarshalTree(tr *TreeObj) []byte {
 
 	var buf bytes.Buffer
 	for _, e := range sorted {
-		mode := "file"
-		if e.IsDir {
-			mode = "dir"
-		}
+		mode := treeModeOrDefault(e)
 		bh := hashOrDash(e.BlobHash)
 		elh := hashOrDash(e.EntityListHash)
 		sth := hashOrDash(e.SubtreeHash)
@@ -209,9 +207,14 @@ func UnmarshalTree(data []byte) (*TreeObj, error) {
 		if len(parts) != 5 {
 			return nil, fmt.Errorf("unmarshal tree: malformed entry %q", line)
 		}
+		isDir, mode, err := parseTreeMode(parts[1])
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal tree: %w", err)
+		}
 		entry := TreeEntry{
 			Name:           parts[0],
-			IsDir:          parts[1] == "dir",
+			IsDir:          isDir,
+			Mode:           mode,
 			BlobHash:       dashOrHash(parts[2]),
 			EntityListHash: dashOrHash(parts[3]),
 			SubtreeHash:    dashOrHash(parts[4]),
@@ -219,6 +222,37 @@ func UnmarshalTree(data []byte) (*TreeObj, error) {
 		tr.Entries = append(tr.Entries, entry)
 	}
 	return tr, nil
+}
+
+func treeModeOrDefault(e TreeEntry) string {
+	if e.IsDir {
+		return TreeModeDir
+	}
+	if strings.TrimSpace(e.Mode) == "" {
+		return TreeModeFile
+	}
+	return e.Mode
+}
+
+func parseTreeMode(mode string) (bool, string, error) {
+	// Backward compatibility for older serialized trees.
+	switch mode {
+	case "dir":
+		return true, TreeModeDir, nil
+	case "file":
+		return false, TreeModeFile, nil
+	}
+
+	switch mode {
+	case TreeModeDir:
+		return true, TreeModeDir, nil
+	case TreeModeFile:
+		return false, TreeModeFile, nil
+	case TreeModeExecutable:
+		return false, TreeModeExecutable, nil
+	default:
+		return false, "", fmt.Errorf("unknown mode %q", mode)
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -254,7 +254,7 @@ func TestCheckout_Subdirectories(t *testing.T) {
 
 	// Create files in subdirectories.
 	files := map[string][]byte{
-		"main.go":         []byte("package main\n\nfunc main() {}\n"),
+		"main.go":          []byte("package main\n\nfunc main() {}\n"),
 		"pkg/util/util.go": []byte("package util\n\nfunc Util() {}\n"),
 	}
 	for name, content := range files {
@@ -310,5 +310,54 @@ func TestCheckout_Subdirectories(t *testing.T) {
 	want := "package util\n\nfunc Util() {}\n"
 	if string(data) != want {
 		t.Errorf("util.go content:\n  got:  %q\n  want: %q", string(data), want)
+	}
+}
+
+func TestCheckout_RestoresExecutableMode(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	script := filepath.Join(dir, "run.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
+		t.Fatalf("write run.sh: %v", err)
+	}
+	if err := r.Add([]string{"run.sh"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("add executable", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef: %v", err)
+	}
+	if err := r.CreateBranch("exec", headHash); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+
+	if err := os.Chmod(script, 0o644); err != nil {
+		t.Fatalf("chmod run.sh 0644: %v", err)
+	}
+	if err := r.Add([]string{"run.sh"}); err != nil {
+		t.Fatalf("Add non-executable: %v", err)
+	}
+	if _, err := r.Commit("drop executable bit", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	if err := r.Checkout("exec"); err != nil {
+		t.Fatalf("Checkout(exec): %v", err)
+	}
+
+	info, err := os.Stat(script)
+	if err != nil {
+		t.Fatalf("stat run.sh: %v", err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Fatalf("expected executable bit restored, mode=%#o", info.Mode().Perm())
 	}
 }

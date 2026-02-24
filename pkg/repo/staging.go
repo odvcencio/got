@@ -19,6 +19,7 @@ type StagingEntry struct {
 	Path           string      `json:"path"`
 	BlobHash       object.Hash `json:"blob_hash"`
 	EntityListHash object.Hash `json:"entity_list_hash,omitempty"`
+	Mode           string      `json:"mode,omitempty"`
 	ModTime        int64       `json:"mod_time"`
 	Size           int64       `json:"size"`
 }
@@ -139,6 +140,7 @@ func (r *Repo) Add(paths []string) error {
 			Path:           relPath,
 			BlobHash:       blobHash,
 			EntityListHash: entityListHash,
+			Mode:           modeFromFileInfo(info),
 			ModTime:        info.ModTime().Unix(),
 			Size:           info.Size(),
 		}

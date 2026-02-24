@@ -145,6 +145,43 @@ func TestIgnore_SubdirectoryFileMatch(t *testing.T) {
 	}
 }
 
+func TestIgnore_GlobstarMatchesNestedPaths(t *testing.T) {
+	dir := t.TempDir()
+
+	writeGotignore(t, dir, "**/*.gen.go\n")
+	ic := NewIgnoreChecker(dir)
+
+	if !ic.IsIgnored("generated.gen.go") {
+		t.Error("expected generated.gen.go to be ignored")
+	}
+	if !ic.IsIgnored("src/generated.gen.go") {
+		t.Error("expected src/generated.gen.go to be ignored")
+	}
+	if !ic.IsIgnored("src/nested/generated.gen.go") {
+		t.Error("expected src/nested/generated.gen.go to be ignored")
+	}
+	if ic.IsIgnored("src/nested/generated.go") {
+		t.Error("expected src/nested/generated.go to NOT be ignored")
+	}
+}
+
+func TestIgnore_GlobstarPrefixPattern(t *testing.T) {
+	dir := t.TempDir()
+
+	writeGotignore(t, dir, "docs/**\n")
+	ic := NewIgnoreChecker(dir)
+
+	if !ic.IsIgnored("docs/index.md") {
+		t.Error("expected docs/index.md to be ignored")
+	}
+	if !ic.IsIgnored("docs/api/v1/openapi.yaml") {
+		t.Error("expected docs/api/v1/openapi.yaml to be ignored")
+	}
+	if ic.IsIgnored("src/docs/index.md") {
+		t.Error("expected src/docs/index.md to NOT be ignored")
+	}
+}
+
 // helper: write a .gotignore file in the given directory.
 func writeGotignore(t *testing.T, dir, content string) {
 	t.Helper()

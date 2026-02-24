@@ -29,6 +29,11 @@ type StatusEntry struct {
 	WorkStatus  FileStatus // working tree vs staging comparison
 }
 
+type headTreeState struct {
+	BlobHash object.Hash
+	Mode     string
+}
+
 // Status computes the working tree status for the repository.
 //
 // Algorithm:
@@ -101,14 +106,19 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 
 		// File is in staging — compare content hash.
 		absPath := filepath.Join(r.RootDir, filepath.FromSlash(path))
+		info, err := os.Stat(absPath)
+		if err != nil {
+			return nil, fmt.Errorf("status: stat %q: %w", path, err)
+		}
 		content, err := os.ReadFile(absPath)
 		if err != nil {
 			return nil, fmt.Errorf("status: read %q: %w", path, err)
 		}
 
 		workHash := object.HashObject(object.TypeBlob, content)
+		workMode := modeFromFileInfo(info)
 		workStatus := StatusClean
-		if workHash != se.BlobHash {
+		if workHash != se.BlobHash || workMode != normalizeFileMode(se.Mode) {
 			workStatus = StatusDirty
 		}
 
@@ -145,10 +155,10 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 			result[path] = entry
 		}
 
-		headBlobHash, inHead := headEntries[path]
+		headState, inHead := headEntries[path]
 		if !inHead {
 			entry.IndexStatus = StatusNew
-		} else if se.BlobHash != headBlobHash {
+		} else if se.BlobHash != headState.BlobHash || normalizeFileMode(se.Mode) != normalizeFileMode(headState.Mode) {
 			entry.IndexStatus = StatusModified
 		} else {
 			entry.IndexStatus = StatusClean
@@ -182,8 +192,8 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 // headTreeEntries attempts to read the HEAD commit's tree and flatten it
 // into a map of path → BlobHash. If there are no commits yet (fresh repo)
 // or if tree reading fails, an empty map is returned.
-func (r *Repo) headTreeEntries() map[string]object.Hash {
-	result := make(map[string]object.Hash)
+func (r *Repo) headTreeEntries() map[string]headTreeState {
+	result := make(map[string]headTreeState)
 
 	headHash, err := r.ResolveRef("HEAD")
 	if err != nil {
@@ -203,7 +213,7 @@ func (r *Repo) headTreeEntries() map[string]object.Hash {
 
 // flattenTree recursively walks a tree object and populates entries with
 // path → BlobHash mappings.
-func (r *Repo) flattenTree(treeHash object.Hash, prefix string, entries map[string]object.Hash) {
+func (r *Repo) flattenTree(treeHash object.Hash, prefix string, entries map[string]headTreeState) {
 	tree, err := r.Store.ReadTree(treeHash)
 	if err != nil {
 		return
@@ -218,7 +228,10 @@ func (r *Repo) flattenTree(treeHash object.Hash, prefix string, entries map[stri
 		if te.IsDir && te.SubtreeHash != "" {
 			r.flattenTree(te.SubtreeHash, path, entries)
 		} else if !te.IsDir {
-			entries[path] = te.BlobHash
+			entries[path] = headTreeState{
+				BlobHash: te.BlobHash,
+				Mode:     normalizeFileMode(te.Mode),
+			}
 		}
 	}
 }

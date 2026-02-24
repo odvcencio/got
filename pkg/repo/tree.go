@@ -14,6 +14,7 @@ type TreeFileEntry struct {
 	Path           string
 	BlobHash       object.Hash
 	EntityListHash object.Hash
+	Mode           string
 }
 
 // BuildTree converts the flat staging entries into a hierarchical tree
@@ -30,8 +31,8 @@ func (r *Repo) BuildTree(s *Staging) (object.Hash, error) {
 // to the store. It returns the tree's hash.
 func (r *Repo) buildTreeDir(s *Staging, prefix string) (object.Hash, error) {
 	// Collect direct children: files and subdirectory names.
-	files := make(map[string]*StagingEntry)   // name -> entry
-	subdirs := make(map[string]struct{})       // immediate child dir names
+	files := make(map[string]*StagingEntry) // name -> entry
+	subdirs := make(map[string]struct{})    // immediate child dir names
 
 	for p, entry := range s.Entries {
 		// Determine the path relative to our prefix.
@@ -75,6 +76,7 @@ func (r *Repo) buildTreeDir(s *Staging, prefix string) (object.Hash, error) {
 			entries = append(entries, object.TreeEntry{
 				Name:           name,
 				IsDir:          false,
+				Mode:           normalizeFileMode(entry.Mode),
 				BlobHash:       entry.BlobHash,
 				EntityListHash: entry.EntityListHash,
 			})
@@ -91,6 +93,7 @@ func (r *Repo) buildTreeDir(s *Staging, prefix string) (object.Hash, error) {
 			entries = append(entries, object.TreeEntry{
 				Name:        name,
 				IsDir:       true,
+				Mode:        object.TreeModeDir,
 				SubtreeHash: subHash,
 			})
 		}
@@ -134,6 +137,7 @@ func (r *Repo) flattenTreeRec(h object.Hash, prefix string) ([]TreeFileEntry, er
 				Path:           fullPath,
 				BlobHash:       entry.BlobHash,
 				EntityListHash: entry.EntityListHash,
+				Mode:           normalizeFileMode(entry.Mode),
 			})
 		}
 	}

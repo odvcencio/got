@@ -147,6 +147,7 @@ func TestMarshalUnmarshalTree(t *testing.T) {
 			{
 				Name:           "README.md",
 				IsDir:          false,
+				Mode:           TreeModeExecutable,
 				BlobHash:       Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
 				EntityListHash: Hash(""),
 				SubtreeHash:    Hash(""),
@@ -154,6 +155,7 @@ func TestMarshalUnmarshalTree(t *testing.T) {
 			{
 				Name:           "src",
 				IsDir:          true,
+				Mode:           TreeModeDir,
 				BlobHash:       Hash(""),
 				EntityListHash: Hash(""),
 				SubtreeHash:    Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
@@ -176,6 +178,9 @@ func TestMarshalUnmarshalTree(t *testing.T) {
 		if e.IsDir != o.IsDir {
 			t.Errorf("Entries[%d].IsDir: got %v, want %v", i, e.IsDir, o.IsDir)
 		}
+		if e.Mode != o.Mode {
+			t.Errorf("Entries[%d].Mode: got %q, want %q", i, e.Mode, o.Mode)
+		}
 		if e.BlobHash != o.BlobHash {
 			t.Errorf("Entries[%d].BlobHash: got %q, want %q", i, e.BlobHash, o.BlobHash)
 		}
@@ -191,8 +196,8 @@ func TestMarshalUnmarshalTree(t *testing.T) {
 func TestMarshalTreeSortsEntries(t *testing.T) {
 	orig := &TreeObj{
 		Entries: []TreeEntry{
-			{Name: "z_file", IsDir: false, BlobHash: Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
-			{Name: "a_file", IsDir: false, BlobHash: Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")},
+			{Name: "z_file", IsDir: false, Mode: TreeModeFile, BlobHash: Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
+			{Name: "a_file", IsDir: false, Mode: TreeModeFile, BlobHash: Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")},
 		},
 	}
 	data := MarshalTree(orig)
@@ -211,14 +216,32 @@ func TestMarshalTreeSortsEntries(t *testing.T) {
 func TestMarshalTreeDeterminism(t *testing.T) {
 	tr := &TreeObj{
 		Entries: []TreeEntry{
-			{Name: "b", IsDir: false, BlobHash: Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
-			{Name: "a", IsDir: true, SubtreeHash: Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")},
+			{Name: "b", IsDir: false, Mode: TreeModeFile, BlobHash: Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")},
+			{Name: "a", IsDir: true, Mode: TreeModeDir, SubtreeHash: Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")},
 		},
 	}
 	d1 := MarshalTree(tr)
 	d2 := MarshalTree(tr)
 	if !bytes.Equal(d1, d2) {
 		t.Error("Tree marshal not deterministic")
+	}
+}
+
+func TestUnmarshalTreeLegacyModeTokens(t *testing.T) {
+	data := []byte("README.md file aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa - -\n" +
+		"src dir - - bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n")
+	got, err := UnmarshalTree(data)
+	if err != nil {
+		t.Fatalf("UnmarshalTree: %v", err)
+	}
+	if len(got.Entries) != 2 {
+		t.Fatalf("entries length = %d, want 2", len(got.Entries))
+	}
+	if got.Entries[0].Mode != TreeModeFile || got.Entries[0].IsDir {
+		t.Fatalf("first entry mode/isDir mismatch: %+v", got.Entries[0])
+	}
+	if got.Entries[1].Mode != TreeModeDir || !got.Entries[1].IsDir {
+		t.Fatalf("second entry mode/isDir mismatch: %+v", got.Entries[1])
 	}
 }
 

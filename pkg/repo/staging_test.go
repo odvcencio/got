@@ -42,6 +42,9 @@ func TestAdd_GoFile_BlobAndEntityList(t *testing.T) {
 	if entry.EntityListHash == "" {
 		t.Error("EntityListHash is empty, want non-empty for .go file")
 	}
+	if entry.Mode != object.TreeModeFile {
+		t.Errorf("Mode = %q, want %q", entry.Mode, object.TreeModeFile)
+	}
 
 	// Verify the blob is readable from the store.
 	blob, err := r.Store.ReadBlob(entry.BlobHash)
@@ -98,6 +101,9 @@ func TestAdd_BinaryFile_BlobOnly(t *testing.T) {
 	if entry.EntityListHash != "" {
 		t.Errorf("EntityListHash = %q, want empty for binary file", entry.EntityListHash)
 	}
+	if entry.Mode != object.TreeModeFile {
+		t.Errorf("Mode = %q, want %q", entry.Mode, object.TreeModeFile)
+	}
 
 	// Verify blob content.
 	blob, err := r.Store.ReadBlob(entry.BlobHash)
@@ -153,6 +159,34 @@ func TestAdd_MultipleFiles(t *testing.T) {
 	}
 	if stg.Entries["c.txt"].EntityListHash != "" {
 		t.Errorf("c.txt EntityListHash = %q, want empty", stg.Entries["c.txt"].EntityListHash)
+	}
+}
+
+func TestAdd_ExecutableFileMode(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	scriptPath := filepath.Join(dir, "run.sh")
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho hi\n"), 0o755); err != nil {
+		t.Fatalf("write run.sh: %v", err)
+	}
+	if err := r.Add([]string{"run.sh"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	entry, ok := stg.Entries["run.sh"]
+	if !ok {
+		t.Fatalf("missing run.sh in staging")
+	}
+	if entry.Mode != object.TreeModeExecutable {
+		t.Fatalf("Mode = %q, want %q", entry.Mode, object.TreeModeExecutable)
 	}
 }
 
@@ -214,12 +248,14 @@ func TestStaging_ReadWriteRoundTrip(t *testing.T) {
 				Path:           "foo.go",
 				BlobHash:       object.Hash("aaaa"),
 				EntityListHash: object.Hash("bbbb"),
+				Mode:           object.TreeModeExecutable,
 				ModTime:        1234567890,
 				Size:           42,
 			},
 			"bar.txt": {
 				Path:     "bar.txt",
 				BlobHash: object.Hash("cccc"),
+				Mode:     object.TreeModeFile,
 				ModTime:  9876543210,
 				Size:     100,
 			},
@@ -253,6 +289,9 @@ func TestStaging_ReadWriteRoundTrip(t *testing.T) {
 		}
 		if g.EntityListHash != want.EntityListHash {
 			t.Errorf("EntityListHash: got %q, want %q", g.EntityListHash, want.EntityListHash)
+		}
+		if g.Mode != want.Mode {
+			t.Errorf("Mode: got %q, want %q", g.Mode, want.Mode)
 		}
 		if g.ModTime != want.ModTime {
 			t.Errorf("ModTime: got %d, want %d", g.ModTime, want.ModTime)

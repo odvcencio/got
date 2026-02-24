@@ -285,3 +285,96 @@ func TestStatus_MultipleFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestStatus_DirtyWhenExecutableBitChangesOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	path := filepath.Join(dir, "run.sh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho hi\n"), 0o644); err != nil {
+		t.Fatalf("write run.sh: %v", err)
+	}
+	if err := r.Add([]string{"run.sh"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("add script", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	if err := os.Chmod(path, 0o755); err != nil {
+		t.Fatalf("chmod run.sh: %v", err)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+
+	var found *StatusEntry
+	for i := range entries {
+		if entries[i].Path == "run.sh" {
+			found = &entries[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("missing run.sh in status")
+	}
+	if found.IndexStatus != StatusClean {
+		t.Fatalf("IndexStatus = %d, want %d", found.IndexStatus, StatusClean)
+	}
+	if found.WorkStatus != StatusDirty {
+		t.Fatalf("WorkStatus = %d, want %d", found.WorkStatus, StatusDirty)
+	}
+}
+
+func TestStatus_IndexModifiedWhenExecutableBitStaged(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	path := filepath.Join(dir, "run.sh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho hi\n"), 0o644); err != nil {
+		t.Fatalf("write run.sh: %v", err)
+	}
+	if err := r.Add([]string{"run.sh"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("add script", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	if err := os.Chmod(path, 0o755); err != nil {
+		t.Fatalf("chmod run.sh: %v", err)
+	}
+	if err := r.Add([]string{"run.sh"}); err != nil {
+		t.Fatalf("Add executable: %v", err)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+
+	var found *StatusEntry
+	for i := range entries {
+		if entries[i].Path == "run.sh" {
+			found = &entries[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("missing run.sh in status")
+	}
+	if found.IndexStatus != StatusModified {
+		t.Fatalf("IndexStatus = %d, want %d", found.IndexStatus, StatusModified)
+	}
+	if found.WorkStatus != StatusClean {
+		t.Fatalf("WorkStatus = %d, want %d", found.WorkStatus, StatusClean)
+	}
+}

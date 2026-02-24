@@ -86,7 +86,7 @@ func (r *Repo) Checkout(target string) error {
 			return fmt.Errorf("checkout: read blob for %q: %w", f.Path, err)
 		}
 
-		if err := os.WriteFile(absPath, blob.Data, 0o644); err != nil {
+		if err := os.WriteFile(absPath, blob.Data, filePermFromMode(f.Mode)); err != nil {
 			return fmt.Errorf("checkout: write %q: %w", f.Path, err)
 		}
 	}
@@ -104,6 +104,7 @@ func (r *Repo) Checkout(target string) error {
 			Path:           f.Path,
 			BlobHash:       f.BlobHash,
 			EntityListHash: f.EntityListHash,
+			Mode:           normalizeFileMode(f.Mode),
 			ModTime:        info.ModTime().Unix(),
 			Size:           info.Size(),
 		}

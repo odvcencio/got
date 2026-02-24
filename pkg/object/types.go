@@ -14,6 +14,13 @@ const (
 	TypeCommit     ObjectType = "commit"
 )
 
+const (
+	// Tree mode constants compatible with Git's canonical mode strings.
+	TreeModeDir        = "40000"
+	TreeModeFile       = "100644"
+	TreeModeExecutable = "100755"
+)
+
 // Blob holds raw file data.
 type Blob struct {
 	Data []byte
@@ -40,6 +47,7 @@ type EntityListObj struct {
 type TreeEntry struct {
 	Name           string
 	IsDir          bool
+	Mode           string
 	BlobHash       Hash
 	EntityListHash Hash
 	SubtreeHash    Hash
