@@ -522,6 +522,50 @@ func TestAdd_GlobPathspecStagesMatchingFiles(t *testing.T) {
 	}
 }
 
+func TestAdd_GlobstarPathspecStagesRecursively(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(dir, "pkg", "sub"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "root.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write root.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "a.go"), []byte("package pkg\n"), 0o644); err != nil {
+		t.Fatalf("write pkg/a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "sub", "b.go"), []byte("package sub\n"), 0o644); err != nil {
+		t.Fatalf("write pkg/sub/b.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "sub", "skip.txt"), []byte("skip\n"), 0o644); err != nil {
+		t.Fatalf("write pkg/sub/skip.txt: %v", err)
+	}
+
+	if err := r.Add([]string{"**/*.go"}); err != nil {
+		t.Fatalf("Add **/*.go: %v", err)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	if len(stg.Entries) != 3 {
+		t.Fatalf("expected 3 staged entries, got %d: %v", len(stg.Entries), keys(stg.Entries))
+	}
+	for _, p := range []string{"root.go", "pkg/a.go", "pkg/sub/b.go"} {
+		if _, ok := stg.Entries[p]; !ok {
+			t.Fatalf("missing staged entry for %s", p)
+		}
+	}
+	if _, ok := stg.Entries["pkg/sub/skip.txt"]; ok {
+		t.Fatalf("did not expect pkg/sub/skip.txt to be staged")
+	}
+}
+
 func TestRemove_RemovesFromIndexAndWorktree(t *testing.T) {
 	dir := t.TempDir()
 	r, err := Init(dir)

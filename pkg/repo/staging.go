@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -271,10 +272,18 @@ func (r *Repo) expandAddPaths(inputs []string) ([]string, error) {
 			if isOutsideRepo(spec) {
 				return nil, fmt.Errorf("path %q is outside repository", input)
 			}
-			globPattern := filepath.Join(r.RootDir, filepath.FromSlash(spec))
-			matches, err := filepath.Glob(globPattern)
-			if err != nil {
-				return nil, fmt.Errorf("glob %q: %w", input, err)
+			var matches []string
+			if strings.Contains(spec, "**") {
+				matches, err = r.globWithGlobstar(spec, ic)
+				if err != nil {
+					return nil, fmt.Errorf("glob %q: %w", input, err)
+				}
+			} else {
+				globPattern := filepath.Join(r.RootDir, filepath.FromSlash(spec))
+				matches, err = filepath.Glob(globPattern)
+				if err != nil {
+					return nil, fmt.Errorf("glob %q: %w", input, err)
+				}
 			}
 			if len(matches) == 0 {
 				return nil, fmt.Errorf("pathspec %q did not match any files", input)
@@ -408,11 +417,54 @@ func (r *Repo) expandRemovePaths(inputs []string, stg *Staging) ([]string, error
 	return out, nil
 }
 
+func (r *Repo) globWithGlobstar(spec string, ic *IgnoreChecker) ([]string, error) {
+	var matches []string
+	err := filepath.WalkDir(r.RootDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(r.RootDir, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "." {
+			return nil
+		}
+		if d.IsDir() {
+			if ic.IsIgnored(rel) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if ic.IsIgnored(rel) {
+			return nil
+		}
+		if matchPathspec(spec, rel) {
+			matches = append(matches, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return matches, nil
+}
+
 func hasGlobMeta(path string) bool {
 	return strings.ContainsAny(path, "*?[")
 }
 
 func matchPathspec(spec, path string) bool {
+	spec = filepath.ToSlash(spec)
+	path = filepath.ToSlash(path)
+	if strings.Contains(spec, "**") {
+		re, err := regexp.Compile(globPatternToRegex(spec))
+		if err != nil {
+			return false
+		}
+		return re.MatchString(path)
+	}
 	if strings.Contains(spec, "/") {
 		ok, _ := filepath.Match(spec, path)
 		return ok
@@ -424,4 +476,36 @@ func matchPathspec(spec, path string) bool {
 func isOutsideRepo(rel string) bool {
 	rel = filepath.ToSlash(filepath.Clean(rel))
 	return rel == ".." || strings.HasPrefix(rel, "../")
+}
+
+func globPatternToRegex(pattern string) string {
+	var b strings.Builder
+	b.WriteString("^")
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		if ch == '*' {
+			if i+1 < len(pattern) && pattern[i+1] == '*' {
+				if i+2 < len(pattern) && pattern[i+2] == '/' {
+					b.WriteString("(?:.*/)?")
+					i += 2
+				} else {
+					b.WriteString(".*")
+					i++
+				}
+				continue
+			}
+			b.WriteString("[^/]*")
+			continue
+		}
+		if ch == '?' {
+			b.WriteString("[^/]")
+			continue
+		}
+		if strings.ContainsRune(`.+()|[]{}^$\\`, rune(ch)) {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(ch)
+	}
+	b.WriteString("$")
+	return b.String()
 }
