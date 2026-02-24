@@ -22,6 +22,7 @@ func main() {
 	root.AddCommand(newLogCmd())
 	root.AddCommand(newDiffCmd())
 	root.AddCommand(newBranchCmd())
+	root.AddCommand(newTagCmd())
 	root.AddCommand(newCheckoutCmd())
 	root.AddCommand(newMergeCmd())
 	root.AddCommand(newRemoteCmd())
