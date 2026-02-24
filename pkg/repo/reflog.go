@@ -50,10 +50,13 @@ func (r *Repo) appendReflog(ref string, oldHash, newHash object.Hash, reason str
 	if err != nil {
 		return fmt.Errorf("reflog open: %w", err)
 	}
-	defer f.Close()
 
 	if _, err := f.WriteString(line); err != nil {
+		_ = f.Close()
 		return fmt.Errorf("reflog write: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("reflog close: %w", err)
 	}
 	return nil
 }

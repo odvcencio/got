@@ -208,7 +208,7 @@ func (r *Repo) UpdateRefCAS(name string, h object.Hash, expectedOld ...object.Ha
 	cleanupLock = false
 
 	if err := r.appendReflog(name, oldHash, h, "update"); err != nil {
-		fmt.Fprintf(os.Stderr, "got: warning: append reflog for %s failed: %v\n", name, err)
+		return fmt.Errorf("update ref %q: append reflog: %w", name, err)
 	}
 
 	return nil
