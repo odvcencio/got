@@ -62,6 +62,10 @@ func (r *Repo) ReadStaging() (*Staging, error) {
 
 // WriteStaging atomically writes the staging area to .got/index.
 func (r *Repo) WriteStaging(s *Staging) error {
+	return r.writeStaging(s, true)
+}
+
+func (r *Repo) writeStaging(s *Staging, invalidateStatusCache bool) error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return fmt.Errorf("write staging: marshal: %w", err)
@@ -88,6 +92,11 @@ func (r *Repo) WriteStaging(s *Staging) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("write staging: rename: %w", err)
 	}
+
+	if invalidateStatusCache {
+		r.invalidateStatusCache()
+	}
+
 	return nil
 }
 

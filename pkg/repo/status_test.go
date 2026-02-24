@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/odvcencio/got/pkg/object"
 )
 
 // Test 1: Clean repo — add file, then Status shows it as staged new
@@ -541,4 +544,206 @@ func TestStatus_DetectsWorktreeRename(t *testing.T) {
 			t.Fatalf("old.txt should be folded into rename, got deleted entry")
 		}
 	}
+}
+
+func TestStatus_CacheHitForTouchedTrackedFile(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	path := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(path, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	hashCalls := 0
+	r.statusBlobHasher = func(data []byte) object.Hash {
+		hashCalls++
+		return object.HashObject(object.TypeBlob, data)
+	}
+
+	touchedTime := time.Now().Add(2 * time.Minute)
+	if err := os.Chtimes(path, touchedTime, touchedTime); err != nil {
+		t.Fatalf("Chtimes(main.go): %v", err)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status(first): %v", err)
+	}
+	mainEntry := statusEntryForPath(entries, "main.go")
+	if mainEntry == nil {
+		t.Fatal("missing main.go in first status")
+	}
+	if mainEntry.IndexStatus != StatusClean || mainEntry.WorkStatus != StatusClean {
+		t.Fatalf("first status = (%d, %d), want (%d, %d)",
+			mainEntry.IndexStatus, mainEntry.WorkStatus, StatusClean, StatusClean)
+	}
+	if hashCalls != 1 {
+		t.Fatalf("hash calls after first status = %d, want 1", hashCalls)
+	}
+
+	entries, err = r.Status()
+	if err != nil {
+		t.Fatalf("Status(second): %v", err)
+	}
+	mainEntry = statusEntryForPath(entries, "main.go")
+	if mainEntry == nil {
+		t.Fatal("missing main.go in second status")
+	}
+	if mainEntry.IndexStatus != StatusClean || mainEntry.WorkStatus != StatusClean {
+		t.Fatalf("second status = (%d, %d), want (%d, %d)",
+			mainEntry.IndexStatus, mainEntry.WorkStatus, StatusClean, StatusClean)
+	}
+	if hashCalls != 1 {
+		t.Fatalf("hash calls after second status = %d, want cache hit with no additional hashes", hashCalls)
+	}
+}
+
+func TestStatus_CacheRemainsCorrectAfterModifyFollowingTouch(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	path := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(path, []byte("alpha\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	hashCalls := 0
+	r.statusBlobHasher = func(data []byte) object.Hash {
+		hashCalls++
+		return object.HashObject(object.TypeBlob, data)
+	}
+
+	touchedTime := time.Now().Add(2 * time.Minute)
+	if err := os.Chtimes(path, touchedTime, touchedTime); err != nil {
+		t.Fatalf("Chtimes(main.go): %v", err)
+	}
+	if _, err := r.Status(); err != nil {
+		t.Fatalf("Status(after touch): %v", err)
+	}
+	hashCallsAfterTouch := hashCalls
+	if hashCallsAfterTouch == 0 {
+		t.Fatal("expected at least one hash after touch")
+	}
+
+	// Same-size content change should still be detected and cannot reuse cache.
+	if err := os.WriteFile(path, []byte("bravo\n"), 0o644); err != nil {
+		t.Fatalf("write modified main.go: %v", err)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status(after modify): %v", err)
+	}
+	mainEntry := statusEntryForPath(entries, "main.go")
+	if mainEntry == nil {
+		t.Fatal("missing main.go after modify")
+	}
+	if mainEntry.IndexStatus != StatusClean {
+		t.Fatalf("IndexStatus after modify = %d, want %d", mainEntry.IndexStatus, StatusClean)
+	}
+	if mainEntry.WorkStatus != StatusDirty {
+		t.Fatalf("WorkStatus after modify = %d, want %d", mainEntry.WorkStatus, StatusDirty)
+	}
+	if hashCalls <= hashCallsAfterTouch {
+		t.Fatalf("expected a new hash after modify, hash calls stayed at %d", hashCalls)
+	}
+}
+
+func TestStatus_CacheInvalidatedOnTrackedStateTransitions(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	path := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(path, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	touchedTime := time.Now().Add(2 * time.Minute)
+	if err := os.Chtimes(path, touchedTime, touchedTime); err != nil {
+		t.Fatalf("Chtimes(main.go): %v", err)
+	}
+	if _, err := r.Status(); err != nil {
+		t.Fatalf("Status(prime cache): %v", err)
+	}
+	if got := statusCacheSize(r); got == 0 {
+		t.Fatal("expected non-empty cache after priming status")
+	}
+
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add(restage): %v", err)
+	}
+	if got := statusCacheSize(r); got != 0 {
+		t.Fatalf("cache size after Add = %d, want 0", got)
+	}
+
+	if _, err := r.Status(); err != nil {
+		t.Fatalf("Status(re-prime before commit): %v", err)
+	}
+	if got := statusCacheSize(r); got == 0 {
+		t.Fatal("expected cache to repopulate before commit")
+	}
+
+	if _, err := r.Commit("restage", "test-author"); err != nil {
+		t.Fatalf("Commit(restage): %v", err)
+	}
+	if got := statusCacheSize(r); got != 0 {
+		t.Fatalf("cache size after Commit = %d, want 0", got)
+	}
+
+	if _, err := r.Status(); err != nil {
+		t.Fatalf("Status(re-prime before checkout): %v", err)
+	}
+	if got := statusCacheSize(r); got == 0 {
+		t.Fatal("expected cache to repopulate before checkout")
+	}
+
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+	if got := statusCacheSize(r); got != 0 {
+		t.Fatalf("cache size after Checkout = %d, want 0", got)
+	}
+}
+
+func statusEntryForPath(entries []StatusEntry, path string) *StatusEntry {
+	for i := range entries {
+		if entries[i].Path == path {
+			return &entries[i]
+		}
+	}
+	return nil
+}
+
+func statusCacheSize(r *Repo) int {
+	r.statusHashCacheMu.Lock()
+	defer r.statusHashCacheMu.Unlock()
+	return len(r.statusHashCache)
 }

@@ -141,11 +141,10 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 		workMode := modeFromFileInfo(info)
 		workStatus := StatusClean
 		if !stagingStatMatchesWorktree(se, info, workMode) {
-			content, err := os.ReadFile(absPath)
+			workHash, err := r.worktreeBlobHash(path, absPath, info, workMode)
 			if err != nil {
 				return nil, fmt.Errorf("status: read %q: %w", path, err)
 			}
-			workHash := object.HashObject(object.TypeBlob, content)
 			if workHash != se.BlobHash || workMode != normalizeFileMode(se.Mode) {
 				workStatus = StatusDirty
 			} else if refreshStagingEntryStat(se, info, workMode) {
@@ -236,7 +235,7 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	})
 
 	if refreshStaging {
-		if err := r.WriteStaging(stg); err != nil {
+		if err := r.writeStaging(stg, false); err != nil {
 			return nil, fmt.Errorf("status: refresh staging: %w", err)
 		}
 	}
@@ -386,11 +385,12 @@ func (r *Repo) detectWorktreeRenames(stg *Staging, workFiles map[string]bool) (m
 		if err != nil {
 			return nil, nil, err
 		}
-		data, err := os.ReadFile(absPath)
+		workMode := modeFromFileInfo(info)
+		blobHash, err := r.worktreeBlobHash(path, absPath, info, workMode)
 		if err != nil {
 			return nil, nil, err
 		}
-		key := renameMatchKey(object.HashObject(object.TypeBlob, data), modeFromFileInfo(info))
+		key := renameMatchKey(blobHash, workMode)
 		newByKey[key] = append(newByKey[key], path)
 	}
 

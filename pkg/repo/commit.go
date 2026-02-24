@@ -99,6 +99,8 @@ func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (ob
 		}
 	}
 
+	r.invalidateStatusCache()
+
 	// 7. Return commit hash.
 	return commitHash, nil
 }

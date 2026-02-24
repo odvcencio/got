@@ -14,6 +14,10 @@ type Repo struct {
 
 	mergeTraversalStateOnce sync.Once
 	mergeTraversalState     *mergeBaseTraversalState
+
+	statusHashCacheMu sync.Mutex
+	statusHashCache   map[string]statusFileHashCacheEntry
+	statusBlobHasher  func([]byte) object.Hash
 }
 
 func (r *Repo) getMergeTraversalState() *mergeBaseTraversalState {
