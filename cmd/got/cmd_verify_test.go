@@ -34,8 +34,11 @@ func TestVerifyCmdVerifiesPackedObjectsWhenLooseMissing(t *testing.T) {
 	if gcSummary.PackedObjects == 0 {
 		t.Fatalf("Store.GC packed 0 objects, want > 0")
 	}
+	if gcSummary.PrunedObjects == 0 {
+		t.Fatalf("Store.GC pruned 0 objects, want > 0")
+	}
 
-	if err := os.Remove(hashPathInRepoObjects(r.GotDir, commitHash)); err != nil {
+	if err := os.Remove(hashPathInRepoObjects(r.GotDir, commitHash)); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("Remove(commit loose object): %v", err)
 	}
 

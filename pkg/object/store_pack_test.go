@@ -27,6 +27,9 @@ func TestStoreGCIdempotentAndReadFallback(t *testing.T) {
 	if summary.PackedObjects != 2 {
 		t.Fatalf("PackedObjects = %d, want 2", summary.PackedObjects)
 	}
+	if summary.PrunedObjects != 2 {
+		t.Fatalf("PrunedObjects = %d, want 2", summary.PrunedObjects)
+	}
 	if summary.PackFile == "" || summary.IndexFile == "" {
 		t.Fatalf("expected non-empty pack/index names: %+v", summary)
 	}
@@ -39,11 +42,11 @@ func TestStoreGCIdempotentAndReadFallback(t *testing.T) {
 		t.Fatalf("index file missing: %v", err)
 	}
 
-	if err := os.Remove(s.objectPath(blobHash)); err != nil {
-		t.Fatalf("Remove(blob loose): %v", err)
+	if _, err := os.Stat(s.objectPath(blobHash)); !os.IsNotExist(err) {
+		t.Fatalf("expected blob loose object to be pruned, stat err=%v", err)
 	}
-	if err := os.Remove(s.objectPath(entityHash)); err != nil {
-		t.Fatalf("Remove(entity loose): %v", err)
+	if _, err := os.Stat(s.objectPath(entityHash)); !os.IsNotExist(err) {
+		t.Fatalf("expected entity loose object to be pruned, stat err=%v", err)
 	}
 
 	blobType, blobData, err := s.Read(blobHash)
@@ -96,8 +99,8 @@ func TestStoreHasChecksPackedObjects(t *testing.T) {
 		t.Fatalf("expected pack/index files from GC: %+v", summary)
 	}
 
-	if err := os.Remove(s.objectPath(h)); err != nil {
-		t.Fatalf("Remove(loose object): %v", err)
+	if _, err := os.Stat(s.objectPath(h)); !os.IsNotExist(err) {
+		t.Fatalf("expected loose object to be pruned, stat err=%v", err)
 	}
 	if !s.Has(h) {
 		t.Fatal("Has should report true for packed-only object")

@@ -13,6 +13,7 @@ import (
 // GCSummary reports the outcome of Store.GC.
 type GCSummary struct {
 	PackedObjects int
+	PrunedObjects int
 	PackFile      string
 	IndexFile     string
 }
@@ -25,7 +26,7 @@ type VerifySummary struct {
 }
 
 // GC packs loose objects that are not already indexed by an existing pack idx.
-// It is non-destructive: loose objects remain on disk.
+// After a successful pack+index write, packed loose objects are removed.
 func (s *Store) GC() (*GCSummary, error) {
 	looseHashes, err := s.listLooseObjectHashes()
 	if err != nil {
@@ -138,8 +139,20 @@ func (s *Store) GC() (*GCSummary, error) {
 	}
 	idxTmpRemoved = true
 
+	pruned := 0
+	for _, h := range toPack {
+		if err := os.Remove(s.objectPath(h)); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("gc: remove loose object %s: %w", h, err)
+		}
+		pruned++
+	}
+
 	return &GCSummary{
 		PackedObjects: len(toPack),
+		PrunedObjects: pruned,
 		PackFile:      filepath.Base(packPath),
 		IndexFile:     filepath.Base(idxPath),
 	}, nil
