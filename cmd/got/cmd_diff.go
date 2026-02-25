@@ -15,6 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const lineDiffContextLines = 3
+
 func newDiffCmd() *cobra.Command {
 	var staged bool
 	var entity bool
@@ -259,18 +261,102 @@ func printLineDiff(out io.Writer, path string, before, after []byte) error {
 	fmt.Fprintf(out, "+++ b/%s\n", path)
 
 	lines := diff3.LineDiff(before, after)
-	for _, dl := range lines {
-		switch dl.Type {
-		case diff3.Equal:
-			fmt.Fprintf(out, " %s\n", dl.Content)
-		case diff3.Insert:
-			fmt.Fprintf(out, "+%s\n", dl.Content)
-		case diff3.Delete:
-			fmt.Fprintf(out, "-%s\n", dl.Content)
+	for _, h := range buildLineDiffHunks(lines, lineDiffContextLines) {
+		oldStart, oldCount, newStart, newCount := h.lineRange(lines)
+		fmt.Fprintf(out, "@@ -%d,%d +%d,%d @@\n", oldStart, oldCount, newStart, newCount)
+
+		for _, dl := range lines[h.start:h.end] {
+			switch dl.Type {
+			case diff3.Equal:
+				fmt.Fprintf(out, " %s\n", dl.Content)
+			case diff3.Insert:
+				fmt.Fprintf(out, "+%s\n", dl.Content)
+			case diff3.Delete:
+				fmt.Fprintf(out, "-%s\n", dl.Content)
+			}
 		}
 	}
 
 	return nil
+}
+
+type lineDiffHunk struct {
+	start int
+	end   int
+}
+
+func buildLineDiffHunks(lines []diff3.DiffLine, contextLines int) []lineDiffHunk {
+	if contextLines < 0 {
+		contextLines = 0
+	}
+
+	var hunks []lineDiffHunk
+	for i, dl := range lines {
+		if dl.Type == diff3.Equal {
+			continue
+		}
+
+		start := i - contextLines
+		if start < 0 {
+			start = 0
+		}
+		end := i + contextLines + 1
+		if end > len(lines) {
+			end = len(lines)
+		}
+
+		if len(hunks) == 0 || start > hunks[len(hunks)-1].end {
+			hunks = append(hunks, lineDiffHunk{start: start, end: end})
+			continue
+		}
+		if end > hunks[len(hunks)-1].end {
+			hunks[len(hunks)-1].end = end
+		}
+	}
+
+	return hunks
+}
+
+func (h lineDiffHunk) lineRange(lines []diff3.DiffLine) (oldStart, oldCount, newStart, newCount int) {
+	oldLine, newLine := 1, 1
+	for i := 0; i < h.start; i++ {
+		switch lines[i].Type {
+		case diff3.Equal:
+			oldLine++
+			newLine++
+		case diff3.Delete:
+			oldLine++
+		case diff3.Insert:
+			newLine++
+		}
+	}
+
+	oldStart, newStart = oldLine, newLine
+
+	for i := h.start; i < h.end; i++ {
+		switch lines[i].Type {
+		case diff3.Equal:
+			oldCount++
+			newCount++
+			oldLine++
+			newLine++
+		case diff3.Delete:
+			oldCount++
+			oldLine++
+		case diff3.Insert:
+			newCount++
+			newLine++
+		}
+	}
+
+	if oldCount == 0 {
+		oldStart--
+	}
+	if newCount == 0 {
+		newStart--
+	}
+
+	return oldStart, oldCount, newStart, newCount
 }
 
 func printRename(out io.Writer, fromPath, toPath string) {
