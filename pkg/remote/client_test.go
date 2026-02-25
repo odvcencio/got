@@ -281,6 +281,88 @@ func TestListRefsHandlesLargeResponse(t *testing.T) {
 	}
 }
 
+func TestListRefsPaginated(t *testing.T) {
+	calls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		cursor := r.URL.Query().Get("cursor")
+
+		switch cursor {
+		case "":
+			// First page
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"refs":   map[string]string{"heads/main": strings.Repeat("a", 64)},
+				"cursor": "page2",
+			})
+		case "page2":
+			// Second page
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"refs":   map[string]string{"heads/dev": strings.Repeat("b", 64)},
+				"cursor": "page3",
+			})
+		case "page3":
+			// Last page (no cursor)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"refs": map[string]string{"tags/v1": strings.Repeat("c", 64)},
+			})
+		default:
+			http.Error(w, "unexpected cursor", http.StatusBadRequest)
+		}
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs, err := client.ListRefs(t.Context())
+	if err != nil {
+		t.Fatalf("ListRefs: %v", err)
+	}
+	if len(refs) != 3 {
+		t.Fatalf("got %d refs, want 3", len(refs))
+	}
+	if _, ok := refs["heads/main"]; !ok {
+		t.Fatal("missing heads/main")
+	}
+	if _, ok := refs["heads/dev"]; !ok {
+		t.Fatal("missing heads/dev")
+	}
+	if _, ok := refs["tags/v1"]; !ok {
+		t.Fatal("missing tags/v1")
+	}
+	if calls != 3 {
+		t.Fatalf("expected 3 page requests, got %d", calls)
+	}
+}
+
+func TestListRefsLegacyFormat(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Legacy flat-map format without "refs" wrapper
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"heads/main": strings.Repeat("a", 64),
+		})
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs, err := client.ListRefs(t.Context())
+	if err != nil {
+		t.Fatalf("ListRefs: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("got %d refs, want 1", len(refs))
+	}
+	if _, ok := refs["heads/main"]; !ok {
+		t.Fatal("missing heads/main")
+	}
+}
+
 func TestPushObjectsPackRoundTrip(t *testing.T) {
 	blobData := object.MarshalBlob(&object.Blob{Data: []byte("pack-push-test\n")})
 	wantHash := object.HashObject(object.TypeBlob, blobData)

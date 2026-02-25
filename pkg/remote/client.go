@@ -144,12 +144,13 @@ const (
 
 // Client is a transport client for gothub's Got protocol.
 type Client struct {
-	endpoint    Endpoint
-	httpClient  *http.Client
-	token       string
-	user        string
-	pass        string
-	maxAttempts int
+	endpoint     Endpoint
+	httpClient   *http.Client
+	token        string
+	user         string
+	pass         string
+	maxAttempts  int
+	serverLimits *ServerLimits
 }
 
 // NewClient creates a remote protocol client with default options.
@@ -202,32 +203,88 @@ func (c *Client) Endpoint() Endpoint {
 	return c.endpoint
 }
 
+// ServerLimits returns the cached server-advertised limits, or nil if not yet received.
+func (c *Client) ServerLimits() *ServerLimits {
+	return c.serverLimits
+}
+
+func (c *Client) cacheServerLimits(resp *http.Response) {
+	if c.serverLimits != nil {
+		return // already cached
+	}
+	raw := resp.Header.Get(headerLimits)
+	if raw == "" {
+		return
+	}
+	limits := ParseLimits(raw)
+	c.serverLimits = &limits
+}
+
 // ListRefs returns all remote refs (e.g. heads/main, tags/v1).
+// It supports paginated responses: if the server includes a "cursor" field,
+// the client loops with ?cursor=X&limit=1000 until no cursor is returned.
+// Legacy flat-map responses (no "refs" wrapper) are handled as a single page.
 func (c *Client) ListRefs(ctx context.Context) (map[string]object.Hash, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint.BaseURL+"/refs", nil)
-	if err != nil {
-		return nil, err
-	}
-	body, err := c.doWithLimit(req, http.StatusOK, responseLimitRefs, "application/json")
-	if err != nil {
-		return nil, err
-	}
-	var raw map[string]string
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("decode refs response: %w", err)
-	}
-	refs := make(map[string]object.Hash, len(raw))
-	for name, hash := range raw {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
+	refs := make(map[string]object.Hash)
+	cursor := ""
+	const pageLimit = 1000
+
+	for {
+		u := c.endpoint.BaseURL + "/refs"
+		if cursor != "" {
+			u += "?cursor=" + url.QueryEscape(cursor) + "&limit=" + fmt.Sprintf("%d", pageLimit)
+		} else {
+			u += "?limit=" + fmt.Sprintf("%d", pageLimit)
 		}
-		h := object.Hash(strings.TrimSpace(hash))
-		if err := ValidateHash(h); err != nil {
-			return nil, fmt.Errorf("invalid hash for ref %q: %w", name, err)
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, err
 		}
-		refs[name] = h
+		body, err := c.doWithLimit(req, http.StatusOK, responseLimitRefs, "application/json")
+		if err != nil {
+			return nil, err
+		}
+
+		var page struct {
+			Refs   map[string]string `json:"refs"`
+			Cursor string            `json:"cursor"`
+		}
+		// Try paginated format first.
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, fmt.Errorf("decode refs response: %w", err)
+		}
+
+		// If the response has a "refs" key, it's paginated format.
+		// If not, it's the legacy flat map format.
+		refMap := page.Refs
+		if refMap == nil {
+			// Legacy format: the entire response is a flat map[string]string
+			var raw map[string]string
+			if err := json.Unmarshal(body, &raw); err != nil {
+				return nil, fmt.Errorf("decode refs response: %w", err)
+			}
+			refMap = raw
+		}
+
+		for name, hash := range refMap {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			h := object.Hash(strings.TrimSpace(hash))
+			if err := ValidateHash(h); err != nil {
+				return nil, fmt.Errorf("invalid hash for ref %q: %w", name, err)
+			}
+			refs[name] = h
+		}
+
+		if page.Cursor == "" || page.Refs == nil {
+			break
+		}
+		cursor = page.Cursor
 	}
+
 	return refs, nil
 }
 
