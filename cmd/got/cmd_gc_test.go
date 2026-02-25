@@ -7,10 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/odvcencio/got/pkg/object"
 	"github.com/odvcencio/got/pkg/repo"
 )
 
-func TestGcCmdPacksLooseObjectsAndIsIdempotent(t *testing.T) {
+func TestGcCmdPacksReachableLooseObjectsAndIsIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	r, err := repo.Init(dir)
 	if err != nil {
@@ -23,6 +24,10 @@ func TestGcCmdPacksLooseObjectsAndIsIdempotent(t *testing.T) {
 	}
 	if _, err := r.Commit("initial", "tester"); err != nil {
 		t.Fatalf("Commit: %v", err)
+	}
+	unreachableHash, err := r.Store.Write(object.TypeBlob, []byte("orphan loose object"))
+	if err != nil {
+		t.Fatalf("Store.Write(orphan): %v", err)
 	}
 
 	restore := chdirForTest(t, dir)
@@ -38,6 +43,9 @@ func TestGcCmdPacksLooseObjectsAndIsIdempotent(t *testing.T) {
 	if !strings.Contains(first.String(), "packed ") {
 		t.Fatalf("first gc output = %q, want to contain %q", first.String(), "packed ")
 	}
+	if _, err := os.Stat(hashPathInRepoObjects(r.GotDir, unreachableHash)); err != nil {
+		t.Fatalf("expected orphan loose object to remain after first gc, stat err=%v", err)
+	}
 
 	var second bytes.Buffer
 	gcCmd = newGcCmd()
@@ -48,6 +56,9 @@ func TestGcCmdPacksLooseObjectsAndIsIdempotent(t *testing.T) {
 	}
 	if !strings.Contains(second.String(), "nothing to pack") {
 		t.Fatalf("second gc output = %q, want to contain %q", second.String(), "nothing to pack")
+	}
+	if _, err := os.Stat(hashPathInRepoObjects(r.GotDir, unreachableHash)); err != nil {
+		t.Fatalf("expected orphan loose object to remain after second gc, stat err=%v", err)
 	}
 
 	packDir := filepath.Join(dir, ".got", "objects", "pack")

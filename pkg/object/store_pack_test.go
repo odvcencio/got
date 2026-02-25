@@ -80,6 +80,92 @@ func TestStoreGCIdempotentAndReadFallback(t *testing.T) {
 	}
 }
 
+func TestStoreGCReachablePacksOnlyReachableObjectsAndIsIdempotent(t *testing.T) {
+	s := tempStore(t)
+
+	reachableBlob, err := s.Write(TypeBlob, []byte("reachable blob"))
+	if err != nil {
+		t.Fatalf("Write(reachable blob): %v", err)
+	}
+	treeHash, err := s.WriteTree(&TreeObj{
+		Entries: []TreeEntry{
+			{
+				Name:     "main.go",
+				IsDir:    false,
+				Mode:     TreeModeFile,
+				BlobHash: reachableBlob,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("WriteTree: %v", err)
+	}
+	commitHash, err := s.WriteCommit(&CommitObj{
+		TreeHash:  treeHash,
+		Author:    "tester",
+		Timestamp: 1,
+		Message:   "initial",
+	})
+	if err != nil {
+		t.Fatalf("WriteCommit: %v", err)
+	}
+	unreachableBlob, err := s.Write(TypeBlob, []byte("unreachable blob"))
+	if err != nil {
+		t.Fatalf("Write(unreachable blob): %v", err)
+	}
+
+	summary, err := s.GCReachable([]Hash{commitHash})
+	if err != nil {
+		t.Fatalf("GCReachable: %v", err)
+	}
+	if summary.PackedObjects != 3 {
+		t.Fatalf("PackedObjects = %d, want 3", summary.PackedObjects)
+	}
+	if summary.PrunedObjects != 3 {
+		t.Fatalf("PrunedObjects = %d, want 3", summary.PrunedObjects)
+	}
+	if summary.IndexFile == "" {
+		t.Fatalf("expected non-empty index file name: %+v", summary)
+	}
+
+	for _, h := range []Hash{reachableBlob, treeHash, commitHash} {
+		if _, err := os.Stat(s.objectPath(h)); !os.IsNotExist(err) {
+			t.Fatalf("expected reachable loose object %s to be pruned, stat err=%v", h, err)
+		}
+	}
+	if _, err := os.Stat(s.objectPath(unreachableBlob)); err != nil {
+		t.Fatalf("expected unreachable loose object to remain, stat err=%v", err)
+	}
+
+	idxPath := filepath.Join(s.root, "objects", "pack", summary.IndexFile)
+	idxData, err := os.ReadFile(idxPath)
+	if err != nil {
+		t.Fatalf("ReadFile(index): %v", err)
+	}
+	idx, err := ReadPackIndex(idxData)
+	if err != nil {
+		t.Fatalf("ReadPackIndex: %v", err)
+	}
+	if _, ok := idx.Find(unreachableBlob); ok {
+		t.Fatalf("index unexpectedly contains unreachable hash %s", unreachableBlob)
+	}
+
+	if _, _, err := s.Read(commitHash); err != nil {
+		t.Fatalf("Read(commit from pack): %v", err)
+	}
+
+	summary2, err := s.GCReachable([]Hash{commitHash})
+	if err != nil {
+		t.Fatalf("second GCReachable: %v", err)
+	}
+	if summary2.PackedObjects != 0 {
+		t.Fatalf("second GCReachable PackedObjects = %d, want 0", summary2.PackedObjects)
+	}
+	if _, err := os.Stat(s.objectPath(unreachableBlob)); err != nil {
+		t.Fatalf("expected unreachable loose object to remain after second GCReachable, stat err=%v", err)
+	}
+}
+
 func TestStoreHasChecksPackedObjects(t *testing.T) {
 	s := tempStore(t)
 

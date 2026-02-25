@@ -25,9 +25,28 @@ type VerifySummary struct {
 	PackObjects  int
 }
 
-// GC packs loose objects that are not already indexed by an existing pack idx.
-// After a successful pack+index write, packed loose objects are removed.
+// GC packs all loose objects that are not already indexed by an existing pack
+// idx. After a successful pack+index write, packed loose objects are removed.
 func (s *Store) GC() (*GCSummary, error) {
+	return s.gcWithReachableSet(nil)
+}
+
+// GCReachable packs loose objects reachable from roots that are not already
+// indexed by an existing pack idx. After a successful pack+index write, packed
+// loose objects are removed.
+func (s *Store) GCReachable(roots []Hash) (*GCSummary, error) {
+	reachable, err := s.ReachableSet(roots)
+	if err != nil {
+		return nil, err
+	}
+	return s.gcWithReachableSet(reachable)
+}
+
+func (s *Store) gcWithReachableSet(reachable map[Hash]struct{}) (*GCSummary, error) {
+	if reachable != nil && len(reachable) == 0 {
+		return &GCSummary{}, nil
+	}
+
 	looseHashes, err := s.listLooseObjectHashes()
 	if err != nil {
 		return nil, err
@@ -40,6 +59,11 @@ func (s *Store) GC() (*GCSummary, error) {
 
 	toPack := make([]Hash, 0, len(looseHashes))
 	for _, h := range looseHashes {
+		if reachable != nil {
+			if _, ok := reachable[h]; !ok {
+				continue
+			}
+		}
 		if _, ok := packed[h]; ok {
 			continue
 		}

@@ -18,7 +18,7 @@ func newGcCmd() *cobra.Command {
 				return err
 			}
 
-			summary, err := r.Store.GC()
+			summary, err := r.GC()
 			if err != nil {
 				return err
 			}
