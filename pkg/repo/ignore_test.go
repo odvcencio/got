@@ -224,6 +224,46 @@ func TestIgnore_GlobstarOverriddenByExactPathNegation(t *testing.T) {
 	}
 }
 
+func TestIgnore_WildcardPrefixBucketsPreserveLastMatchWins(t *testing.T) {
+	dir := t.TempDir()
+
+	writeGotignore(t, dir, "**/*.tmp\ndocs/*.tmp\n!docs/keep.tmp\ndocs/k*.tmp\n")
+	ic := NewIgnoreChecker(dir)
+
+	if !ic.IsIgnored("docs/a.tmp") {
+		t.Error("expected docs/a.tmp to be ignored")
+	}
+	if !ic.IsIgnored("docs/keep.tmp") {
+		t.Error("expected docs/keep.tmp to be ignored by later docs/k*.tmp pattern")
+	}
+	if !ic.IsIgnored("src/keep.tmp") {
+		t.Error("expected src/keep.tmp to be ignored by globstar pattern")
+	}
+	if ic.IsIgnored("src/keep.txt") {
+		t.Error("expected src/keep.txt to NOT be ignored")
+	}
+}
+
+func TestIgnore_BracketWildcardWithLiteralPrefix(t *testing.T) {
+	dir := t.TempDir()
+
+	writeGotignore(t, dir, "artifact-[0-9][0-9].bin\nvendor/**/gen-?.go\n")
+	ic := NewIgnoreChecker(dir)
+
+	if !ic.IsIgnored("out/artifact-42.bin") {
+		t.Error("expected out/artifact-42.bin to be ignored")
+	}
+	if ic.IsIgnored("out/artifact-aa.bin") {
+		t.Error("expected out/artifact-aa.bin to NOT be ignored")
+	}
+	if !ic.IsIgnored("vendor/pkg/nested/gen-a.go") {
+		t.Error("expected vendor/pkg/nested/gen-a.go to be ignored")
+	}
+	if ic.IsIgnored("src/vendor/pkg/gen-a.go") {
+		t.Error("expected src/vendor/pkg/gen-a.go to NOT be ignored")
+	}
+}
+
 // helper: write a .gotignore file in the given directory.
 func writeGotignore(t *testing.T, dir, content string) {
 	t.Helper()

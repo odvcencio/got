@@ -13,11 +13,13 @@ type IgnoreChecker struct {
 	patterns []ignorePattern
 
 	// Precompiled/indexed pattern groups used by IsIgnored fast paths.
-	dirPrefixPatterns   map[string][]int
-	exactBasePatterns   map[string][]int
-	exactPathPatterns   map[string][]int
-	wildcardBasePattern []int
-	wildcardPathPattern []int
+	dirPrefixPatterns    map[string][]int
+	exactBasePatterns    map[string][]int
+	exactPathPatterns    map[string][]int
+	wildcardBaseNoPrefix []int
+	wildcardPathNoPrefix []int
+	wildcardBaseByPrefix map[string][]int
+	wildcardPathByPrefix map[string][]int
 }
 
 type ignorePattern struct {
@@ -145,17 +147,10 @@ func (ic *IgnoreChecker) IsIgnored(path string) bool {
 		applyAll(idxs)
 	}
 
-	// Wildcards still require matching checks but are pre-separated by target.
-	for _, idx := range ic.wildcardPathPattern {
-		if ic.patterns[idx].match(path) {
-			apply(idx)
-		}
-	}
-	for _, idx := range ic.wildcardBasePattern {
-		if ic.patterns[idx].match(base) {
-			apply(idx)
-		}
-	}
+	// Wildcards still require matching checks, but most are narrowed by
+	// literal prefix buckets before glob matching.
+	ic.applyWildcardPatterns(path, ic.wildcardPathNoPrefix, ic.wildcardPathByPrefix, apply)
+	ic.applyWildcardPatterns(base, ic.wildcardBaseNoPrefix, ic.wildcardBaseByPrefix, apply)
 
 	return ignored
 }
@@ -164,8 +159,10 @@ func (ic *IgnoreChecker) compile() {
 	ic.dirPrefixPatterns = make(map[string][]int)
 	ic.exactBasePatterns = make(map[string][]int)
 	ic.exactPathPatterns = make(map[string][]int)
-	ic.wildcardBasePattern = nil
-	ic.wildcardPathPattern = nil
+	ic.wildcardBaseNoPrefix = nil
+	ic.wildcardPathNoPrefix = nil
+	ic.wildcardBaseByPrefix = make(map[string][]int)
+	ic.wildcardPathByPrefix = make(map[string][]int)
 
 	for idx := range ic.patterns {
 		p := ic.patterns[idx]
@@ -180,11 +177,7 @@ func (ic *IgnoreChecker) compile() {
 
 		switch {
 		case p.regex != nil:
-			if p.hasSlash {
-				ic.wildcardPathPattern = append(ic.wildcardPathPattern, idx)
-			} else {
-				ic.wildcardBasePattern = append(ic.wildcardBasePattern, idx)
-			}
+			ic.addWildcardPattern(idx)
 		case isLiteralPattern(p.pattern):
 			if p.hasSlash {
 				ic.exactPathPatterns[p.pattern] = append(ic.exactPathPatterns[p.pattern], idx)
@@ -192,10 +185,43 @@ func (ic *IgnoreChecker) compile() {
 				ic.exactBasePatterns[p.pattern] = append(ic.exactBasePatterns[p.pattern], idx)
 			}
 		default:
-			if p.hasSlash {
-				ic.wildcardPathPattern = append(ic.wildcardPathPattern, idx)
-			} else {
-				ic.wildcardBasePattern = append(ic.wildcardBasePattern, idx)
+			ic.addWildcardPattern(idx)
+		}
+	}
+}
+
+func (ic *IgnoreChecker) addWildcardPattern(idx int) {
+	p := ic.patterns[idx]
+	prefix := wildcardLiteralPrefix(p.pattern)
+	if prefix == "" {
+		if p.hasSlash {
+			ic.wildcardPathNoPrefix = append(ic.wildcardPathNoPrefix, idx)
+		} else {
+			ic.wildcardBaseNoPrefix = append(ic.wildcardBaseNoPrefix, idx)
+		}
+		return
+	}
+
+	if p.hasSlash {
+		ic.wildcardPathByPrefix[prefix] = append(ic.wildcardPathByPrefix[prefix], idx)
+		return
+	}
+	ic.wildcardBaseByPrefix[prefix] = append(ic.wildcardBaseByPrefix[prefix], idx)
+}
+
+func (ic *IgnoreChecker) applyWildcardPatterns(target string, noPrefix []int, byPrefix map[string][]int, apply func(int)) {
+	for _, idx := range noPrefix {
+		if ic.patterns[idx].match(target) {
+			apply(idx)
+		}
+	}
+
+	for i := 1; i <= len(target); i++ {
+		if idxs, ok := byPrefix[target[:i]]; ok {
+			for _, idx := range idxs {
+				if ic.patterns[idx].match(target) {
+					apply(idx)
+				}
 			}
 		}
 	}
@@ -203,6 +229,21 @@ func (ic *IgnoreChecker) compile() {
 
 func isLiteralPattern(pattern string) bool {
 	return !strings.ContainsAny(pattern, "*?[")
+}
+
+// wildcardLiteralPrefix returns the maximal literal prefix before any glob
+// metacharacter. Patterns containing escapes are treated as dynamic.
+func wildcardLiteralPrefix(pattern string) string {
+	if strings.Contains(pattern, `\`) {
+		return ""
+	}
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '*', '?', '[':
+			return pattern[:i]
+		}
+	}
+	return pattern
 }
 
 // matches checks if the given relative path matches this ignore pattern.
