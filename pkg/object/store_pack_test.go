@@ -77,6 +77,41 @@ func TestStoreGCIdempotentAndReadFallback(t *testing.T) {
 	}
 }
 
+func TestStoreHasChecksPackedObjects(t *testing.T) {
+	s := tempStore(t)
+
+	h, err := s.Write(TypeBlob, []byte("packed only"))
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if !s.Has(h) {
+		t.Fatal("Has should report true for loose object")
+	}
+
+	summary, err := s.GC()
+	if err != nil {
+		t.Fatalf("GC: %v", err)
+	}
+	if summary.PackFile == "" || summary.IndexFile == "" {
+		t.Fatalf("expected pack/index files from GC: %+v", summary)
+	}
+
+	if err := os.Remove(s.objectPath(h)); err != nil {
+		t.Fatalf("Remove(loose object): %v", err)
+	}
+	if !s.Has(h) {
+		t.Fatal("Has should report true for packed-only object")
+	}
+
+	packPath := filepath.Join(s.root, "objects", "pack", summary.PackFile)
+	if err := os.Remove(packPath); err != nil {
+		t.Fatalf("Remove(pack file): %v", err)
+	}
+	if s.Has(h) {
+		t.Fatal("Has should report false when matching index exists but pack file is missing")
+	}
+}
+
 func TestStoreVerifyDetectsCorruptLooseObject(t *testing.T) {
 	s := tempStore(t)
 

@@ -287,6 +287,30 @@ func (s *Store) readFromPacks(h Hash) (ObjectType, []byte, error) {
 	return "", nil, fmt.Errorf("object read %s: %w", h, os.ErrNotExist)
 }
 
+func (s *Store) hasInPacks(h Hash) bool {
+	idxPaths, err := s.listPackIndexPaths()
+	if err != nil {
+		return false
+	}
+	for _, idxPath := range idxPaths {
+		idxData, err := os.ReadFile(idxPath)
+		if err != nil {
+			continue
+		}
+		idx, err := ReadPackIndex(idxData)
+		if err != nil {
+			continue
+		}
+		if _, ok := idx.Find(h); !ok {
+			continue
+		}
+		if _, err := os.Stat(packPathForIndex(idxPath)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func decodeIndexedPackEntry(expected Hash, entry PackEntry) (ObjectType, []byte, error) {
 	var envelopeHashMismatchErr error
 	if envelopeType, envelopeData, err := parseObjectEnvelope(entry.Data, expected); err == nil {

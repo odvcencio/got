@@ -31,8 +31,10 @@ func (s *Store) objectPath(h Hash) string {
 
 // Has reports whether the store contains an object with the given hash.
 func (s *Store) Has(h Hash) bool {
-	_, err := os.Stat(s.objectPath(h))
-	return err == nil
+	if _, err := os.Stat(s.objectPath(h)); err == nil {
+		return true
+	}
+	return s.hasInPacks(h)
 }
 
 // Write stores an object and returns its content hash. The on-disk format
