@@ -213,6 +213,49 @@ func TestDoRejectsWrongContentType(t *testing.T) {
 	}
 }
 
+func TestListRefsRejectsInvalidHash(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"heads/main": "not-a-hash",
+		})
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.ListRefs(t.Context())
+	if err == nil {
+		t.Fatal("expected hash validation error")
+	}
+}
+
+func TestClientSendsCapabilityHeaders(t *testing.T) {
+	var gotProtocol, gotCaps string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotProtocol = r.Header.Get("Got-Protocol")
+		gotCaps = r.Header.Get("Got-Capabilities")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = client.ListRefs(t.Context())
+
+	if gotProtocol != ProtocolVersion {
+		t.Fatalf("Got-Protocol = %q, want %q", gotProtocol, ProtocolVersion)
+	}
+	if gotCaps == "" {
+		t.Fatal("Got-Capabilities header missing")
+	}
+}
+
 func TestListRefsHandlesLargeResponse(t *testing.T) {
 	refs := make(map[string]string)
 	for i := 0; i < 1000; i++ {

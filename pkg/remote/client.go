@@ -222,7 +222,11 @@ func (c *Client) ListRefs(ctx context.Context) (map[string]object.Hash, error) {
 		if name == "" {
 			continue
 		}
-		refs[name] = object.Hash(strings.TrimSpace(hash))
+		h := object.Hash(strings.TrimSpace(hash))
+		if err := ValidateHash(h); err != nil {
+			return nil, fmt.Errorf("invalid hash for ref %q: %w", name, err)
+		}
+		refs[name] = h
 	}
 	return refs, nil
 }
@@ -289,8 +293,12 @@ func (c *Client) BatchObjects(ctx context.Context, wants, haves []object.Hash, m
 		if err != nil {
 			return nil, false, err
 		}
+		h := object.Hash(strings.TrimSpace(obj.Hash))
+		if err := ValidateHash(h); err != nil {
+			return nil, false, fmt.Errorf("invalid hash in batch response: %w", err)
+		}
 		out = append(out, ObjectRecord{
-			Hash: object.Hash(strings.TrimSpace(obj.Hash)),
+			Hash: h,
 			Type: objType,
 			Data: obj.Data,
 		})
@@ -464,6 +472,9 @@ func (c *Client) doWithLimit(req *http.Request, expectedStatus int, maxBytes int
 		return nil, readErr
 	}
 	if resp.StatusCode != expectedStatus {
+		if re := tryParseRemoteError(body); re != nil {
+			return nil, re
+		}
 		msg := strings.TrimSpace(string(body))
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
@@ -489,6 +500,9 @@ func (c *Client) do(req *http.Request, expectedStatus int) ([]byte, error) {
 }
 
 func (c *Client) applyAuth(req *http.Request) {
+	req.Header.Set(headerProtocol, ProtocolVersion)
+	req.Header.Set(headerCapabilities, ClientCapabilities)
+
 	if strings.TrimSpace(c.token) != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 		return
