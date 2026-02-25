@@ -413,6 +413,7 @@ func (c *Client) BatchObjectsPack(ctx context.Context, wants, haves []object.Has
 		return nil, false, err
 	}
 	defer resp.Body.Close()
+	c.cacheServerLimits(resp)
 
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, responseLimitBatch))
 	if readErr != nil {
@@ -700,6 +701,7 @@ func (c *Client) doWithLimit(req *http.Request, expectedStatus int, maxBytes int
 		return nil, err
 	}
 	defer resp.Body.Close()
+	c.cacheServerLimits(resp)
 
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
 	if readErr != nil {

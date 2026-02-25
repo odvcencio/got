@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/odvcencio/got/pkg/object"
@@ -93,6 +94,42 @@ func (e *RemoteError) Error() string {
 		return fmt.Sprintf("%s (%s): %s", e.Message, e.Code, e.Detail)
 	}
 	return fmt.Sprintf("%s (%s)", e.Message, e.Code)
+}
+
+// ServerLimits holds server-advertised protocol limits parsed from the Got-Limits header.
+type ServerLimits struct {
+	MaxBatch   int // max objects per batch (0 = use client default)
+	MaxPayload int // max payload bytes (0 = use client default)
+	MaxObject  int // max single object bytes (0 = use client default)
+}
+
+// ParseLimits parses a Got-Limits header value.
+// Format: "max_batch=50000,max_payload=67108864,max_object=33554432"
+// Unknown keys are ignored. Invalid values are ignored (field stays 0).
+func ParseLimits(raw string) ServerLimits {
+	var limits ServerLimits
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(kv[0])
+		val := strings.TrimSpace(kv[1])
+		n, err := strconv.Atoi(val)
+		if err != nil || n <= 0 {
+			continue
+		}
+		switch key {
+		case "max_batch":
+			limits.MaxBatch = n
+		case "max_payload":
+			limits.MaxPayload = n
+		case "max_object":
+			limits.MaxObject = n
+		}
+	}
+	return limits
 }
 
 // tryParseRemoteError attempts to parse a JSON error response body.

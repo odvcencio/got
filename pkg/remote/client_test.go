@@ -430,3 +430,31 @@ func TestPushObjectsPackRoundTrip(t *testing.T) {
 		t.Fatalf("type = %s, want blob", rec.Type)
 	}
 }
+
+func TestClientCachesServerLimits(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Got-Limits", "max_batch=5000,max_payload=10000000")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.ServerLimits() != nil {
+		t.Fatal("expected nil limits before any request")
+	}
+	_, _ = client.ListRefs(t.Context())
+	limits := client.ServerLimits()
+	if limits == nil {
+		t.Fatal("expected limits to be cached after request")
+	}
+	if limits.MaxBatch != 5000 {
+		t.Fatalf("MaxBatch = %d, want 5000", limits.MaxBatch)
+	}
+	if limits.MaxPayload != 10000000 {
+		t.Fatalf("MaxPayload = %d, want 10000000", limits.MaxPayload)
+	}
+}
