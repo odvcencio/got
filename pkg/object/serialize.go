@@ -21,11 +21,19 @@ func MarshalBlob(b *Blob) []byte {
 	return b.Data
 }
 
-// UnmarshalBlob deserializes raw bytes into a Blob.
+// UnmarshalBlob deserializes raw bytes into a Blob and copies input data.
+// This preserves ownership semantics for callers that reuse input buffers.
 func UnmarshalBlob(data []byte) (*Blob, error) {
 	out := make([]byte, len(data))
 	copy(out, data)
 	return &Blob{Data: out}, nil
+}
+
+// UnmarshalBlobNoCopy deserializes raw bytes into a Blob without copying.
+// The returned Blob aliases data; callers must keep data immutable while the
+// Blob is in use.
+func UnmarshalBlobNoCopy(data []byte) (*Blob, error) {
+	return &Blob{Data: data}, nil
 }
 
 // ---------------------------------------------------------------------------

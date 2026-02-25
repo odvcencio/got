@@ -153,6 +153,29 @@ func TestStoreWriteReadBlob(t *testing.T) {
 	}
 }
 
+func TestStoreReadBlobReturnsFreshSlicePerCall(t *testing.T) {
+	s := tempStore(t)
+	orig := &Blob{Data: []byte("blob data")}
+	h, err := s.WriteBlob(orig)
+	if err != nil {
+		t.Fatalf("WriteBlob: %v", err)
+	}
+
+	first, err := s.ReadBlob(h)
+	if err != nil {
+		t.Fatalf("ReadBlob first: %v", err)
+	}
+	first.Data[0] = 'B'
+
+	second, err := s.ReadBlob(h)
+	if err != nil {
+		t.Fatalf("ReadBlob second: %v", err)
+	}
+	if !bytes.Equal(second.Data, orig.Data) {
+		t.Fatalf("second ReadBlob should not observe caller mutation: got %q, want %q", second.Data, orig.Data)
+	}
+}
+
 func TestStoreWriteReadEntity(t *testing.T) {
 	s := tempStore(t)
 	orig := &EntityObj{

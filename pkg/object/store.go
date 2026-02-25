@@ -182,7 +182,9 @@ func (s *Store) ReadBlob(h Hash) (*Blob, error) {
 	if objType != TypeBlob {
 		return nil, fmt.Errorf("object %s: type mismatch: got %q, want %q", h, objType, TypeBlob)
 	}
-	return UnmarshalBlob(data)
+	// Read returns a fresh content buffer for each call, so we can borrow it
+	// directly and avoid a second full-size blob allocation.
+	return UnmarshalBlobNoCopy(data)
 }
 
 // WriteTag serializes and stores a TagObj.

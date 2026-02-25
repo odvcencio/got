@@ -43,6 +43,44 @@ func TestMarshalBlobSharesBackingSlice(t *testing.T) {
 	}
 }
 
+func TestUnmarshalBlobCopiesInput(t *testing.T) {
+	data := []byte("copy me")
+	got, err := UnmarshalBlob(data)
+	if err != nil {
+		t.Fatalf("UnmarshalBlob: %v", err)
+	}
+	if !bytes.Equal(got.Data, data) {
+		t.Fatalf("blob data mismatch: got %q, want %q", got.Data, data)
+	}
+	if len(data) > 0 && &got.Data[0] == &data[0] {
+		t.Fatalf("UnmarshalBlob should copy input data")
+	}
+
+	data[0] = 'C'
+	if got.Data[0] != 'c' {
+		t.Fatalf("blob data changed after source mutation: got %q", got.Data)
+	}
+}
+
+func TestUnmarshalBlobNoCopySharesBackingSlice(t *testing.T) {
+	data := []byte("borrow me")
+	got, err := UnmarshalBlobNoCopy(data)
+	if err != nil {
+		t.Fatalf("UnmarshalBlobNoCopy: %v", err)
+	}
+	if !bytes.Equal(got.Data, data) {
+		t.Fatalf("blob data mismatch: got %q, want %q", got.Data, data)
+	}
+	if len(data) > 0 && &got.Data[0] != &data[0] {
+		t.Fatalf("UnmarshalBlobNoCopy should alias input data")
+	}
+
+	data[0] = 'B'
+	if got.Data[0] != 'B' {
+		t.Fatalf("blob data should reflect source mutation with no-copy unmarshal")
+	}
+}
+
 func TestMarshalUnmarshalTag(t *testing.T) {
 	orig := &TagObj{
 		TargetHash: Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
