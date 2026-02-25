@@ -4,7 +4,7 @@ Structural version control. Merges functions, not lines.
 
 Git treats source files as bags of lines. Two developers add different functions to the same file — conflict. Both add different imports — conflict. One renames a variable, another adds a function nearby — conflict. None of these are real conflicts.
 
-**got** is a standalone version control system that decomposes source into structural entities via [tree-sitter](https://tree-sitter.github.io/) — functions, methods, classes, imports — and merges at that level. Independent additions merge cleanly. Import blocks get set-union merged. Only genuine semantic overlaps produce conflicts.
+**got** is a standalone version control system that decomposes source into structural entities via [gotreesitter](https://github.com/odvcencio/gotreesitter) — functions, methods, classes, imports — and merges at that level. Independent additions merge cleanly. Import blocks get set-union merged. Only genuine semantic overlaps produce conflicts.
 
 ```
 # Git: CONFLICT (both modified main.go)
