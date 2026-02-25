@@ -128,25 +128,45 @@ type RefUpdate struct {
 	New  *object.Hash
 }
 
-// Client is a transport client for gothub's Got protocol.
-type Client struct {
-	endpoint   Endpoint
-	httpClient *http.Client
-	token      string
-	user       string
-	pass       string
+// ClientOptions configures the remote protocol client.
+type ClientOptions struct {
+	Timeout     time.Duration // HTTP client timeout (default 60s)
+	MaxAttempts int           // retry attempts (default 3)
 }
 
-// NewClient creates a remote protocol client.
+// Client is a transport client for gothub's Got protocol.
+type Client struct {
+	endpoint    Endpoint
+	httpClient  *http.Client
+	token       string
+	user        string
+	pass        string
+	maxAttempts int
+}
+
+// NewClient creates a remote protocol client with default options.
 //
 // Auth resolution order:
 // 1) GOT_TOKEN (Bearer)
 // 2) GOT_USERNAME + GOT_PASSWORD (Basic)
 // 3) URL userinfo (Basic)
 func NewClient(remoteURL string) (*Client, error) {
+	return NewClientWithOptions(remoteURL, ClientOptions{})
+}
+
+// NewClientWithOptions creates a remote protocol client with configurable options.
+// Zero-value or negative fields in opts receive defaults (60s timeout, 3 attempts).
+func NewClientWithOptions(remoteURL string, opts ClientOptions) (*Client, error) {
 	endpoint, err := ParseEndpoint(remoteURL)
 	if err != nil {
 		return nil, err
+	}
+
+	if opts.Timeout <= 0 {
+		opts.Timeout = 60 * time.Second
+	}
+	if opts.MaxAttempts <= 0 {
+		opts.MaxAttempts = 3
 	}
 
 	token := strings.TrimSpace(os.Getenv("GOT_TOKEN"))
@@ -160,11 +180,12 @@ func NewClient(remoteURL string) (*Client, error) {
 	return &Client{
 		endpoint: endpoint,
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: opts.Timeout,
 		},
-		token: token,
-		user:  user,
-		pass:  pass,
+		token:       token,
+		user:        user,
+		pass:        pass,
+		maxAttempts: opts.MaxAttempts,
 	}, nil
 }
 
@@ -282,7 +303,7 @@ func (c *Client) GetObject(ctx context.Context, hash object.Hash) (ObjectRecord,
 	}
 	c.applyAuth(req)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := retryDo(c.httpClient, req, c.maxAttempts)
 	if err != nil {
 		return ObjectRecord{}, err
 	}
@@ -424,7 +445,7 @@ func (c *Client) UpdateRefs(ctx context.Context, updates []RefUpdate) (map[strin
 
 func (c *Client) do(req *http.Request, expectedStatus int) ([]byte, error) {
 	c.applyAuth(req)
-	resp, err := c.httpClient.Do(req)
+	resp, err := retryDo(c.httpClient, req, c.maxAttempts)
 	if err != nil {
 		return nil, err
 	}

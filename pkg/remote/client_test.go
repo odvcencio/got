@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/odvcencio/got/pkg/object"
 )
@@ -158,5 +159,34 @@ func TestParseObjectTypeAcceptsTag(t *testing.T) {
 	}
 	if got != object.TypeTag {
 		t.Fatalf("parseObjectType(tag) = %q, want %q", got, object.TypeTag)
+	}
+}
+
+func TestNewClientWithOptionsTimeout(t *testing.T) {
+	client, err := NewClientWithOptions("https://example.com/got/alice/repo", ClientOptions{
+		Timeout:     120 * time.Second,
+		MaxAttempts: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.httpClient.Timeout != 120*time.Second {
+		t.Fatalf("timeout = %v, want 120s", client.httpClient.Timeout)
+	}
+	if client.maxAttempts != 5 {
+		t.Fatalf("maxAttempts = %d, want 5", client.maxAttempts)
+	}
+}
+
+func TestNewClientWithOptionsDefaults(t *testing.T) {
+	client, err := NewClientWithOptions("https://example.com/got/alice/repo", ClientOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.httpClient.Timeout != 60*time.Second {
+		t.Fatalf("timeout = %v, want 60s", client.httpClient.Timeout)
+	}
+	if client.maxAttempts != 3 {
+		t.Fatalf("maxAttempts = %d, want 3", client.maxAttempts)
 	}
 }
