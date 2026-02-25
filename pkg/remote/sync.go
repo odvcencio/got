@@ -79,7 +79,7 @@ func FetchIntoStoreWithConfig(ctx context.Context, c *Client, store *object.Stor
 	written := 0
 	negotiationCompleted := false
 	for round := 0; round < cfg.MaxBatchNegotiationRounds; round++ {
-		batchObjects, truncated, err := c.BatchObjects(ctx, roots, selectBatchHaves(knownHaves, cfg.MaxBatchHaveHashes), cfg.MaxBatchObjects)
+		batchObjects, truncated, err := c.BatchObjectsPack(ctx, roots, selectBatchHaves(knownHaves, cfg.MaxBatchHaveHashes), cfg.MaxBatchObjects)
 		if err != nil {
 			return written, err
 		}

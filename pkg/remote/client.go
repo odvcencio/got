@@ -306,6 +306,123 @@ func (c *Client) BatchObjects(ctx context.Context, wants, haves []object.Hash, m
 	return out, resp.Truncated, nil
 }
 
+// BatchObjectsPack fetches missing objects using pack transport with optional
+// zstd compression. It sends Accept: application/x-got-pack to request pack
+// encoding, but falls back to JSON decoding if the server responds with
+// application/json content type.
+func (c *Client) BatchObjectsPack(ctx context.Context, wants, haves []object.Hash, maxObjects int) ([]ObjectRecord, bool, error) {
+	if len(wants) == 0 {
+		return nil, false, fmt.Errorf("at least one want hash is required")
+	}
+
+	reqBody := struct {
+		Wants      []string `json:"wants"`
+		Haves      []string `json:"haves,omitempty"`
+		MaxObjects int      `json:"max_objects,omitempty"`
+	}{
+		Wants:      make([]string, 0, len(wants)),
+		Haves:      make([]string, 0, len(haves)),
+		MaxObjects: maxObjects,
+	}
+	for _, h := range wants {
+		if strings.TrimSpace(string(h)) != "" {
+			reqBody.Wants = append(reqBody.Wants, string(h))
+		}
+	}
+	for _, h := range haves {
+		if strings.TrimSpace(string(h)) != "" {
+			reqBody.Haves = append(reqBody.Haves, string(h))
+		}
+	}
+	if len(reqBody.Wants) == 0 {
+		return nil, false, fmt.Errorf("at least one non-empty want hash is required")
+	}
+
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint.BaseURL+"/objects/batch", bytes.NewReader(payload))
+	if err != nil {
+		return nil, false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/x-got-pack")
+	req.Header.Set("Accept-Encoding", "zstd")
+	c.applyAuth(req)
+
+	resp, err := retryDo(c.httpClient, req, c.maxAttempts)
+	if err != nil {
+		return nil, false, err
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, responseLimitBatch))
+	if readErr != nil {
+		return nil, false, readErr
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if re := tryParseRemoteError(body); re != nil {
+			return nil, false, re
+		}
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = http.StatusText(resp.StatusCode)
+		}
+		return nil, false, fmt.Errorf("remote request failed (%s %s): %s", req.Method, req.URL.Path, msg)
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "application/x-got-pack") {
+		// Pack transport response: optionally zstd-compressed.
+		packData := body
+		if isZstdEncoded(resp.Header.Get("Content-Encoding")) {
+			packData, err = decompressZstd(body)
+			if err != nil {
+				return nil, false, fmt.Errorf("decompress pack response: %w", err)
+			}
+		}
+		records, err := DecodePackTransport(packData)
+		if err != nil {
+			return nil, false, fmt.Errorf("decode pack response: %w", err)
+		}
+		truncated := strings.EqualFold(resp.Header.Get("X-Truncated"), "true")
+		return records, truncated, nil
+	}
+
+	// JSON fallback: server returned application/json.
+	var jsonResp struct {
+		Objects []struct {
+			Hash string `json:"hash"`
+			Type string `json:"type"`
+			Data []byte `json:"data"`
+		} `json:"objects"`
+		Truncated bool `json:"truncated"`
+	}
+	if err := json.Unmarshal(body, &jsonResp); err != nil {
+		return nil, false, fmt.Errorf("decode batch response: %w", err)
+	}
+
+	out := make([]ObjectRecord, 0, len(jsonResp.Objects))
+	for _, obj := range jsonResp.Objects {
+		objType, err := parseObjectType(obj.Type)
+		if err != nil {
+			return nil, false, err
+		}
+		h := object.Hash(strings.TrimSpace(obj.Hash))
+		if err := ValidateHash(h); err != nil {
+			return nil, false, fmt.Errorf("invalid hash in batch response: %w", err)
+		}
+		out = append(out, ObjectRecord{
+			Hash: h,
+			Type: objType,
+			Data: obj.Data,
+		})
+	}
+	return out, jsonResp.Truncated, nil
+}
+
 // GetObject fetches one object by hash.
 func (c *Client) GetObject(ctx context.Context, hash object.Hash) (ObjectRecord, error) {
 	hash = object.Hash(strings.TrimSpace(string(hash)))

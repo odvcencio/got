@@ -476,3 +476,89 @@ func TestUniqueHashes(t *testing.T) {
 		t.Fatalf("uniqueHashes = %v, want %v", got, want)
 	}
 }
+
+func TestFetchIntoStoreWithPackTransport(t *testing.T) {
+	remoteRoot := t.TempDir()
+	remoteStore := object.NewStore(remoteRoot)
+
+	blobHash, err := remoteStore.WriteBlob(&object.Blob{Data: []byte("pack-hello\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	treeHash, err := remoteStore.WriteTree(&object.TreeObj{Entries: []object.TreeEntry{{Name: "README.md", BlobHash: blobHash}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commitHash, err := remoteStore.WriteCommit(&object.CommitObj{
+		TreeHash:  treeHash,
+		Author:    "Alice <alice@example.com>",
+		Timestamp: 1700000000,
+		Message:   "init pack",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Read the objects to build ObjectRecords for pack encoding.
+	commitType, commitData, err := remoteStore.Read(commitHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	treeType, treeData, err := remoteStore.Read(treeHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobType, blobData, err := remoteStore.Read(blobHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	records := []ObjectRecord{
+		{Hash: commitHash, Type: commitType, Data: commitData},
+		{Hash: treeHash, Type: treeType, Data: treeData},
+		{Hash: blobHash, Type: blobType, Data: blobData},
+	}
+	packBytes, err := EncodePackTransportToBytes(records)
+	if err != nil {
+		t.Fatalf("EncodePackTransportToBytes: %v", err)
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch":
+			accept := r.Header.Get("Accept")
+			if !strings.Contains(accept, "application/x-got-pack") {
+				t.Errorf("expected Accept header with application/x-got-pack, got %q", accept)
+			}
+			w.Header().Set("Content-Type", "application/x-got-pack")
+			_, _ = w.Write(packBytes)
+			return
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/got/alice/repo/objects/"):
+			// Should not need individual object fetches; all objects are in the pack.
+			http.Error(w, "unexpected get", http.StatusInternalServerError)
+			return
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	localStore := object.NewStore(t.TempDir())
+
+	written, err := FetchIntoStore(context.Background(), client, localStore, []object.Hash{commitHash}, nil)
+	if err != nil {
+		t.Fatalf("FetchIntoStore: %v", err)
+	}
+	if written != 3 {
+		t.Fatalf("written = %d, want 3", written)
+	}
+	for _, h := range []object.Hash{commitHash, treeHash, blobHash} {
+		if !localStore.Has(h) {
+			t.Fatalf("missing expected object %s", h)
+		}
+	}
+}
