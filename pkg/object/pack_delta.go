@@ -123,31 +123,52 @@ func applyDelta(base, delta []byte) ([]byte, error) {
 				size   int64
 			)
 			if cmd&0x01 != 0 {
-				b, _ := dr.ReadByte()
+				b, err := readDeltaCopyArgByte(dr, "offset byte 0")
+				if err != nil {
+					return nil, err
+				}
 				offset |= int64(b)
 			}
 			if cmd&0x02 != 0 {
-				b, _ := dr.ReadByte()
+				b, err := readDeltaCopyArgByte(dr, "offset byte 1")
+				if err != nil {
+					return nil, err
+				}
 				offset |= int64(b) << 8
 			}
 			if cmd&0x04 != 0 {
-				b, _ := dr.ReadByte()
+				b, err := readDeltaCopyArgByte(dr, "offset byte 2")
+				if err != nil {
+					return nil, err
+				}
 				offset |= int64(b) << 16
 			}
 			if cmd&0x08 != 0 {
-				b, _ := dr.ReadByte()
+				b, err := readDeltaCopyArgByte(dr, "offset byte 3")
+				if err != nil {
+					return nil, err
+				}
 				offset |= int64(b) << 24
 			}
 			if cmd&0x10 != 0 {
-				b, _ := dr.ReadByte()
+				b, err := readDeltaCopyArgByte(dr, "size byte 0")
+				if err != nil {
+					return nil, err
+				}
 				size |= int64(b)
 			}
 			if cmd&0x20 != 0 {
-				b, _ := dr.ReadByte()
+				b, err := readDeltaCopyArgByte(dr, "size byte 1")
+				if err != nil {
+					return nil, err
+				}
 				size |= int64(b) << 8
 			}
 			if cmd&0x40 != 0 {
-				b, _ := dr.ReadByte()
+				b, err := readDeltaCopyArgByte(dr, "size byte 2")
+				if err != nil {
+					return nil, err
+				}
 				size |= int64(b) << 16
 			}
 			if size == 0 {
@@ -174,4 +195,12 @@ func applyDelta(base, delta []byte) ([]byte, error) {
 		return nil, fmt.Errorf("delta result size mismatch: got %d expected %d", len(out), resultSize)
 	}
 	return out, nil
+}
+
+func readDeltaCopyArgByte(r io.ByteReader, field string) (byte, error) {
+	b, err := r.ReadByte()
+	if err != nil {
+		return 0, fmt.Errorf("delta copy %s: %w", field, err)
+	}
+	return b, nil
 }

@@ -2,6 +2,7 @@ package object
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -94,5 +95,22 @@ func TestPackWriterWriteOfsDeltaRejectsFutureBaseOffset(t *testing.T) {
 	target := []byte("b")
 	if err := pw.WriteOfsDelta(pw.CurrentOffset()+10, base, target); err == nil {
 		t.Fatal("expected invalid base offset error")
+	}
+}
+
+func TestApplyDeltaRejectsTruncatedCopyInstruction(t *testing.T) {
+	base := bytes.Repeat([]byte{'a'}, 1<<16)
+
+	var delta bytes.Buffer
+	delta.Write(encodeDeltaVarint(uint64(len(base))))
+	delta.Write(encodeDeltaVarint(uint64(len(base))))
+	delta.WriteByte(0x90) // copy with 1 size byte, but omit the size byte itself
+
+	_, err := applyDelta(base, delta.Bytes())
+	if err == nil {
+		t.Fatal("expected truncated copy instruction error")
+	}
+	if !strings.Contains(err.Error(), "delta copy") {
+		t.Fatalf("error = %q, want to contain %q", err.Error(), "delta copy")
 	}
 }

@@ -38,6 +38,11 @@ func normalizePackIndexEntries(entries []PackIndexEntry) ([]PackIndexEntry, erro
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Hash < out[j].Hash
 	})
+	for i := 1; i < len(out); i++ {
+		if out[i-1].Hash == out[i].Hash {
+			return nil, fmt.Errorf("duplicate hash entry %s", out[i].Hash)
+		}
+	}
 	return out, nil
 }
 

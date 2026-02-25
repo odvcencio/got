@@ -1,6 +1,7 @@
 package object
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -90,6 +91,9 @@ func ReadPackIndex(data []byte) (*PackIndex, error) {
 	cursor := packIndexHeaderSize
 	for i := 0; i < 256; i++ {
 		fanout[i] = binary.BigEndian.Uint32(data[cursor:])
+		if i > 0 && fanout[i] < fanout[i-1] {
+			return nil, fmt.Errorf("pack index fanout is not monotonic at bucket %d", i)
+		}
 		cursor += 4
 	}
 	n := int(fanout[255])
@@ -144,8 +148,23 @@ func ReadPackIndex(data []byte) (*PackIndex, error) {
 	indexChecksumRaw := data[cursor : cursor+32]
 
 	entries := make([]PackIndexEntry, n)
+	var (
+		prefixCounts [256]uint32
+		prevHashRaw  []byte
+	)
 	for i := 0; i < n; i++ {
 		hashRaw := data[namesStart+(i*32) : namesStart+((i+1)*32)]
+		prefixCounts[int(hashRaw[0])]++
+		if i > 0 {
+			switch cmp := bytes.Compare(prevHashRaw, hashRaw); {
+			case cmp > 0:
+				return nil, fmt.Errorf("pack index hash table not sorted at entry %d", i)
+			case cmp == 0:
+				return nil, fmt.Errorf("pack index duplicate hash at entry %d", i)
+			}
+		}
+		prevHashRaw = hashRaw
+
 		offset := uint64(offset32[i])
 		if offset32[i]&packIndexLargeOffsetBit != 0 {
 			ref := offset32[i] & ^packIndexLargeOffsetBit
@@ -158,6 +177,18 @@ func ReadPackIndex(data []byte) (*PackIndex, error) {
 			Hash:   Hash(hex.EncodeToString(hashRaw)),
 			CRC32:  binary.BigEndian.Uint32(data[crcStart+(i*4):]),
 			Offset: offset,
+		}
+	}
+	var running uint32
+	for i := 0; i < 256; i++ {
+		running += prefixCounts[i]
+		if fanout[i] != running {
+			return nil, fmt.Errorf(
+				"pack index fanout mismatch at bucket %d: got %d want %d",
+				i,
+				fanout[i],
+				running,
+			)
 		}
 	}
 

@@ -250,7 +250,20 @@ func (s *Store) Verify() (*VerifySummary, error) {
 				len(offsets),
 			)
 		}
+
+		seenIndexOffsets := make(map[uint64]struct{}, len(entries))
+		indexHashes := make(map[Hash]struct{}, len(entries))
 		for _, indexEntry := range entries {
+			if _, exists := seenIndexOffsets[indexEntry.Offset]; exists {
+				return nil, fmt.Errorf(
+					"verify pack %s: duplicate idx offset %d",
+					filepath.Base(packPath),
+					indexEntry.Offset,
+				)
+			}
+			seenIndexOffsets[indexEntry.Offset] = struct{}{}
+			indexHashes[indexEntry.Hash] = struct{}{}
+
 			packEntry, ok := offsets[indexEntry.Offset]
 			if !ok {
 				return nil, fmt.Errorf(
@@ -264,6 +277,17 @@ func (s *Store) Verify() (*VerifySummary, error) {
 				return nil, fmt.Errorf("verify pack %s hash %s: %w", filepath.Base(packPath), indexEntry.Hash, err)
 			}
 			report.PackObjects++
+		}
+		if pf.EntityTrailer != nil {
+			for _, trailerEntry := range pf.EntityTrailer.Entries {
+				if _, ok := indexHashes[trailerEntry.ObjectHash]; !ok {
+					return nil, fmt.Errorf(
+						"verify pack %s: entity trailer references missing object hash %s",
+						filepath.Base(packPath),
+						trailerEntry.ObjectHash,
+					)
+				}
+			}
 		}
 		report.PackFiles++
 	}

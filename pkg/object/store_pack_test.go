@@ -252,3 +252,51 @@ func TestStoreVerifyDetectsCorruptPackObject(t *testing.T) {
 		t.Fatalf("Verify error = %q, want to contain %q", err.Error(), "verify pack")
 	}
 }
+
+func TestStoreVerifyDetectsEntityTrailerMissingObjectHash(t *testing.T) {
+	s := tempStore(t)
+
+	if _, err := s.Write(TypeBlob, []byte("hello")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	summary, err := s.GC()
+	if err != nil {
+		t.Fatalf("GC: %v", err)
+	}
+	if summary.PackFile == "" {
+		t.Fatalf("expected non-empty pack file name: %+v", summary)
+	}
+
+	packPath := filepath.Join(s.root, "objects", "pack", summary.PackFile)
+	packData, err := os.ReadFile(packPath)
+	if err != nil {
+		t.Fatalf("ReadFile(pack): %v", err)
+	}
+
+	trailerRaw, err := MarshalPackEntityTrailer([]PackEntityTrailerEntry{
+		{
+			ObjectHash: Hash(strings.Repeat("f", 64)),
+			StableID:   "decl:function_definition::Missing",
+		},
+	})
+	if err != nil {
+		t.Fatalf("MarshalPackEntityTrailer: %v", err)
+	}
+
+	packData = append(packData, trailerRaw...)
+	if err := os.WriteFile(packPath, packData, 0o644); err != nil {
+		t.Fatalf("WriteFile(pack with trailer): %v", err)
+	}
+
+	_, err = s.Verify()
+	if err == nil {
+		t.Fatal("Verify should fail for entity trailer entry missing in index")
+	}
+	if !strings.Contains(err.Error(), "entity trailer references missing object hash") {
+		t.Fatalf(
+			"Verify error = %q, want to contain %q",
+			err.Error(),
+			"entity trailer references missing object hash",
+		)
+	}
+}

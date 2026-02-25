@@ -102,6 +102,51 @@ func TestVerifyCmdFailsOnCorruptPack(t *testing.T) {
 	}
 }
 
+func TestVerifyCmdFailsOnCorruptPackIndex(t *testing.T) {
+	dir := t.TempDir()
+	r, err := repo.Init(dir)
+	if err != nil {
+		t.Fatalf("repo.Init: %v", err)
+	}
+
+	writeVerifyCmdFile(t, filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"))
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "tester"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	gcSummary, err := r.Store.GC()
+	if err != nil {
+		t.Fatalf("Store.GC: %v", err)
+	}
+	idxPath := filepath.Join(r.GotDir, "objects", "pack", gcSummary.IndexFile)
+	idxData, err := os.ReadFile(idxPath)
+	if err != nil {
+		t.Fatalf("ReadFile(index): %v", err)
+	}
+	idxData[len(idxData)-1] ^= 0xff
+	if err := os.WriteFile(idxPath, idxData, 0o644); err != nil {
+		t.Fatalf("WriteFile(corrupt index): %v", err)
+	}
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	var output bytes.Buffer
+	verifyCmd := newVerifyCmd()
+	verifyCmd.SetOut(&output)
+	verifyCmd.SetErr(&output)
+	err = verifyCmd.Execute()
+	if err == nil {
+		t.Fatal("verify command should fail for corrupt pack index")
+	}
+	if !strings.Contains(err.Error(), "verify pack index") {
+		t.Fatalf("verify error = %q, want to contain %q", err.Error(), "verify pack index")
+	}
+}
+
 func writeVerifyCmdFile(t *testing.T, path string, content []byte) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

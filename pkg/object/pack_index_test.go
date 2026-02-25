@@ -158,6 +158,20 @@ func TestWritePackIndexLargeOffsets(t *testing.T) {
 	}
 }
 
+func TestWritePackIndexRejectsDuplicateHashes(t *testing.T) {
+	dup := Hash("20" + repeatHex("00", 31))
+	entries := []PackIndexEntry{
+		{Hash: dup, Offset: 1},
+		{Hash: dup, Offset: 2},
+	}
+	packChecksum := Hash(repeatHex("ef", 32))
+
+	var buf bytes.Buffer
+	if _, err := WritePackIndex(&buf, entries, packChecksum); err == nil {
+		t.Fatal("expected duplicate hash error")
+	}
+}
+
 func repeatHex(h string, n int) string {
 	var b bytes.Buffer
 	for i := 0; i < n; i++ {

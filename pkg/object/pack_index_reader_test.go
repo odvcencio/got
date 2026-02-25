@@ -3,6 +3,7 @@ package object
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"testing"
 )
@@ -131,5 +132,55 @@ func TestReadPackIndexChecksumFieldMatchesTrailer(t *testing.T) {
 	gotTrailer := hex.EncodeToString(data[len(data)-32:])
 	if string(idx.IndexChecksum) != gotTrailer {
 		t.Fatalf("index checksum mismatch: got %s want %s", idx.IndexChecksum, gotTrailer)
+	}
+}
+
+func TestReadPackIndexRejectsUnsortedHashTable(t *testing.T) {
+	entries := []PackIndexEntry{
+		{Hash: Hash("10" + repeatHex("00", 31)), Offset: 1},
+		{Hash: Hash("10" + repeatHex("ff", 31)), Offset: 2},
+	}
+	packChecksum := Hash(repeatHex("aa", 32))
+
+	var buf bytes.Buffer
+	if _, err := WritePackIndex(&buf, entries, packChecksum); err != nil {
+		t.Fatalf("WritePackIndex: %v", err)
+	}
+	data := append([]byte(nil), buf.Bytes()...)
+
+	namesStart := packIndexHeaderSize + packIndexFanoutSize
+	first := append([]byte(nil), data[namesStart:namesStart+32]...)
+	second := append([]byte(nil), data[namesStart+32:namesStart+64]...)
+	copy(data[namesStart:namesStart+32], second)
+	copy(data[namesStart+32:namesStart+64], first)
+
+	sum := sha256.Sum256(data[:len(data)-32])
+	copy(data[len(data)-32:], sum[:])
+
+	if _, err := ReadPackIndex(data); err == nil {
+		t.Fatal("expected unsorted hash table error")
+	}
+}
+
+func TestReadPackIndexRejectsFanoutMismatch(t *testing.T) {
+	entries := []PackIndexEntry{
+		{Hash: Hash("10" + repeatHex("00", 31)), Offset: 1},
+	}
+	packChecksum := Hash(repeatHex("aa", 32))
+
+	var buf bytes.Buffer
+	if _, err := WritePackIndex(&buf, entries, packChecksum); err != nil {
+		t.Fatalf("WritePackIndex: %v", err)
+	}
+	data := append([]byte(nil), buf.Bytes()...)
+
+	fanoutStart := packIndexHeaderSize
+	binary.BigEndian.PutUint32(data[fanoutStart+(0x0f*4):], 1)
+
+	sum := sha256.Sum256(data[:len(data)-32])
+	copy(data[len(data)-32:], sum[:])
+
+	if _, err := ReadPackIndex(data); err == nil {
+		t.Fatal("expected fanout mismatch error")
 	}
 }
