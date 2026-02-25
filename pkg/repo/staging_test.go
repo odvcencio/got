@@ -251,6 +251,11 @@ func TestStaging_ReadWriteRoundTrip(t *testing.T) {
 				Mode:           object.TreeModeExecutable,
 				ModTime:        1234567890,
 				Size:           42,
+				HasChangeTime:  true,
+				ChangeTimeNano: 2233445566,
+				HasFileID:      true,
+				Device:         111,
+				Inode:          222,
 			},
 			"bar.txt": {
 				Path:     "bar.txt",
@@ -298,6 +303,21 @@ func TestStaging_ReadWriteRoundTrip(t *testing.T) {
 		}
 		if g.Size != want.Size {
 			t.Errorf("Size: got %d, want %d", g.Size, want.Size)
+		}
+		if g.HasChangeTime != want.HasChangeTime {
+			t.Errorf("HasChangeTime: got %v, want %v", g.HasChangeTime, want.HasChangeTime)
+		}
+		if g.ChangeTimeNano != want.ChangeTimeNano {
+			t.Errorf("ChangeTimeNano: got %d, want %d", g.ChangeTimeNano, want.ChangeTimeNano)
+		}
+		if g.HasFileID != want.HasFileID {
+			t.Errorf("HasFileID: got %v, want %v", g.HasFileID, want.HasFileID)
+		}
+		if g.Device != want.Device {
+			t.Errorf("Device: got %d, want %d", g.Device, want.Device)
+		}
+		if g.Inode != want.Inode {
+			t.Errorf("Inode: got %d, want %d", g.Inode, want.Inode)
 		}
 	}
 }

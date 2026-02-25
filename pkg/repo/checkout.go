@@ -100,14 +100,13 @@ func (r *Repo) Checkout(target string) error {
 			return fmt.Errorf("checkout: stat %q: %w", f.Path, err)
 		}
 
-		stg.Entries[f.Path] = &StagingEntry{
+		entry := &StagingEntry{
 			Path:           f.Path,
 			BlobHash:       f.BlobHash,
 			EntityListHash: f.EntityListHash,
-			Mode:           normalizeFileMode(f.Mode),
-			ModTime:        info.ModTime().UnixNano(),
-			Size:           info.Size(),
 		}
+		setStagingEntryStat(entry, info, normalizeFileMode(f.Mode))
+		stg.Entries[f.Path] = entry
 	}
 	if err := r.WriteStaging(stg); err != nil {
 		return fmt.Errorf("checkout: %w", err)

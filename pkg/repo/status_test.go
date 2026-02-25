@@ -733,6 +733,152 @@ func TestStatus_CacheInvalidatedOnTrackedStateTransitions(t *testing.T) {
 	}
 }
 
+func TestStatus_StatShortcutSkipsRehashForCoarseModTime(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	path := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(path, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	coarseTime := time.Now().Add(-10 * time.Second).Truncate(time.Second)
+	if err := os.Chtimes(path, coarseTime, coarseTime); err != nil {
+		t.Fatalf("Chtimes(main.go): %v", err)
+	}
+
+	// Ensure both mtime and ctime are out of the racy-clean window.
+	time.Sleep(statusRacyCleanWindow + 100*time.Millisecond)
+
+	hashCalls := 0
+	r.statusBlobHasher = func(data []byte) object.Hash {
+		hashCalls++
+		return object.HashObject(object.TypeBlob, data)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status(first): %v", err)
+	}
+	mainEntry := statusEntryForPath(entries, "main.go")
+	if mainEntry == nil {
+		t.Fatal("missing main.go in first status")
+	}
+	if mainEntry.IndexStatus != StatusClean || mainEntry.WorkStatus != StatusClean {
+		t.Fatalf("first status = (%d, %d), want (%d, %d)",
+			mainEntry.IndexStatus, mainEntry.WorkStatus, StatusClean, StatusClean)
+	}
+	if hashCalls != 1 {
+		t.Fatalf("hash calls after first status = %d, want 1", hashCalls)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	se := stg.Entries["main.go"]
+	if se == nil {
+		t.Fatal("missing staging entry for main.go")
+	}
+	if !se.HasChangeTime {
+		t.Skip("platform does not expose change time metadata")
+	}
+	if se.ModTime != coarseTime.UnixNano() {
+		t.Fatalf("staging modtime = %d, want %d", se.ModTime, coarseTime.UnixNano())
+	}
+
+	// Drop process-local hash cache; the second status must rely on index stats.
+	r.invalidateStatusCache()
+
+	entries, err = r.Status()
+	if err != nil {
+		t.Fatalf("Status(second): %v", err)
+	}
+	mainEntry = statusEntryForPath(entries, "main.go")
+	if mainEntry == nil {
+		t.Fatal("missing main.go in second status")
+	}
+	if mainEntry.IndexStatus != StatusClean || mainEntry.WorkStatus != StatusClean {
+		t.Fatalf("second status = (%d, %d), want (%d, %d)",
+			mainEntry.IndexStatus, mainEntry.WorkStatus, StatusClean, StatusClean)
+	}
+	if hashCalls != 1 {
+		t.Fatalf("hash calls after second status = %d, want no additional hashes", hashCalls)
+	}
+}
+
+func TestStatus_DetectsSameSizeRewriteWhenMtimeRestored(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	path := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(path, []byte("alpha\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	se := stg.Entries["main.go"]
+	if se == nil {
+		t.Fatal("missing staging entry for main.go")
+	}
+	if !se.HasChangeTime {
+		t.Skip("platform does not expose change time metadata")
+	}
+
+	hashCalls := 0
+	r.statusBlobHasher = func(data []byte) object.Hash {
+		hashCalls++
+		return object.HashObject(object.TypeBlob, data)
+	}
+
+	if err := os.WriteFile(path, []byte("bravo\n"), 0o644); err != nil {
+		t.Fatalf("rewrite main.go: %v", err)
+	}
+	stagedTime := time.Unix(0, se.ModTime)
+	if err := os.Chtimes(path, stagedTime, stagedTime); err != nil {
+		t.Fatalf("restore mtime: %v", err)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	mainEntry := statusEntryForPath(entries, "main.go")
+	if mainEntry == nil {
+		t.Fatal("missing main.go in status")
+	}
+	if mainEntry.IndexStatus != StatusClean {
+		t.Fatalf("IndexStatus = %d, want %d", mainEntry.IndexStatus, StatusClean)
+	}
+	if mainEntry.WorkStatus != StatusDirty {
+		t.Fatalf("WorkStatus = %d, want %d", mainEntry.WorkStatus, StatusDirty)
+	}
+	if hashCalls == 0 {
+		t.Fatal("expected at least one hash for same-size rewrite with restored mtime")
+	}
+}
+
 func statusEntryForPath(entries []StatusEntry, path string) *StatusEntry {
 	for i := range entries {
 		if entries[i].Path == path {

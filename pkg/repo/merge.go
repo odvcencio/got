@@ -741,18 +741,17 @@ func (r *Repo) stageConflictState(conflicted []mergeConflictState, deletedPaths 
 			return fmt.Errorf("write conflicted blob %q: %w", cf.path, err)
 		}
 
-		stg.Entries[cf.path] = &StagingEntry{
+		entry := &StagingEntry{
 			Path:           cf.path,
 			BlobHash:       blobHash,
 			EntityListHash: "",
-			Mode:           normalizeFileMode(cf.mode),
 			Conflict:       true,
 			BaseBlobHash:   cf.baseHash,
 			OursBlobHash:   cf.oursHash,
 			TheirsBlobHash: cf.theirsHash,
-			ModTime:        info.ModTime().UnixNano(),
-			Size:           info.Size(),
 		}
+		setStagingEntryStat(entry, info, normalizeFileMode(cf.mode))
+		stg.Entries[cf.path] = entry
 	}
 
 	if err := r.WriteStaging(stg); err != nil {

@@ -141,14 +141,18 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 		workMode := modeFromFileInfo(info)
 		workStatus := StatusClean
 		if !stagingStatMatchesWorktree(se, info, workMode) {
-			workHash, err := r.worktreeBlobHash(path, absPath, info, workMode)
-			if err != nil {
-				return nil, fmt.Errorf("status: read %q: %w", path, err)
-			}
-			if workHash != se.BlobHash || workMode != normalizeFileMode(se.Mode) {
+			if stagingStatDefinitelyDirty(se, info, workMode) {
 				workStatus = StatusDirty
-			} else if refreshStagingEntryStat(se, info, workMode) {
-				refreshStaging = true
+			} else {
+				workHash, err := r.worktreeBlobHash(path, absPath, info, workMode)
+				if err != nil {
+					return nil, fmt.Errorf("status: read %q: %w", path, err)
+				}
+				if workHash != se.BlobHash || workMode != normalizeFileMode(se.Mode) {
+					workStatus = StatusDirty
+				} else if refreshStagingEntryStat(se, info, workMode) {
+					refreshStaging = true
+				}
 			}
 		}
 
@@ -297,7 +301,10 @@ func stagingStatMatchesWorktree(se *StagingEntry, info os.FileInfo, workMode str
 	if se == nil {
 		return false
 	}
-	if normalizeFileMode(se.Mode) != normalizeFileMode(workMode) {
+
+	stagedMode := normalizeFileMode(se.Mode)
+	normalizedWorkMode := normalizeFileMode(workMode)
+	if stagedMode != normalizedWorkMode {
 		return false
 	}
 	if se.Size != info.Size() {
@@ -307,31 +314,108 @@ func stagingStatMatchesWorktree(se *StagingEntry, info os.FileInfo, workMode str
 	if se.ModTime < statusStatCacheNanoThreshold {
 		return false
 	}
+	if se.ModTime != info.ModTime().UnixNano() {
+		return false
+	}
 	if isRacyCleanModTime(info.ModTime()) {
 		return false
 	}
-	// Some filesystems expose coarse (second-level) mtimes. When nanoseconds are
-	// zero, same-size edits inside a second can evade stat-only detection.
-	if info.ModTime().Nanosecond() == 0 {
+
+	// If file identity metadata was captured, require it to still match.
+	if se.HasFileID {
+		dev, ino, ok := statusDeviceAndInode(info)
+		if !ok || dev != se.Device || ino != se.Inode {
+			return false
+		}
+	}
+
+	// If change time was captured, require it to still match and avoid racy-clean
+	// windows for filesystems with coarse change-time resolution.
+	if se.HasChangeTime {
+		changeTimeNano, ok := statusChangeTimeUnixNano(info)
+		if !ok || changeTimeNano != se.ChangeTimeNano {
+			return false
+		}
+		if isRacyCleanUnixNano(changeTimeNano) {
+			return false
+		}
+	} else if info.ModTime().Nanosecond() == 0 {
+		// Coarse (second-level) mtimes are too weak without change-time metadata.
 		return false
 	}
-	return se.ModTime == info.ModTime().UnixNano()
+	return true
+}
+
+func stagingStatDefinitelyDirty(se *StagingEntry, info os.FileInfo, workMode string) bool {
+	if se == nil {
+		return false
+	}
+	if normalizeFileMode(se.Mode) != normalizeFileMode(workMode) {
+		return true
+	}
+	// size==-1 is an explicit "unknown" sentinel used by reset to force a
+	// hash-based check without immediately marking the file dirty.
+	return se.Size >= 0 && se.Size != info.Size()
 }
 
 func refreshStagingEntryStat(se *StagingEntry, info os.FileInfo, workMode string) bool {
 	if se == nil {
 		return false
 	}
+	return setStagingEntryStat(se, info, workMode)
+}
+
+func setStagingEntryStat(se *StagingEntry, info os.FileInfo, workMode string) bool {
+	if se == nil {
+		return false
+	}
+
+	changed := false
+
 	nextMode := normalizeFileMode(workMode)
 	nextModTime := info.ModTime().UnixNano()
 	nextSize := info.Size()
-	if se.ModTime == nextModTime && se.Size == nextSize && normalizeFileMode(se.Mode) == nextMode {
-		return false
+
+	if normalizeFileMode(se.Mode) != nextMode {
+		changed = true
 	}
 	se.Mode = nextMode
+
+	if se.ModTime != nextModTime {
+		changed = true
+	}
 	se.ModTime = nextModTime
+
+	if se.Size != nextSize {
+		changed = true
+	}
 	se.Size = nextSize
-	return true
+
+	changeTimeNano, hasChangeTime := statusChangeTimeUnixNano(info)
+	if se.HasChangeTime != hasChangeTime || (hasChangeTime && se.ChangeTimeNano != changeTimeNano) {
+		changed = true
+	}
+	se.HasChangeTime = hasChangeTime
+	if hasChangeTime {
+		se.ChangeTimeNano = changeTimeNano
+	} else {
+		se.ChangeTimeNano = 0
+	}
+
+	dev, ino, hasFileID := statusDeviceAndInode(info)
+	if se.HasFileID != hasFileID || (hasFileID && (se.Device != dev || se.Inode != ino)) {
+		changed = true
+	}
+	se.HasFileID = hasFileID
+	if hasFileID {
+		se.Device = dev
+		se.Inode = ino
+	} else {
+		se.Device = 0
+		se.Inode = 0
+	}
+
+	return changed
 }
 
 func isRacyCleanModTime(modTime time.Time) bool {
@@ -340,6 +424,10 @@ func isRacyCleanModTime(modTime time.Time) bool {
 		return true
 	}
 	return now.Sub(modTime) < statusRacyCleanWindow
+}
+
+func isRacyCleanUnixNano(unixNano int64) bool {
+	return isRacyCleanModTime(time.Unix(0, unixNano))
 }
 
 func detectIndexRenames(stg *Staging, headEntries map[string]headTreeState) (map[string]string, map[string]string) {

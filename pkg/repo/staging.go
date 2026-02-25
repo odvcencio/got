@@ -27,6 +27,11 @@ type StagingEntry struct {
 	TheirsBlobHash object.Hash `json:"theirs_blob_hash,omitempty"`
 	ModTime        int64       `json:"mod_time"`
 	Size           int64       `json:"size"`
+	HasChangeTime  bool        `json:"has_change_time,omitempty"`
+	ChangeTimeNano int64       `json:"change_time_nano,omitempty"`
+	HasFileID      bool        `json:"has_file_id,omitempty"`
+	Device         uint64      `json:"device,omitempty"`
+	Inode          uint64      `json:"inode,omitempty"`
 }
 
 // Staging holds the full staging area (index) for a Got repository.
@@ -150,14 +155,13 @@ func (r *Repo) Add(paths []string) error {
 		}
 		// If extraction fails (unsupported file type), entityListHash stays empty.
 
-		stg.Entries[relPath] = &StagingEntry{
+		entry := &StagingEntry{
 			Path:           relPath,
 			BlobHash:       blobHash,
 			EntityListHash: entityListHash,
-			Mode:           modeFromFileInfo(info),
-			ModTime:        info.ModTime().UnixNano(),
-			Size:           info.Size(),
 		}
+		setStagingEntryStat(entry, info, modeFromFileInfo(info))
+		stg.Entries[relPath] = entry
 	}
 
 	if err := r.WriteStaging(stg); err != nil {
