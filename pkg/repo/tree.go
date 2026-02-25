@@ -124,17 +124,35 @@ func (r *Repo) flattenTreeInto(h object.Hash, prefix string, out *[]TreeFileEntr
 	}
 
 	useFastJoin := false
+	dropPrefix := false
 	prefixWithSlash := ""
-	if prefix != "" && isSimpleCleanPath(prefix) {
-		useFastJoin = true
-		prefixWithSlash = prefix + "/"
+	if prefix != "" {
+		if isSimpleCleanPath(prefix) {
+			useFastJoin = true
+			prefixWithSlash = prefix + "/"
+		} else {
+			// For unclean-but-joinable prefixes (for example "./dir"), clean once
+			// and then fast-join simple child names without calling path.Join
+			// repeatedly for every entry.
+			cleanPrefix := path.Clean(prefix)
+			switch {
+			case cleanPrefix == ".":
+				useFastJoin = true
+				dropPrefix = true
+			case isSimpleCleanPath(cleanPrefix):
+				useFastJoin = true
+				prefixWithSlash = cleanPrefix + "/"
+			}
+		}
 	}
 
 	for _, entry := range treeObj.Entries {
 		fullPath := entry.Name
 		if prefix != "" {
 			if useFastJoin && isSimplePathElem(entry.Name) {
-				fullPath = prefixWithSlash + entry.Name
+				if !dropPrefix {
+					fullPath = prefixWithSlash + entry.Name
+				}
 			} else {
 				fullPath = path.Join(prefix, entry.Name)
 			}
