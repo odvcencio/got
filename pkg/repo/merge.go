@@ -56,17 +56,18 @@ type mergeBaseTraversalQueueItem struct {
 }
 
 func mergeBaseTraversalLimits() (maxSteps int, maxDepth int) {
-	maxSteps = mergeBaseBFSStepsLimit
-	if maxSteps <= 0 {
-		maxSteps = maxMergeBaseBFSSteps
-	}
-
-	maxDepth = mergeBaseBFSDepthLimit
-	if maxDepth <= 0 {
-		maxDepth = maxMergeBaseBFSDepth
-	}
+	maxSteps = normalizeMergeBaseTraversalLimit(mergeBaseBFSStepsLimit, maxMergeBaseBFSSteps)
+	maxDepth = normalizeMergeBaseTraversalLimit(mergeBaseBFSDepthLimit, maxMergeBaseBFSDepth)
 
 	return maxSteps, maxDepth
+}
+
+func normalizeMergeBaseTraversalLimit(limit, hardMax int) int {
+	// Keep safety defaults as hard bounds; test hooks may only tighten.
+	if limit <= 0 || limit > hardMax {
+		return hardMax
+	}
+	return limit
 }
 
 func mergeBaseStepsLimitError(limit int) error {

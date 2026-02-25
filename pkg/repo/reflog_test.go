@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -87,8 +88,25 @@ func TestUpdateRef_ReflogFailureIsReturned(t *testing.T) {
 	if err == nil {
 		t.Fatal("UpdateRef should fail when reflog append fails, got nil")
 	}
-	if !strings.Contains(err.Error(), "append reflog") {
-		t.Fatalf("UpdateRef error = %q, want append reflog context", err)
+	if !errors.Is(err, ErrRefUpdatedButReflogAppendFailed) {
+		t.Fatalf("UpdateRef error = %v, want ErrRefUpdatedButReflogAppendFailed", err)
+	}
+
+	var updateErr *RefUpdateReflogError
+	if !errors.As(err, &updateErr) {
+		t.Fatalf("UpdateRef error = %T, want *RefUpdateReflogError", err)
+	}
+	if updateErr.Ref != "refs/heads/main" {
+		t.Fatalf("RefUpdateReflogError.Ref = %q, want %q", updateErr.Ref, "refs/heads/main")
+	}
+	if updateErr.OldHash != "" {
+		t.Fatalf("RefUpdateReflogError.OldHash = %q, want empty on first update", updateErr.OldHash)
+	}
+	if updateErr.NewHash != h {
+		t.Fatalf("RefUpdateReflogError.NewHash = %q, want %q", updateErr.NewHash, h)
+	}
+	if !strings.Contains(updateErr.Err.Error(), "reflog mkdir") {
+		t.Fatalf("RefUpdateReflogError.Err = %q, want reflog mkdir context", updateErr.Err)
 	}
 
 	got, resolveErr := r.ResolveRef("refs/heads/main")

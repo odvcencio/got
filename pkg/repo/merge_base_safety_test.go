@@ -142,3 +142,24 @@ func TestFindMergeBase_TraversalStepLimit(t *testing.T) {
 		t.Fatalf("FindMergeBase step-limit error = %q, want to contain %q", err, "maximum steps")
 	}
 }
+
+func TestMergeBaseTraversalLimits_AreBounded(t *testing.T) {
+	setMergeBaseTraversalLimitsForTest(t, maxMergeBaseBFSSteps+42, maxMergeBaseBFSDepth+42)
+
+	steps, depth := mergeBaseTraversalLimits()
+	if steps != maxMergeBaseBFSSteps {
+		t.Fatalf("steps limit = %d, want hard max %d", steps, maxMergeBaseBFSSteps)
+	}
+	if depth != maxMergeBaseBFSDepth {
+		t.Fatalf("depth limit = %d, want hard max %d", depth, maxMergeBaseBFSDepth)
+	}
+
+	setMergeBaseTraversalLimitsForTest(t, 0, -1)
+	steps, depth = mergeBaseTraversalLimits()
+	if steps != maxMergeBaseBFSSteps {
+		t.Fatalf("non-positive steps limit fallback = %d, want %d", steps, maxMergeBaseBFSSteps)
+	}
+	if depth != maxMergeBaseBFSDepth {
+		t.Fatalf("non-positive depth limit fallback = %d, want %d", depth, maxMergeBaseBFSDepth)
+	}
+}

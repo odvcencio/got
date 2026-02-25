@@ -279,6 +279,27 @@ func TestFetchIntoStoreRoundLimitExceeded(t *testing.T) {
 	}
 }
 
+func TestResolveFetchConfigNegotiationRoundsBounds(t *testing.T) {
+	cfg, err := resolveFetchConfig(FetchConfig{})
+	if err != nil {
+		t.Fatalf("resolveFetchConfig(default): %v", err)
+	}
+	if cfg.MaxBatchNegotiationRounds != DefaultMaxBatchNegotiationRounds {
+		t.Fatalf("default max rounds = %d, want %d", cfg.MaxBatchNegotiationRounds, DefaultMaxBatchNegotiationRounds)
+	}
+
+	_, err = resolveFetchConfig(FetchConfig{
+		MaxBatchNegotiationRounds: maxAllowedBatchNegotiationRounds + 1,
+	})
+	if err == nil {
+		t.Fatal("expected out-of-bounds rounds error, got nil")
+	}
+	want := fmt.Sprintf("between 1 and %d", maxAllowedBatchNegotiationRounds)
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("out-of-bounds rounds error = %q, want to contain %q", err, want)
+	}
+}
+
 func TestFetchIntoStoreRejectsHashMismatch(t *testing.T) {
 	obj := &object.Blob{Data: []byte("data")}
 	blobData := object.MarshalBlob(obj)

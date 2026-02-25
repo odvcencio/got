@@ -12,6 +12,41 @@ import (
 )
 
 var ErrRefCASMismatch = errors.New("ref compare-and-swap mismatch")
+var ErrRefUpdatedButReflogAppendFailed = errors.New("ref updated but reflog append failed")
+
+// RefUpdateReflogError indicates the ref file update succeeded, but appending
+// the corresponding reflog entry failed.
+type RefUpdateReflogError struct {
+	Ref     string
+	OldHash object.Hash
+	NewHash object.Hash
+	Err     error
+}
+
+func (e *RefUpdateReflogError) Error() string {
+	if e == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf(
+		"update ref %q: %s (old=%s new=%s): %v",
+		e.Ref,
+		ErrRefUpdatedButReflogAppendFailed,
+		e.OldHash,
+		e.NewHash,
+		e.Err,
+	)
+}
+
+func (e *RefUpdateReflogError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func (e *RefUpdateReflogError) Is(target error) bool {
+	return target == ErrRefUpdatedButReflogAppendFailed
+}
 
 const (
 	refLockRetryDelay = 5 * time.Millisecond
@@ -144,6 +179,9 @@ func (r *Repo) UpdateRef(name string, h object.Hash) error {
 // UpdateRefCAS writes a hash to the named ref file under .got/ using
 // lockfile + rename atomic semantics. If expectedOld is provided, the
 // update only succeeds when the current ref hash matches it.
+//
+// Reflog append happens after the ref rename; if reflog append fails, the ref
+// update remains committed and a RefUpdateReflogError is returned.
 func (r *Repo) UpdateRefCAS(name string, h object.Hash, expectedOld ...object.Hash) error {
 	if len(expectedOld) > 1 {
 		return fmt.Errorf("update ref %q: expected at most one old hash", name)
@@ -208,7 +246,12 @@ func (r *Repo) UpdateRefCAS(name string, h object.Hash, expectedOld ...object.Ha
 	cleanupLock = false
 
 	if err := r.appendReflog(name, oldHash, h, "update"); err != nil {
-		return fmt.Errorf("update ref %q: append reflog: %w", name, err)
+		return &RefUpdateReflogError{
+			Ref:     name,
+			OldHash: oldHash,
+			NewHash: h,
+			Err:     err,
+		}
 	}
 
 	return nil

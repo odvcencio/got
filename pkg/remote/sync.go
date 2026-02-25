@@ -25,6 +25,10 @@ const (
 	// MaxBatchNegotiationRounds is kept for backward compatibility.
 	MaxBatchNegotiationRounds = DefaultMaxBatchNegotiationRounds
 
+	// maxAllowedBatchNegotiationRounds keeps caller configuration bounded so
+	// negotiation loops remain finite even with custom configs.
+	maxAllowedBatchNegotiationRounds = 1_000_000
+
 	collectObjectsInitialCapacity = 1024
 )
 
@@ -141,8 +145,12 @@ func resolveFetchConfig(cfg FetchConfig) (FetchConfig, error) {
 		out.MaxBatchNegotiationRounds = cfg.MaxBatchNegotiationRounds
 	}
 
-	if out.MaxBatchNegotiationRounds == 0 {
-		return out, fmt.Errorf("max batch negotiation rounds must be > 0")
+	if out.MaxBatchNegotiationRounds < 1 || out.MaxBatchNegotiationRounds > maxAllowedBatchNegotiationRounds {
+		return out, fmt.Errorf(
+			"max batch negotiation rounds must be between 1 and %d (got %d)",
+			maxAllowedBatchNegotiationRounds,
+			out.MaxBatchNegotiationRounds,
+		)
 	}
 
 	return out, nil

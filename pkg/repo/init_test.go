@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -138,6 +139,40 @@ func TestUpdateRef_ResolveRef_RoundTrip(t *testing.T) {
 	}
 	if got != h {
 		t.Errorf("ResolveRef = %q, want %q", got, h)
+	}
+}
+
+func TestUpdateRef_InitPathReflogFailureIsExplicit(t *testing.T) {
+	dir := t.TempDir()
+
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	logDir := filepath.Join(r.GotDir, "logs", "refs", "heads")
+	if err := os.Remove(logDir); err != nil {
+		t.Fatalf("remove reflog dir: %v", err)
+	}
+	if err := os.WriteFile(logDir, []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatalf("create reflog path blocker: %v", err)
+	}
+
+	h := object.Hash("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+	err = r.UpdateRef("refs/heads/main", h)
+	if err == nil {
+		t.Fatal("UpdateRef should fail when reflog append fails, got nil")
+	}
+	if !errors.Is(err, ErrRefUpdatedButReflogAppendFailed) {
+		t.Fatalf("UpdateRef error = %v, want ErrRefUpdatedButReflogAppendFailed", err)
+	}
+
+	got, resolveErr := r.ResolveRef("refs/heads/main")
+	if resolveErr != nil {
+		t.Fatalf("ResolveRef(main): %v", resolveErr)
+	}
+	if got != h {
+		t.Fatalf("ResolveRef(main) = %q, want %q", got, h)
 	}
 }
 
