@@ -3,6 +3,7 @@ package remote
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -277,5 +278,73 @@ func TestListRefsHandlesLargeResponse(t *testing.T) {
 	}
 	if len(got) != 1000 {
 		t.Fatalf("got %d refs, want 1000", len(got))
+	}
+}
+
+func TestPushObjectsPackRoundTrip(t *testing.T) {
+	blobData := object.MarshalBlob(&object.Blob{Data: []byte("pack-push-test\n")})
+	wantHash := object.HashObject(object.TypeBlob, blobData)
+
+	var serverRecords []ObjectRecord
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/got/alice/repo/objects" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		ct := r.Header.Get("Content-Type")
+		if ct != "application/x-got-pack" {
+			t.Errorf("Content-Type = %q, want application/x-got-pack", ct)
+		}
+		ce := r.Header.Get("Content-Encoding")
+		if ce != "zstd" {
+			t.Errorf("Content-Encoding = %q, want zstd", ce)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		packData, err := decompressZstd(body)
+		if err != nil {
+			http.Error(w, "decompress: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		records, err := DecodePackTransport(packData)
+		if err != nil {
+			http.Error(w, "decode: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		serverRecords = records
+
+		w.Header().Set("Content-Type", "application/json")
+		resp := fmt.Sprintf(`{"received":%d}`, len(records))
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = client.PushObjectsPack(t.Context(), []ObjectRecord{
+		{Type: object.TypeBlob, Data: blobData},
+	})
+	if err != nil {
+		t.Fatalf("PushObjectsPack: %v", err)
+	}
+
+	if len(serverRecords) != 1 {
+		t.Fatalf("server received %d objects, want 1", len(serverRecords))
+	}
+	rec := serverRecords[0]
+	if rec.Hash != wantHash {
+		t.Fatalf("hash = %s, want %s", rec.Hash, wantHash)
+	}
+	if rec.Type != object.TypeBlob {
+		t.Fatalf("type = %s, want blob", rec.Type)
 	}
 }

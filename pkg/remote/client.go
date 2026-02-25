@@ -507,6 +507,66 @@ func (c *Client) PushObjects(ctx context.Context, objects []ObjectRecord) error 
 	return nil
 }
 
+// PushObjectsPack uploads objects using zstd-compressed pack transport.
+func (c *Client) PushObjectsPack(ctx context.Context, objects []ObjectRecord) error {
+	if len(objects) == 0 {
+		return nil
+	}
+
+	for i, obj := range objects {
+		if _, err := parseObjectType(string(obj.Type)); err != nil {
+			return fmt.Errorf("push object %d: %w", i, err)
+		}
+		computedHash := object.HashObject(obj.Type, obj.Data)
+		if provided := object.Hash(strings.TrimSpace(string(obj.Hash))); provided != "" && provided != computedHash {
+			return fmt.Errorf("push object %d: hash mismatch (provided %s, computed %s)", i, provided, computedHash)
+		}
+		objects[i].Hash = computedHash
+	}
+
+	packData, err := EncodePackTransportToBytes(objects)
+	if err != nil {
+		return fmt.Errorf("encode pack: %w", err)
+	}
+
+	compressed, err := compressZstd(packData)
+	if err != nil {
+		return fmt.Errorf("compress pack: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint.BaseURL+"/objects", bytes.NewReader(compressed))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-got-pack")
+	req.Header.Set("Content-Encoding", "zstd")
+	c.applyAuth(req)
+
+	resp, err := retryDo(c.httpClient, req, c.maxAttempts)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if readErr != nil {
+		return readErr
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		if re := tryParseRemoteError(body); re != nil {
+			return re
+		}
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = http.StatusText(resp.StatusCode)
+		}
+		return fmt.Errorf("remote request failed (%s %s): %s", req.Method, req.URL.Path, msg)
+	}
+
+	return nil
+}
+
 // UpdateRefs applies atomic CAS updates on the remote refs.
 func (c *Client) UpdateRefs(ctx context.Context, updates []RefUpdate) (map[string]object.Hash, error) {
 	if len(updates) == 0 {
