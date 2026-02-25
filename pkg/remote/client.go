@@ -134,6 +134,14 @@ type ClientOptions struct {
 	MaxAttempts int           // retry attempts (default 3)
 }
 
+// Response limits per endpoint type.
+const (
+	responseLimitDefault = 2 << 20  // 2MB
+	responseLimitRefs    = 8 << 20  // 8MB
+	responseLimitBatch   = 64 << 20 // 64MB
+	responseLimitObject  = 32 << 20 // 32MB
+)
+
 // Client is a transport client for gothub's Got protocol.
 type Client struct {
 	endpoint    Endpoint
@@ -200,7 +208,7 @@ func (c *Client) ListRefs(ctx context.Context) (map[string]object.Hash, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, err := c.do(req, http.StatusOK)
+	body, err := c.doWithLimit(req, http.StatusOK, responseLimitRefs, "application/json")
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +266,7 @@ func (c *Client) BatchObjects(ctx context.Context, wants, haves []object.Hash, m
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	body, err := c.do(req, http.StatusOK)
+	body, err := c.doWithLimit(req, http.StatusOK, responseLimitBatch, "application/json")
 	if err != nil {
 		return nil, false, err
 	}
@@ -368,7 +376,7 @@ func (c *Client) PushObjects(ctx context.Context, objects []ObjectRecord) error 
 	}
 	req.Header.Set("Content-Type", "application/x-ndjson")
 
-	if _, err := c.do(req, http.StatusOK); err != nil {
+	if _, err := c.doWithLimit(req, http.StatusOK, 1<<20, "application/json"); err != nil {
 		return err
 	}
 	return nil
@@ -425,7 +433,7 @@ func (c *Client) UpdateRefs(ctx context.Context, updates []RefUpdate) (map[strin
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	body, err := c.do(req, http.StatusOK)
+	body, err := c.doWithLimit(req, http.StatusOK, 1<<20, "application/json")
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +451,7 @@ func (c *Client) UpdateRefs(ctx context.Context, updates []RefUpdate) (map[strin
 	return out, nil
 }
 
-func (c *Client) do(req *http.Request, expectedStatus int) ([]byte, error) {
+func (c *Client) doWithLimit(req *http.Request, expectedStatus int, maxBytes int64, expectedContentType string) ([]byte, error) {
 	c.applyAuth(req)
 	resp, err := retryDo(c.httpClient, req, c.maxAttempts)
 	if err != nil {
@@ -451,7 +459,7 @@ func (c *Client) do(req *http.Request, expectedStatus int) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
-	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
 	if readErr != nil {
 		return nil, readErr
 	}
@@ -462,7 +470,22 @@ func (c *Client) do(req *http.Request, expectedStatus int) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("remote request failed (%s %s): %s", req.Method, req.URL.Path, msg)
 	}
+
+	// Validate content type on success responses before returning body.
+	if expectedContentType != "" {
+		ct := resp.Header.Get("Content-Type")
+		if ct != "" && !strings.HasPrefix(ct, expectedContentType) {
+			return nil, fmt.Errorf("unexpected content type %q (expected %s) from %s %s (status %d)",
+				ct, expectedContentType, req.Method, req.URL.Path, resp.StatusCode)
+		}
+	}
+
 	return body, nil
+}
+
+// do is a backward-compatible wrapper using default limits.
+func (c *Client) do(req *http.Request, expectedStatus int) ([]byte, error) {
+	return c.doWithLimit(req, expectedStatus, responseLimitDefault, "")
 }
 
 func (c *Client) applyAuth(req *http.Request) {

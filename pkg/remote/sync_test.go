@@ -53,6 +53,7 @@ func TestFetchIntoStoreBatchThenGetFallback(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch":
+			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"objects": []map[string]any{
 					{"hash": string(commitHash), "type": string(commitType), "data": commitData},
@@ -179,6 +180,7 @@ func TestFetchIntoStoreUsesMultipleBatchRounds(t *testing.T) {
 			default:
 				resp.Truncated = false
 			}
+			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(resp)
 			return
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/got/alice/repo/objects/"):
@@ -235,6 +237,7 @@ func TestFetchIntoStoreRoundLimitExceeded(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch":
 			batchCalls++
+			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"objects": []map[string]any{
 					{"hash": string(blobHash), "type": string(blobType), "data": blobData},
@@ -311,6 +314,7 @@ func TestFetchIntoStoreRejectsHashMismatch(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch" {
+			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"objects": []map[string]any{
 					{"hash": string(badHash), "type": string(object.TypeBlob), "data": blobData},

@@ -2,6 +2,7 @@ package remote
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -188,5 +189,50 @@ func TestNewClientWithOptionsDefaults(t *testing.T) {
 	}
 	if client.maxAttempts != 3 {
 		t.Fatalf("maxAttempts = %d, want 3", client.maxAttempts)
+	}
+}
+
+func TestDoRejectsWrongContentType(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<html>error</html>"))
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.ListRefs(t.Context())
+	if err == nil {
+		t.Fatal("expected content-type error")
+	}
+	if !strings.Contains(err.Error(), "text/html") {
+		t.Fatalf("expected content-type in error, got: %v", err)
+	}
+}
+
+func TestListRefsHandlesLargeResponse(t *testing.T) {
+	refs := make(map[string]string)
+	for i := 0; i < 1000; i++ {
+		refs[fmt.Sprintf("heads/branch-%04d", i)] = strings.Repeat("a", 64)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(refs)
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/got/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := client.ListRefs(t.Context())
+	if err != nil {
+		t.Fatalf("ListRefs: %v", err)
+	}
+	if len(got) != 1000 {
+		t.Fatalf("got %d refs, want 1000", len(got))
 	}
 }
