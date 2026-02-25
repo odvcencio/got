@@ -41,9 +41,12 @@ func newPullCmd() *cobra.Command {
 				remoteArg = strings.TrimSpace(args[0])
 				branch = strings.TrimSpace(args[1])
 			}
-			remoteName, remoteURL, err := resolveRemoteNameAndURL(r, remoteArg)
+			remoteName, remoteURL, transport, err := resolveRemoteNameAndSpec(r, remoteArg)
 			if err != nil {
 				return err
+			}
+			if transport == remoteTransportGit {
+				return pullViaGit(cmd, r, remoteURL, branch, allowMerge)
 			}
 
 			currentBranch, err := r.CurrentBranch()

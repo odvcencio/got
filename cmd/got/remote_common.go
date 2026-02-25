@@ -8,34 +8,60 @@ import (
 	"strings"
 
 	"github.com/odvcencio/got/pkg/object"
-	"github.com/odvcencio/got/pkg/remote"
 	"github.com/odvcencio/got/pkg/repo"
 )
 
 func looksLikeRemoteURL(s string) bool {
-	_, err := remote.ParseEndpoint(s)
+	_, _, err := parseRemoteSpec(s)
 	return err == nil
 }
 
-func resolveRemoteNameAndURL(r *repo.Repo, remoteArg string) (string, string, error) {
+func parseAnyRemoteSpec(raw string) (string, remoteTransportKind, error) {
+	kind, canonical, err := parseRemoteSpec(raw)
+	if err != nil {
+		return "", "", err
+	}
+	return canonical, kind, nil
+}
+
+func parseGotRemoteURL(raw string) (string, error) {
+	canonical, kind, err := parseAnyRemoteSpec(raw)
+	if err != nil {
+		return "", err
+	}
+	if kind != remoteTransportGot {
+		return "", fmt.Errorf("remote %q uses git transport; got protocol endpoint required", raw)
+	}
+	return canonical, nil
+}
+
+func resolveRemoteNameAndSpec(r *repo.Repo, remoteArg string) (string, string, remoteTransportKind, error) {
 	remoteArg = strings.TrimSpace(remoteArg)
 	if remoteArg == "" {
 		url, err := r.RemoteURL("origin")
 		if err != nil {
-			return "", "", fmt.Errorf("remote not configured: %w", err)
+			return "", "", "", fmt.Errorf("remote not configured: %w", err)
 		}
-		return "origin", url, nil
+		canonical, kind, err := parseAnyRemoteSpec(url)
+		if err != nil {
+			return "", "", "", fmt.Errorf("remote %q has invalid URL %q: %w", "origin", url, err)
+		}
+		return "origin", canonical, kind, nil
 	}
 
-	if looksLikeRemoteURL(remoteArg) {
-		return "origin", remoteArg, nil
+	if canonical, kind, err := parseAnyRemoteSpec(remoteArg); err == nil {
+		return "origin", canonical, kind, nil
 	}
 
 	url, err := r.RemoteURL(remoteArg)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-	return remoteArg, url, nil
+	canonical, kind, err := parseAnyRemoteSpec(url)
+	if err != nil {
+		return "", "", "", fmt.Errorf("remote %q has invalid URL %q: %w", remoteArg, url, err)
+	}
+	return remoteArg, canonical, kind, nil
 }
 
 func localRefTips(r *repo.Repo) ([]object.Hash, error) {

@@ -40,115 +40,121 @@ func newPushCmd() *cobra.Command {
 				remoteArg = strings.TrimSpace(args[0])
 				branch = strings.TrimSpace(args[1])
 			}
-			remoteName, remoteURL, err := resolveRemoteNameAndURL(r, remoteArg)
+			remoteName, remoteURL, transport, err := resolveRemoteNameAndSpec(r, remoteArg)
 			if err != nil {
 				return err
 			}
-
-			pushTarget, localRef, remoteRef, err := resolvePushRefNames(r, branch)
-			if err != nil {
-				return err
+			if transport == remoteTransportGit {
+				return pushViaGit(cmd, r, remoteURL, branch, force)
 			}
-			localHash, err := r.ResolveRef(localRef)
-			if err != nil {
-				return fmt.Errorf("resolve local ref %q: %w", localRef, err)
-			}
-
-			client, err := remote.NewClient(remoteURL)
-			if err != nil {
-				return err
-			}
-			remoteRefs, err := client.ListRefs(cmd.Context())
-			if err != nil {
-				return err
-			}
-
-			remoteHash, hasRemote := remoteRefs[remoteRef]
-			if hasRemote && strings.TrimSpace(string(remoteHash)) == "" {
-				hasRemote = false
-			}
-
-			if hasRemote && remoteHash == localHash {
-				_ = r.UpdateRef(remoteTrackingRefName(remoteName, remoteRef), remoteHash)
-				fmt.Fprintf(cmd.OutOrStdout(), "everything up-to-date (%s)\n", shortHash(localHash))
-				return nil
-			}
-
-			if hasRemote && !force {
-				if strings.HasPrefix(remoteRef, "heads/") {
-					if !r.Store.Has(remoteHash) {
-						haves, err := localRefTips(r)
-						if err != nil {
-							return err
-						}
-						if _, err := remote.FetchIntoStore(cmd.Context(), client, r.Store, []object.Hash{remoteHash}, haves); err != nil {
-							return fmt.Errorf("push safety check failed fetching remote head: %w", err)
-						}
-					}
-					base, err := r.FindMergeBase(localHash, remoteHash)
-					if err != nil {
-						return fmt.Errorf("push safety check failed: %w", err)
-					}
-					if base != remoteHash {
-						return fmt.Errorf("push rejected: non-fast-forward (local %s does not contain remote %s)", shortHash(localHash), shortHash(remoteHash))
-					}
-				} else if remoteHash != localHash {
-					return fmt.Errorf("push rejected: remote %s already exists at %s (use --force to overwrite)", remoteRef, shortHash(remoteHash))
-				}
-			}
-
-			stopRoots := make([]object.Hash, 0, len(remoteRefs))
-			for _, h := range remoteRefs {
-				if strings.TrimSpace(string(h)) == "" {
-					continue
-				}
-				if r.Store.Has(h) {
-					stopRoots = append(stopRoots, h)
-				}
-			}
-
-			objectsToPush, err := remote.CollectObjectsForPush(r.Store, []object.Hash{localHash}, stopRoots)
-			if err != nil {
-				return err
-			}
-			uploaded, err := pushObjectsChunked(cmd.Context(), client, objectsToPush)
-			if err != nil {
-				return err
-			}
-
-			old := object.Hash("")
-			if hasRemote {
-				old = remoteHash
-			}
-			newHash := localHash
-			updated, err := client.UpdateRefs(cmd.Context(), []remote.RefUpdate{{
-				Name: remoteRef,
-				Old:  &old,
-				New:  &newHash,
-			}})
-			if err != nil {
-				return err
-			}
-
-			finalHash := localHash
-			if h, ok := updated[remoteRef]; ok && strings.TrimSpace(string(h)) != "" {
-				finalHash = h
-			}
-			if err := r.UpdateRef(remoteTrackingRefName(remoteName, remoteRef), finalHash); err != nil {
-				return err
-			}
-
-			if hasRemote {
-				fmt.Fprintf(cmd.OutOrStdout(), "pushed %s: %s -> %s (%d objects)\n", pushTarget, shortHash(remoteHash), shortHash(finalHash), uploaded)
-				return nil
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "pushed new %s at %s (%d objects)\n", pushTarget, shortHash(finalHash), uploaded)
-			return nil
+			return pushBranchGot(cmd, r, remoteName, remoteURL, branch, force)
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "allow non-fast-forward update")
 	return cmd
+}
+
+func pushBranchGot(cmd *cobra.Command, r *repo.Repo, remoteName, remoteURL, branch string, force bool) error {
+	pushTarget, localRef, remoteRef, err := resolvePushRefNames(r, branch)
+	if err != nil {
+		return err
+	}
+	localHash, err := r.ResolveRef(localRef)
+	if err != nil {
+		return fmt.Errorf("resolve local ref %q: %w", localRef, err)
+	}
+
+	client, err := remote.NewClient(remoteURL)
+	if err != nil {
+		return err
+	}
+	remoteRefs, err := client.ListRefs(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	remoteHash, hasRemote := remoteRefs[remoteRef]
+	if hasRemote && strings.TrimSpace(string(remoteHash)) == "" {
+		hasRemote = false
+	}
+
+	if hasRemote && remoteHash == localHash {
+		_ = r.UpdateRef(remoteTrackingRefName(remoteName, remoteRef), remoteHash)
+		fmt.Fprintf(cmd.OutOrStdout(), "everything up-to-date (%s)\n", shortHash(localHash))
+		return nil
+	}
+
+	if hasRemote && !force {
+		if strings.HasPrefix(remoteRef, "heads/") {
+			if !r.Store.Has(remoteHash) {
+				haves, err := localRefTips(r)
+				if err != nil {
+					return err
+				}
+				if _, err := remote.FetchIntoStore(cmd.Context(), client, r.Store, []object.Hash{remoteHash}, haves); err != nil {
+					return fmt.Errorf("push safety check failed fetching remote head: %w", err)
+				}
+			}
+			base, err := r.FindMergeBase(localHash, remoteHash)
+			if err != nil {
+				return fmt.Errorf("push safety check failed: %w", err)
+			}
+			if base != remoteHash {
+				return fmt.Errorf("push rejected: non-fast-forward (local %s does not contain remote %s)", shortHash(localHash), shortHash(remoteHash))
+			}
+		} else if remoteHash != localHash {
+			return fmt.Errorf("push rejected: remote %s already exists at %s (use --force to overwrite)", remoteRef, shortHash(remoteHash))
+		}
+	}
+
+	stopRoots := make([]object.Hash, 0, len(remoteRefs))
+	for _, h := range remoteRefs {
+		if strings.TrimSpace(string(h)) == "" {
+			continue
+		}
+		if r.Store.Has(h) {
+			stopRoots = append(stopRoots, h)
+		}
+	}
+
+	objectsToPush, err := remote.CollectObjectsForPush(r.Store, []object.Hash{localHash}, stopRoots)
+	if err != nil {
+		return err
+	}
+	uploaded, err := pushObjectsChunked(cmd.Context(), client, objectsToPush)
+	if err != nil {
+		return err
+	}
+
+	old := object.Hash("")
+	if hasRemote {
+		old = remoteHash
+	}
+	newHash := localHash
+	updated, err := client.UpdateRefs(cmd.Context(), []remote.RefUpdate{{
+		Name: remoteRef,
+		Old:  &old,
+		New:  &newHash,
+	}})
+	if err != nil {
+		return err
+	}
+
+	finalHash := localHash
+	if h, ok := updated[remoteRef]; ok && strings.TrimSpace(string(h)) != "" {
+		finalHash = h
+	}
+	if err := r.UpdateRef(remoteTrackingRefName(remoteName, remoteRef), finalHash); err != nil {
+		return err
+	}
+
+	if hasRemote {
+		fmt.Fprintf(cmd.OutOrStdout(), "pushed %s: %s -> %s (%d objects)\n", pushTarget, shortHash(remoteHash), shortHash(finalHash), uploaded)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "pushed new %s at %s (%d objects)\n", pushTarget, shortHash(finalHash), uploaded)
+	return nil
 }
 
 func resolvePushRefNames(r *repo.Repo, branchArg string) (display string, localRef string, remoteRef string, err error) {

@@ -43,13 +43,14 @@ func newRemoteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if !looksLikeRemoteURL(args[1]) {
-				return fmt.Errorf("invalid remote URL %q", args[1])
+			remoteURL, _, err := parseAnyRemoteSpec(args[1])
+			if err != nil {
+				return fmt.Errorf("invalid remote URL %q: %w", args[1], err)
 			}
-			if err := r.SetRemote(args[0], args[1]); err != nil {
+			if err := r.SetRemote(args[0], remoteURL); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "added remote %q\n", args[0])
+			fmt.Fprintf(cmd.OutOrStdout(), "added remote %q -> %s\n", args[0], remoteURL)
 			return nil
 		},
 	})
@@ -63,13 +64,14 @@ func newRemoteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if !looksLikeRemoteURL(args[1]) {
-				return fmt.Errorf("invalid remote URL %q", args[1])
+			remoteURL, _, err := parseAnyRemoteSpec(args[1])
+			if err != nil {
+				return fmt.Errorf("invalid remote URL %q: %w", args[1], err)
 			}
-			if err := r.SetRemote(args[0], args[1]); err != nil {
+			if err := r.SetRemote(args[0], remoteURL); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "updated remote %q\n", args[0])
+			fmt.Fprintf(cmd.OutOrStdout(), "updated remote %q -> %s\n", args[0], remoteURL)
 			return nil
 		},
 	})

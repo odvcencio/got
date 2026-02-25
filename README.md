@@ -101,6 +101,7 @@ got checkout <target> [-b]   Switch branches
 got merge <branch>           Three-way structural merge
 got cherrypick-entity ...    Apply entity-scoped changes from another commit
 got remote                   Manage remotes
+got publish [owner/repo]     Create remote repo on Gothub, set origin, and push
 got clone <url> [dir]        Clone from Got protocol endpoint
 got pull [remote] [branch]   Fetch and fast-forward local branch
 got push [remote] [branch]   Push local branch to remote
@@ -108,6 +109,36 @@ got reflog                   Show local ref update history
 got gc                       Pack loose objects and prune unreachable data
 got verify                   Verify repository object integrity
 ```
+
+### Remote shorthand
+
+Use `gothub:owner/repo` instead of full URLs:
+
+```bash
+got remote add origin gothub:alice/demo
+got clone gothub:alice/demo
+got publish alice/demo
+```
+
+Git forge shorthand is also supported:
+
+```bash
+got clone github:owner/repo
+got clone gitlab:group/subgroup/repo
+got clone bitbucket:workspace/repo
+```
+
+For Git-forge clones, `got` bootstraps a local `.got` repository from the cloned Git HEAD snapshot.
+
+For self-hosted instances, set `GOT_GOTHUB_URL`:
+
+```bash
+export GOT_GOTHUB_URL=https://code.example.com
+got remote add origin gothub:alice/demo
+```
+
+When a remote is a Git forge URL, `got` routes `clone/pull/push` through Git transport; Gothub remotes continue to use native Got transport.
+`got clone` from a Git forge bootstraps `.got` from the cloned Git HEAD snapshot so structural workflows can start immediately.
 
 ### Structural diff
 
@@ -167,7 +198,7 @@ What exists:
 - Set-union import merging
 - Entity-level and line-level diff
 - Pack files with delta support (`got gc`) and repository verification (`got verify`)
-- Full CLI: init, add, reset, rm, status, commit, log, show, blame, diff, branch, tag, checkout, merge, cherrypick-entity, remote, clone, pull, push, reflog, gc, verify
+- Full CLI: init, add, reset, rm, status, commit, log, show, blame, diff, branch, tag, checkout, merge, cherrypick-entity, remote, publish, clone, pull, push, reflog, gc, verify
 - `.gotignore` support
 
 What doesn't exist yet:

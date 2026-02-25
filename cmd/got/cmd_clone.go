@@ -16,16 +16,25 @@ import (
 func newCloneCmd() *cobra.Command {
 	var remoteName string
 	var branch string
+	var bootstrapGot bool
 
 	cmd := &cobra.Command{
 		Use:   "clone <remote-url> [directory]",
-		Short: "Clone a repository from a Got endpoint or local path",
+		Short: "Clone a repository from Got/Git endpoints or local path",
 		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			source := args[0]
+			source := strings.TrimSpace(args[0])
 			localSourceRoot, isLocalSource, err := resolveLocalCloneSource(source)
 			if err != nil {
 				return err
+			}
+			remoteSource := source
+			remoteKind := remoteTransportGot
+			if !isLocalSource {
+				remoteKind, remoteSource, err = parseRemoteSpec(source)
+				if err != nil {
+					return fmt.Errorf("invalid remote URL %q: %w", source, err)
+				}
 			}
 
 			dest := ""
@@ -33,8 +42,10 @@ func newCloneCmd() *cobra.Command {
 				dest = args[1]
 			} else if isLocalSource {
 				dest = filepath.Base(localSourceRoot)
+			} else if remoteKind == remoteTransportGit {
+				dest = inferRepoNameFromRemote(remoteSource)
 			} else {
-				client, err := remote.NewClient(source)
+				client, err := remote.NewClient(remoteSource)
 				if err != nil {
 					return err
 				}
@@ -54,8 +65,11 @@ func newCloneCmd() *cobra.Command {
 			if isLocalSource {
 				return cloneFromLocalSource(cmd, localSourceRoot, source, absDest, remoteName, branch)
 			}
+			if remoteKind == remoteTransportGit {
+				return cloneFromGitRemote(cmd, remoteSource, absDest, remoteName, branch, bootstrapGot)
+			}
 
-			client, err := remote.NewClient(source)
+			client, err := remote.NewClient(remoteSource)
 			if err != nil {
 				return err
 			}
@@ -63,7 +77,7 @@ func newCloneCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := r.SetRemote(remoteName, source); err != nil {
+			if err := r.SetRemote(remoteName, remoteSource); err != nil {
 				return err
 			}
 
@@ -125,13 +139,14 @@ func newCloneCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", source, absDest)
+			fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", remoteSource, absDest)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&remoteName, "remote-name", "origin", "name to assign to the cloned remote")
 	cmd.Flags().StringVarP(&branch, "branch", "b", "", "branch to checkout after clone")
+	cmd.Flags().BoolVar(&bootstrapGot, "bootstrap-got", true, "initialize .got repository from cloned git HEAD snapshot")
 	return cmd
 }
 
