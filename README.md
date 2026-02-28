@@ -1,4 +1,4 @@
-# got
+# graft
 
 Structural version control. Merges functions, not lines.
 
