@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func TestParseEndpoint(t *testing.T) {

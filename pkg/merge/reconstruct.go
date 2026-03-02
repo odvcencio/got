@@ -1,6 +1,6 @@
 package merge
 
-import "github.com/odvcencio/got/pkg/entity"
+import "github.com/odvcencio/graft/pkg/entity"
 
 // ResolvedEntity wraps an entity with its merge resolution.
 // For non-conflict entities, Body contains the resolved content.

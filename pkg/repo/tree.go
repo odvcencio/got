@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // TreeFileEntry represents a single file in a flattened tree.

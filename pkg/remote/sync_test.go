@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func TestFetchIntoStoreBatchThenGetFallback(t *testing.T) {

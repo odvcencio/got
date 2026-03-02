@@ -3,7 +3,7 @@ package remote
 import (
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func TestValidateHashValid(t *testing.T) {
