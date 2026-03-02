@@ -100,8 +100,10 @@ func TestFindMergeBase_CorruptCycleGraphReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected cycle error, got nil")
 	}
-	if !strings.Contains(err.Error(), "cycle detected") {
-		t.Fatalf("FindMergeBase cycle error = %q, want to contain %q", err, "cycle detected")
+	// The corruption may be detected either as a cycle during traversal or
+	// as an integrity check failure when reading the tampered commit.
+	if !strings.Contains(err.Error(), "cycle detected") && !strings.Contains(err.Error(), "integrity check failed") {
+		t.Fatalf("FindMergeBase cycle error = %q, want to contain %q or %q", err, "cycle detected", "integrity check failed")
 	}
 }
 

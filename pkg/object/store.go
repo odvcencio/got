@@ -121,6 +121,9 @@ func (s *Store) readLoose(h Hash) (ObjectType, []byte, error) {
 
 	// Backward compatibility: support legacy uncompressed objects.
 	if objType, content, err := parseObjectEnvelope(onDisk, h); err == nil {
+		if computed := HashObject(objType, content); computed != h {
+			return "", nil, fmt.Errorf("object %s: integrity check failed (computed %s)", h, computed)
+		}
 		return objType, content, nil
 	}
 
@@ -128,7 +131,14 @@ func (s *Store) readLoose(h Hash) (ObjectType, []byte, error) {
 	if err != nil {
 		return "", nil, fmt.Errorf("object read %s: decompress: %w", h, err)
 	}
-	return parseObjectEnvelope(raw, h)
+	objType, content, err := parseObjectEnvelope(raw, h)
+	if err != nil {
+		return "", nil, err
+	}
+	if computed := HashObject(objType, content); computed != h {
+		return "", nil, fmt.Errorf("object %s: integrity check failed (computed %s)", h, computed)
+	}
+	return objType, content, nil
 }
 
 func parseObjectEnvelope(raw []byte, h Hash) (ObjectType, []byte, error) {

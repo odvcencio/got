@@ -429,3 +429,152 @@ func TestStoreReadBlobTypeMismatch(t *testing.T) {
 		t.Errorf("Expected type mismatch error, got: %v", err)
 	}
 }
+
+func TestReadLoose_VerifiesIntegrity(t *testing.T) {
+	s := tempStore(t)
+	data := []byte("integrity test payload")
+	h, err := s.Write(TypeBlob, data)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	// Sanity: reading before corruption succeeds.
+	if _, _, err := s.Read(h); err != nil {
+		t.Fatalf("Read before corruption: %v", err)
+	}
+
+	// Corrupt the on-disk file by writing a valid envelope with different
+	// content so parseObjectEnvelope succeeds but the hash won't match.
+	corrupted := []byte("corrupted payload!!!")
+	envelope := fmt.Sprintf("%s %d\x00", TypeBlob, len(corrupted))
+	raw := append([]byte(envelope), corrupted...)
+	compressed, err := compressObject(raw)
+	if err != nil {
+		t.Fatalf("compressObject: %v", err)
+	}
+	objPath := s.objectPath(h)
+	if err := os.WriteFile(objPath, compressed, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, _, err = s.Read(h)
+	if err == nil {
+		t.Fatal("Read of corrupted object should return error")
+	}
+	if !strings.Contains(err.Error(), "integrity check failed") {
+		t.Errorf("Expected integrity check error, got: %v", err)
+	}
+}
+
+func TestReadLoose_VerifiesIntegrity_Legacy(t *testing.T) {
+	s := tempStore(t)
+	data := []byte("legacy integrity test")
+	h := HashObject(TypeBlob, data)
+
+	// Write a valid legacy (uncompressed) object.
+	legacyRaw := []byte(fmt.Sprintf("%s %d\x00", TypeBlob, len(data)))
+	legacyRaw = append(legacyRaw, data...)
+	objPath := s.objectPath(h)
+	if err := os.MkdirAll(filepath.Dir(objPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(objPath, legacyRaw, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Sanity: valid legacy object reads fine.
+	if _, _, err := s.Read(h); err != nil {
+		t.Fatalf("Read valid legacy object: %v", err)
+	}
+
+	// Now corrupt it: write a different payload under the same hash path.
+	corrupted := []byte("tampered content!!!!")
+	corruptRaw := []byte(fmt.Sprintf("%s %d\x00", TypeBlob, len(corrupted)))
+	corruptRaw = append(corruptRaw, corrupted...)
+	if err := os.WriteFile(objPath, corruptRaw, 0o644); err != nil {
+		t.Fatalf("WriteFile corrupted: %v", err)
+	}
+
+	_, _, err := s.Read(h)
+	if err == nil {
+		t.Fatal("Read of corrupted legacy object should return error")
+	}
+	if !strings.Contains(err.Error(), "integrity check failed") {
+		t.Errorf("Expected integrity check error, got: %v", err)
+	}
+}
+
+func TestReadFromPack_VerifiesIntegrity(t *testing.T) {
+	s := tempStore(t)
+
+	// Write several objects so GC produces a pack file.
+	hashes := make([]Hash, 5)
+	for i := range hashes {
+		data := []byte(fmt.Sprintf("pack integrity object %d", i))
+		h, err := s.Write(TypeBlob, data)
+		if err != nil {
+			t.Fatalf("Write %d: %v", i, err)
+		}
+		hashes[i] = h
+	}
+
+	// Run GC to pack objects.
+	summary, err := s.GC()
+	if err != nil {
+		t.Fatalf("GC: %v", err)
+	}
+	if summary.PackedObjects != 5 {
+		t.Fatalf("GC packed %d objects, want 5", summary.PackedObjects)
+	}
+
+	// Verify reads from pack succeed before corruption.
+	for _, h := range hashes {
+		if _, _, err := s.Read(h); err != nil {
+			t.Fatalf("Read %s from pack before corruption: %v", h, err)
+		}
+	}
+
+	// Corrupt the pack file by flipping bytes in the middle.
+	packDir := filepath.Join(s.root, "objects", "pack")
+	entries, err := os.ReadDir(packDir)
+	if err != nil {
+		t.Fatalf("ReadDir pack: %v", err)
+	}
+	var packPath string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".pack") {
+			packPath = filepath.Join(packDir, e.Name())
+			break
+		}
+	}
+	if packPath == "" {
+		t.Fatal("No pack file found after GC")
+	}
+
+	packData, err := os.ReadFile(packPath)
+	if err != nil {
+		t.Fatalf("ReadFile pack: %v", err)
+	}
+
+	// Corrupt a byte in the middle of the pack data (past header).
+	corruptOffset := len(packData) / 2
+	packData[corruptOffset] ^= 0xff
+	if err := os.WriteFile(packPath, packData, 0o644); err != nil {
+		t.Fatalf("WriteFile corrupted pack: %v", err)
+	}
+
+	// Invalidate cached pack indices so the store re-reads.
+	s.InvalidatePackIndexCache()
+
+	// At least one read should fail due to corruption (checksum or integrity).
+	anyError := false
+	for _, h := range hashes {
+		if _, _, err := s.Read(h); err != nil {
+			anyError = true
+			break
+		}
+	}
+	if !anyError {
+		t.Error("Expected at least one read to fail after pack corruption")
+	}
+}
