@@ -36,6 +36,17 @@ func (r *Repo) getMergeTraversalState() *mergeBaseTraversalState {
 	return r.mergeTraversalState
 }
 
+// InvalidateMergeBaseCache clears cached merge base results. This should
+// be called after operations that add new commits or move refs (e.g.
+// Commit, UpdateRef, fetch) since those changes can make previously
+// cached merge base answers stale. Content-addressed caches (commit
+// objects, generation numbers) are preserved because they are immutable.
+func (r *Repo) InvalidateMergeBaseCache() {
+	if r.mergeTraversalState != nil {
+		r.mergeTraversalState.invalidate()
+	}
+}
+
 // ShallowState returns the shallow boundary state for this repository.
 // The result is cached after the first call. If .graft/shallow does not
 // exist, an empty state is returned without error.

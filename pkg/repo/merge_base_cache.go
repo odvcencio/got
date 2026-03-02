@@ -41,6 +41,16 @@ func canonicalMergeBaseCacheKey(a, b object.Hash) mergeBaseCacheKey {
 	return mergeBaseCacheKey{left: b, right: a}
 }
 
+// invalidate clears cached merge base results. Commit objects and
+// generation numbers are content-addressed and immutable, so those
+// caches remain valid. Only merge base results can become stale when
+// new commits are added or refs move.
+func (s *mergeBaseTraversalState) invalidate() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mergeBases = make(map[mergeBaseCacheKey]mergeBaseCacheEntry)
+}
+
 func (s *mergeBaseTraversalState) loadMergeBase(a, b object.Hash) (mergeBaseCacheEntry, bool) {
 	key := canonicalMergeBaseCacheKey(a, b)
 	s.mu.RLock()

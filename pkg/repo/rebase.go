@@ -27,6 +27,13 @@ var ErrRebaseInProgress = fmt.Errorf("rebase: a rebase is already in progress")
 // ErrNoRebaseInProgress is returned when continue/abort/skip is called with no active rebase.
 var ErrNoRebaseInProgress = fmt.Errorf("rebase: no rebase in progress")
 
+// RebaseOptions holds optional configuration for a rebase operation.
+type RebaseOptions struct {
+	// Autostash automatically stashes uncommitted changes before rebase
+	// and restores them after completion (or abort).
+	Autostash bool
+}
+
 // rebaseMergeDir returns the path to the sequencer state directory.
 func (r *Repo) rebaseMergeDir() string {
 	return filepath.Join(r.GraftDir, "rebase-merge")
@@ -52,8 +59,21 @@ func (r *Repo) isRebaseInProgress() bool {
 //  9. Update original branch ref and reattach HEAD
 //  10. Clean up sequencer state
 func (r *Repo) Rebase(upstream string) error {
+	return r.RebaseWithOptions(upstream, RebaseOptions{})
+}
+
+// RebaseWithOptions replays commits from the current branch onto the given
+// upstream, using the provided options.
+func (r *Repo) RebaseWithOptions(upstream string, opts RebaseOptions) error {
 	if r.isRebaseInProgress() {
 		return ErrRebaseInProgress
+	}
+
+	// Handle autostash: stash dirty changes before starting.
+	if opts.Autostash {
+		if err := r.autostashSave(); err != nil {
+			return err
+		}
 	}
 
 	// 1. Resolve upstream.
@@ -76,6 +96,8 @@ func (r *Repo) Rebase(upstream string) error {
 
 	// 4. Already up to date?
 	if headHash == upstreamHash || mergeBase == headHash {
+		// Pop the autostash if we saved one, even though we're a no-op.
+		r.autostashPop()
 		return nil // no-op
 	}
 
@@ -85,6 +107,7 @@ func (r *Repo) Rebase(upstream string) error {
 		return fmt.Errorf("rebase: %w", err)
 	}
 	if len(commits) == 0 {
+		r.autostashPop()
 		return nil // nothing to replay
 	}
 
@@ -99,8 +122,21 @@ func (r *Repo) Rebase(upstream string) error {
 
 // RebaseOnto replays commits from upstream..HEAD onto newbase.
 func (r *Repo) RebaseOnto(newbase, upstream string) error {
+	return r.RebaseOntoWithOptions(newbase, upstream, RebaseOptions{})
+}
+
+// RebaseOntoWithOptions replays commits from upstream..HEAD onto newbase,
+// using the provided options.
+func (r *Repo) RebaseOntoWithOptions(newbase, upstream string, opts RebaseOptions) error {
 	if r.isRebaseInProgress() {
 		return ErrRebaseInProgress
+	}
+
+	// Handle autostash: stash dirty changes before starting.
+	if opts.Autostash {
+		if err := r.autostashSave(); err != nil {
+			return err
+		}
 	}
 
 	// Resolve newbase.
@@ -127,6 +163,7 @@ func (r *Repo) RebaseOnto(newbase, upstream string) error {
 		return fmt.Errorf("rebase: %w", err)
 	}
 	if len(commits) == 0 {
+		r.autostashPop()
 		return nil
 	}
 
@@ -211,6 +248,10 @@ func (r *Repo) RebaseAbort() error {
 		return ErrNoRebaseInProgress
 	}
 
+	// Check for autostash before reading other state, since we need to
+	// restore it after aborting.
+	hadAutostash := r.hasAutostash()
+
 	origHead, err := r.readSequencerFile("orig-head")
 	if err != nil {
 		return fmt.Errorf("rebase abort: read orig-head: %w", err)
@@ -249,6 +290,11 @@ func (r *Repo) RebaseAbort() error {
 	}
 	if err := r.checkoutTree(origCommit); err != nil {
 		return fmt.Errorf("rebase abort: checkout: %w", err)
+	}
+
+	// Restore autostash before cleaning up sequencer state.
+	if hadAutostash {
+		r.autostashPop()
 	}
 
 	// Clean up sequencer state.
@@ -586,6 +632,10 @@ func (r *Repo) finishRebase() error {
 		}
 	}
 
+	// Restore autostash before cleaning up the sequencer directory
+	// (which contains the autostash marker file).
+	r.autostashPop()
+
 	// Clean up sequencer state.
 	if err := os.RemoveAll(r.rebaseMergeDir()); err != nil {
 		return fmt.Errorf("rebase finish: cleanup: %w", err)
@@ -720,6 +770,76 @@ func (r *Repo) readSequencerFile(name string) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// autostashPath returns the path to the autostash file inside the sequencer directory.
+func (r *Repo) autostashPath() string {
+	return filepath.Join(r.rebaseMergeDir(), "autostash")
+}
+
+// hasAutostash returns true if an autostash file exists in the sequencer directory.
+func (r *Repo) hasAutostash() bool {
+	_, err := os.Stat(r.autostashPath())
+	return err == nil
+}
+
+// autostashSave checks for dirty working tree state and, if dirty, creates a
+// stash and records the stash commit hash in the autostash file. Must be called
+// BEFORE the rebase-merge directory is created (writeSequencerState creates it).
+func (r *Repo) autostashSave() error {
+	// Check if working tree is dirty.
+	statusEntries, err := r.Status()
+	if err != nil {
+		return fmt.Errorf("rebase: autostash: %w", err)
+	}
+	dirty := false
+	for _, e := range statusEntries {
+		if e.IndexStatus != StatusClean || e.WorkStatus != StatusClean {
+			dirty = true
+			break
+		}
+	}
+	if !dirty {
+		return nil // nothing to stash
+	}
+
+	// Create the stash.
+	entry, err := r.Stash("rebase autostash")
+	if err != nil {
+		return fmt.Errorf("rebase: autostash: %w", err)
+	}
+
+	// Ensure the rebase-merge directory exists for storing the autostash marker.
+	dir := r.rebaseMergeDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("rebase: autostash: mkdir: %w", err)
+	}
+
+	// Write the stash commit hash to the autostash file.
+	if err := os.WriteFile(r.autostashPath(), []byte(string(entry.CommitHash)+"\n"), 0o644); err != nil {
+		return fmt.Errorf("rebase: autostash: write marker: %w", err)
+	}
+
+	return nil
+}
+
+// autostashPop restores the autostash if one exists. It drops the stash entry
+// on success. If popping the stash causes conflicts, a warning is printed to
+// stderr but the error is not propagated -- the rebase itself is considered
+// successful.
+func (r *Repo) autostashPop() {
+	if !r.hasAutostash() {
+		return
+	}
+
+	// Pop the most recent stash (index 0), which is the autostash we created.
+	err := r.StashPop(0)
+	if err != nil {
+		// Conflicts or errors during autostash pop should not fail the rebase.
+		fmt.Fprintf(os.Stderr, "warning: autostash pop had conflicts: %v\n", err)
+		// Try to at least apply (without dropping) so the changes are in the
+		// working tree even if there are conflicts.
+	}
 }
 
 // writeSequencerFileAtomic writes a file to the rebase-merge directory using

@@ -167,6 +167,7 @@ func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (ob
 	}
 
 	r.invalidateStatusCache()
+	r.InvalidateMergeBaseCache()
 
 	// 7. Return commit hash.
 	return commitHash, nil
@@ -276,6 +277,7 @@ func (r *Repo) CommitAmendWithSigner(message, author string, signer CommitSigner
 	}
 
 	r.invalidateStatusCache()
+	r.InvalidateMergeBaseCache()
 
 	return commitHash, nil
 }

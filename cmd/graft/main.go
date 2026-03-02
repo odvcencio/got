@@ -30,6 +30,7 @@ func main() {
 	root.AddCommand(newBranchCmd())
 	root.AddCommand(newTagCmd())
 	root.AddCommand(newCheckoutCmd())
+	root.AddCommand(newSwitchCmd())
 	root.AddCommand(newMergeCmd())
 	root.AddCommand(newCherryPickCmd())
 	root.AddCommand(newRemoteCmd())

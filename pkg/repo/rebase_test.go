@@ -676,3 +676,203 @@ func TestRebase_PullRebaseScenario(t *testing.T) {
 		t.Error("rebase should not be in progress after completion")
 	}
 }
+
+// TestRebaseAutostash verifies that --autostash stashes dirty changes before
+// rebase and restores them after successful completion.
+func TestRebaseAutostash(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Initial commit on main.
+	rebaseCommitFile(t, r, "base.txt", []byte("base content\n"), "initial", "alice")
+
+	baseHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD): %v", err)
+	}
+
+	// Create feature branch from base.
+	if err := r.CreateBranch("feature", baseHash); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+
+	// Make a commit on feature.
+	rebaseCommitFile(t, r, "feat.txt", []byte("feature work\n"), "feat commit", "bob")
+
+	// Switch to main and advance it.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+	rebaseCommitFile(t, r, "main_new.txt", []byte("main advance\n"), "advance main", "alice")
+
+	// Switch to feature.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+
+	// Create a dirty working tree change (uncommitted modification).
+	rebaseWriteFile(t, filepath.Join(dir, "feat.txt"), []byte("dirty uncommitted change\n"))
+
+	// Verify the tree is dirty before rebase.
+	statusBefore, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	hasDirty := false
+	for _, e := range statusBefore {
+		if e.Path == "feat.txt" && e.WorkStatus != StatusClean {
+			hasDirty = true
+			break
+		}
+	}
+	if !hasDirty {
+		t.Fatal("expected dirty working tree before rebase")
+	}
+
+	// Rebase with autostash.
+	if err := r.RebaseWithOptions("main", RebaseOptions{Autostash: true}); err != nil {
+		t.Fatalf("RebaseWithOptions: %v", err)
+	}
+
+	// Verify rebase completed.
+	if r.isRebaseInProgress() {
+		t.Fatal("rebase should be finished")
+	}
+
+	// Verify HEAD is on feature.
+	branch, err := r.CurrentBranch()
+	if err != nil {
+		t.Fatalf("CurrentBranch: %v", err)
+	}
+	if branch != "feature" {
+		t.Errorf("CurrentBranch = %q, want %q", branch, "feature")
+	}
+
+	// Verify all committed files exist.
+	for _, f := range []string{"base.txt", "main_new.txt", "feat.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("file %q missing after rebase: %v", f, err)
+		}
+	}
+
+	// Verify the dirty uncommitted change was restored.
+	data, err := os.ReadFile(filepath.Join(dir, "feat.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(feat.txt): %v", err)
+	}
+	if string(data) != "dirty uncommitted change\n" {
+		t.Errorf("feat.txt = %q, want %q (autostash should restore dirty change)", string(data), "dirty uncommitted change\n")
+	}
+
+	// Verify sequencer state is cleaned up.
+	if _, err := os.Stat(filepath.Join(dir, ".graft", "rebase-merge")); !os.IsNotExist(err) {
+		t.Errorf("rebase-merge directory should be cleaned up after successful rebase")
+	}
+}
+
+// TestRebaseAutostashAbort verifies that autostash is restored when a rebase
+// is aborted.
+func TestRebaseAutostashAbort(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Initial commit on main.
+	rebaseCommitFile(t, r, "file.txt", []byte("original\n"), "initial", "alice")
+
+	baseHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD): %v", err)
+	}
+
+	// Create feature branch.
+	if err := r.CreateBranch("feature", baseHash); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+
+	// Modify file on feature (committed).
+	rebaseCommitFile(t, r, "file.txt", []byte("feature version\n"), "feature change", "bob")
+
+	// Switch to main and make conflicting change.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+	rebaseCommitFile(t, r, "file.txt", []byte("main version\n"), "main change", "alice")
+
+	// Switch to feature.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+
+	// Create a dirty change on an unrelated file.
+	rebaseWriteFile(t, filepath.Join(dir, "dirty.txt"), []byte("dirty content\n"))
+
+	// Rebase with autostash — expect conflict.
+	err = r.RebaseWithOptions("main", RebaseOptions{Autostash: true})
+	if err == nil {
+		t.Fatal("expected conflict error")
+	}
+
+	// Should be an ErrRebaseConflict.
+	if _, ok := err.(*ErrRebaseConflict); !ok {
+		t.Fatalf("expected *ErrRebaseConflict, got %T: %v", err, err)
+	}
+
+	// Verify sequencer state exists (rebase in progress).
+	if !r.isRebaseInProgress() {
+		t.Fatal("expected rebase to be in progress")
+	}
+
+	// Verify autostash file exists.
+	if !r.hasAutostash() {
+		t.Fatal("expected autostash file to exist during rebase")
+	}
+
+	// Abort the rebase.
+	if err := r.RebaseAbort(); err != nil {
+		t.Fatalf("RebaseAbort: %v", err)
+	}
+
+	// Verify rebase is no longer in progress.
+	if r.isRebaseInProgress() {
+		t.Fatal("rebase should not be in progress after abort")
+	}
+
+	// Verify HEAD is back on feature.
+	branch, err := r.CurrentBranch()
+	if err != nil {
+		t.Fatalf("CurrentBranch: %v", err)
+	}
+	if branch != "feature" {
+		t.Errorf("CurrentBranch = %q, want %q", branch, "feature")
+	}
+
+	// Verify the committed file has its pre-rebase content.
+	data, err := os.ReadFile(filepath.Join(dir, "file.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(file.txt): %v", err)
+	}
+	if string(data) != "feature version\n" {
+		t.Errorf("file.txt = %q, want %q", string(data), "feature version\n")
+	}
+
+	// Verify the dirty untracked file was restored by autostash pop.
+	data, err = os.ReadFile(filepath.Join(dir, "dirty.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(dirty.txt): %v (autostash should have restored it)", err)
+	}
+	if string(data) != "dirty content\n" {
+		t.Errorf("dirty.txt = %q, want %q", string(data), "dirty content\n")
+	}
+}

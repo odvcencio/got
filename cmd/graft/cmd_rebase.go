@@ -20,6 +20,7 @@ func newRebaseCmd() *cobra.Command {
 	var skipFlag bool
 	var interactiveFlag bool
 	var autosquashFlag bool
+	var autostashFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "rebase [<upstream>]",
@@ -28,6 +29,7 @@ func newRebaseCmd() *cobra.Command {
 
 Use -i/--interactive to edit the list of commits before replaying.
 Use --autosquash with -i to auto-reorder fixup!/squash! commits.
+Use --autostash to automatically stash and restore uncommitted changes.
 Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a commit.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -84,6 +86,10 @@ Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a
 			}
 			upstream := args[0]
 
+			opts := repo.RebaseOptions{
+				Autostash: autostashFlag,
+			}
+
 			if interactiveFlag {
 				if autosquashFlag {
 					return rebaseInteractiveAutosquashStart(r, out, upstream)
@@ -91,9 +97,9 @@ Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a
 				return rebaseInteractiveStart(r, out, upstream)
 			}
 			if ontoFlag != "" {
-				return rebaseOnto(r, out, ontoFlag, upstream)
+				return rebaseOnto(r, out, ontoFlag, upstream, opts)
 			}
-			return rebaseStart(r, out, upstream)
+			return rebaseStart(r, out, upstream, opts)
 		},
 	}
 
@@ -103,6 +109,7 @@ Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a
 	cmd.Flags().BoolVar(&skipFlag, "skip", false, "skip the conflicting commit")
 	cmd.Flags().BoolVarP(&interactiveFlag, "interactive", "i", false, "interactive rebase: edit the todo list before replaying")
 	cmd.Flags().BoolVar(&autosquashFlag, "autosquash", false, "auto-reorder fixup!/squash! commits (requires -i)")
+	cmd.Flags().BoolVar(&autostashFlag, "autostash", false, "automatically stash and restore uncommitted changes")
 
 	return cmd
 }
@@ -160,7 +167,7 @@ func rebaseInteractiveAutosquashStart(r *repo.Repo, out io.Writer, upstream stri
 }
 
 // rebaseStart handles: graft rebase <upstream>
-func rebaseStart(r *repo.Repo, out io.Writer, upstream string) error {
+func rebaseStart(r *repo.Repo, out io.Writer, upstream string, opts repo.RebaseOptions) error {
 	// Resolve upstream to get the onto hash for output.
 	ontoHash, err := resolveTarget(r, upstream)
 	if err != nil {
@@ -183,12 +190,12 @@ func rebaseStart(r *repo.Repo, out io.Writer, upstream string) error {
 
 	fmt.Fprintf(out, "Rebasing onto %s... Replaying %d commit(s)\n", shortHash(ontoHash), count)
 
-	err = r.Rebase(upstream)
+	err = r.RebaseWithOptions(upstream, opts)
 	return handleRebaseResult(r, out, ontoHash, err)
 }
 
 // rebaseOnto handles: graft rebase --onto <newbase> <upstream>
-func rebaseOnto(r *repo.Repo, out io.Writer, newbase, upstream string) error {
+func rebaseOnto(r *repo.Repo, out io.Writer, newbase, upstream string, opts repo.RebaseOptions) error {
 	ontoHash, err := resolveTarget(r, newbase)
 	if err != nil {
 		return err
@@ -210,7 +217,7 @@ func rebaseOnto(r *repo.Repo, out io.Writer, newbase, upstream string) error {
 
 	fmt.Fprintf(out, "Rebasing onto %s... Replaying %d commit(s)\n", shortHash(ontoHash), count)
 
-	err = r.RebaseOnto(newbase, upstream)
+	err = r.RebaseOntoWithOptions(newbase, upstream, opts)
 	return handleRebaseResult(r, out, ontoHash, err)
 }
 
