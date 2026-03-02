@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/odvcencio/graft/pkg/merge"
 	"github.com/odvcencio/graft/pkg/object"
 )
 
@@ -359,157 +358,23 @@ func (r *Repo) StashApplyMerge(index int) (*StashApplyResult, error) {
 		oursMap = make(map[string]TreeFileEntry)
 	}
 
-	allPaths := collectAllPaths(baseMap, oursMap, theirsMap)
-
-	type fileWrite struct {
-		path    string
-		content []byte
-		mode    string
-	}
-	var writes []fileWrite
-	var deletes []string
-	var conflictPaths []string
-
-	for _, p := range allPaths {
-		_, inBase := baseMap[p]
-		_, inOurs := oursMap[p]
-		_, inTheirs := theirsMap[p]
-
-		switch {
-		case inBase && inOurs && inTheirs:
-			// All three present: 3-way merge.
-			if oursMap[p].BlobHash == theirsMap[p].BlobHash {
-				continue // same content, no merge needed
-			}
-			if oursMap[p].BlobHash == baseMap[p].BlobHash {
-				// Only theirs (stash) changed -- take theirs.
-				content, err := r.readBlobData(theirsMap[p].BlobHash)
-				if err != nil {
-					return nil, err
-				}
-				writes = append(writes, fileWrite{p, content, normalizeFileMode(theirsMap[p].Mode)})
-				continue
-			}
-			if theirsMap[p].BlobHash == baseMap[p].BlobHash {
-				// Only ours changed -- keep ours.
-				continue
-			}
-			// Both changed -- full merge.
-			baseData, err := r.readBlobData(baseMap[p].BlobHash)
-			if err != nil {
-				return nil, err
-			}
-			oursData, err := r.readBlobData(oursMap[p].BlobHash)
-			if err != nil {
-				return nil, err
-			}
-			theirsData, err := r.readBlobData(theirsMap[p].BlobHash)
-			if err != nil {
-				return nil, err
-			}
-			result, err := merge.MergeFiles(p, baseData, oursData, theirsData)
-			if err != nil {
-				return nil, fmt.Errorf("stash: merge %q: %w", p, err)
-			}
-			if result.HasConflicts {
-				conflictPaths = append(conflictPaths, p)
-			}
-			writes = append(writes, fileWrite{p, result.Merged, normalizeFileMode(oursMap[p].Mode)})
-
-		case !inBase && !inOurs && inTheirs:
-			// New file only in stash: add it.
-			content, err := r.readBlobData(theirsMap[p].BlobHash)
-			if err != nil {
-				return nil, err
-			}
-			writes = append(writes, fileWrite{p, content, normalizeFileMode(theirsMap[p].Mode)})
-
-		case !inBase && inOurs && inTheirs:
-			// Added in both (no base).
-			if oursMap[p].BlobHash == theirsMap[p].BlobHash {
-				continue
-			}
-			oursData, err := r.readBlobData(oursMap[p].BlobHash)
-			if err != nil {
-				return nil, err
-			}
-			theirsData, err := r.readBlobData(theirsMap[p].BlobHash)
-			if err != nil {
-				return nil, err
-			}
-			result, err := merge.MergeFiles(p, nil, oursData, theirsData)
-			if err != nil {
-				return nil, fmt.Errorf("stash: merge %q: %w", p, err)
-			}
-			if result.HasConflicts {
-				conflictPaths = append(conflictPaths, p)
-			}
-			writes = append(writes, fileWrite{p, result.Merged, normalizeFileMode(oursMap[p].Mode)})
-
-		case inBase && inOurs && !inTheirs:
-			// Deleted in stash.
-			if oursMap[p].BlobHash == baseMap[p].BlobHash {
-				// Ours unchanged: clean delete.
-				deletes = append(deletes, p)
-			} else {
-				// Ours modified, stash deleted: conflict.
-				conflictPaths = append(conflictPaths, p)
-				oursData, err := r.readBlobData(oursMap[p].BlobHash)
-				if err != nil {
-					return nil, err
-				}
-				content := renderFileConflict(oursData, nil)
-				writes = append(writes, fileWrite{p, content, normalizeFileMode(oursMap[p].Mode)})
-			}
-
-		case inBase && !inOurs && inTheirs:
-			// Deleted in ours, present in stash.
-			if theirsMap[p].BlobHash == baseMap[p].BlobHash {
-				continue // theirs unchanged, keep ours' deletion
-			}
-			// Stash modified, ours deleted: conflict.
-			conflictPaths = append(conflictPaths, p)
-			theirsData, err := r.readBlobData(theirsMap[p].BlobHash)
-			if err != nil {
-				return nil, err
-			}
-			content := renderFileConflict(nil, theirsData)
-			writes = append(writes, fileWrite{p, content, normalizeFileMode(theirsMap[p].Mode)})
-
-		case !inBase && inOurs && !inTheirs:
-			// Only in ours, not relevant to stash.
-			continue
-
-		case inBase && !inOurs && !inTheirs:
-			// Deleted in both.
-			continue
-		}
+	// Use the shared three-way merge helper.
+	mergeResult, err := r.threeWayTreeMerge(baseMap, oursMap, theirsMap)
+	if err != nil {
+		return nil, fmt.Errorf("stash: %w", err)
 	}
 
-	// Write merged files.
-	for _, w := range writes {
-		absPath := filepath.Join(r.RootDir, filepath.FromSlash(w.path))
-		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-			return nil, fmt.Errorf("stash: mkdir: %w", err)
-		}
-		if err := os.WriteFile(absPath, w.content, filePermFromMode(w.mode)); err != nil {
-			return nil, fmt.Errorf("stash: write %q: %w", w.path, err)
-		}
+	// Apply results to the working directory.
+	if err := r.applyThreeWayResult(mergeResult); err != nil {
+		return nil, fmt.Errorf("stash: %w", err)
 	}
 
-	// Delete files.
-	for _, p := range deletes {
-		absPath := filepath.Join(r.RootDir, filepath.FromSlash(p))
-		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("stash: remove %q: %w", p, err)
-		}
-		r.removeEmptyParents(filepath.Dir(absPath))
-	}
-
-	// Update staging to reflect the merged state.
+	// Stage all written/added/conflicted files.
 	var pathsToStage []string
-	for _, w := range writes {
-		pathsToStage = append(pathsToStage, w.path)
+	for _, f := range mergeResult.Files {
+		if f.Status != "unchanged" && f.Status != "deleted" {
+			pathsToStage = append(pathsToStage, f.Path)
+		}
 	}
 	if len(pathsToStage) > 0 {
 		if err := r.Add(pathsToStage); err != nil {
@@ -518,12 +383,12 @@ func (r *Repo) StashApplyMerge(index int) (*StashApplyResult, error) {
 	}
 
 	// Remove deleted files from staging.
-	if len(deletes) > 0 {
+	if len(mergeResult.DeletedPaths) > 0 {
 		stg, err := r.ReadStaging()
 		if err != nil {
 			return nil, fmt.Errorf("stash: read staging: %w", err)
 		}
-		for _, p := range deletes {
+		for _, p := range mergeResult.DeletedPaths {
 			delete(stg.Entries, p)
 		}
 		if err := r.WriteStaging(stg); err != nil {
@@ -532,8 +397,8 @@ func (r *Repo) StashApplyMerge(index int) (*StashApplyResult, error) {
 	}
 
 	return &StashApplyResult{
-		Clean:         len(conflictPaths) == 0,
-		ConflictPaths: conflictPaths,
+		Clean:         !mergeResult.HasConflicts,
+		ConflictPaths: mergeResult.ConflictDetails,
 	}, nil
 }
 

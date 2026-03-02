@@ -2,8 +2,6 @@ package repo
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -78,203 +76,28 @@ func (r *Repo) CherryPick(targetHash object.Hash) (*CherryPickResult, error) {
 	oursMap := indexByPath(oursFiles)
 	theirsMap := indexByPath(theirsFiles)
 
-	// Collect all file paths across all three trees.
-	allPaths := collectAllPaths(baseMap, oursMap, theirsMap)
-
-	// Process each file with three-way merge logic.
-	report := &MergeReport{}
-	type mergedFile struct {
-		path    string
-		content []byte
-		mode    string
+	// Use the shared three-way merge helper.
+	mergeResult, err := r.threeWayTreeMerge(baseMap, oursMap, theirsMap)
+	if err != nil {
+		return nil, fmt.Errorf("cherry-pick: %w", err)
 	}
-	var mergedFiles []mergedFile
-	var deletedPaths []string
 
-	for _, path := range allPaths {
-		_, inBase := baseMap[path]
-		_, inOurs := oursMap[path]
-		_, inTheirs := theirsMap[path]
-
-		switch {
-		case inBase && inOurs && inTheirs:
-			// In all three: three-way merge.
-			fr, content, err := r.mergeThreeWay(path, baseMap[path], oursMap[path], theirsMap[path])
-			if err != nil {
-				return nil, fmt.Errorf("cherry-pick: merge file %q: %w", path, err)
-			}
-			report.Files = append(report.Files, fr)
-			if fr.Status == "conflict" {
-				report.HasConflicts = true
-				report.TotalConflicts += fr.ConflictCount
-			}
-			mergedFiles = append(mergedFiles, mergedFile{
-				path:    path,
-				content: content,
-				mode:    normalizeFileMode(oursMap[path].Mode),
-			})
-
-		case !inBase && inOurs && inTheirs:
-			// New in both ours and theirs (not in base).
-			if oursMap[path].BlobHash == theirsMap[path].BlobHash {
-				content, err := r.readBlobData(oursMap[path].BlobHash)
-				if err != nil {
-					return nil, fmt.Errorf("cherry-pick: read %q: %w", path, err)
-				}
-				report.Files = append(report.Files, FileMergeReport{Path: path, Status: "clean"})
-				mergedFiles = append(mergedFiles, mergedFile{
-					path:    path,
-					content: content,
-					mode:    normalizeFileMode(oursMap[path].Mode),
-				})
-			} else {
-				oursData, err := r.readBlobData(oursMap[path].BlobHash)
-				if err != nil {
-					return nil, fmt.Errorf("cherry-pick: read ours %q: %w", path, err)
-				}
-				theirsData, err := r.readBlobData(theirsMap[path].BlobHash)
-				if err != nil {
-					return nil, fmt.Errorf("cherry-pick: read theirs %q: %w", path, err)
-				}
-				fr, content, err := r.mergeFileContents(path, nil, oursData, theirsData)
-				if err != nil {
-					return nil, fmt.Errorf("cherry-pick: merge file %q: %w", path, err)
-				}
-				report.Files = append(report.Files, fr)
-				if fr.Status == "conflict" {
-					report.HasConflicts = true
-					report.TotalConflicts += fr.ConflictCount
-				}
-				mergedFiles = append(mergedFiles, mergedFile{
-					path:    path,
-					content: content,
-					mode:    normalizeFileMode(oursMap[path].Mode),
-				})
-			}
-
-		case inBase && inOurs && !inTheirs:
-			// Deleted by theirs (the cherry-picked commit deleted this file).
-			if oursMap[path].BlobHash == baseMap[path].BlobHash {
-				// Ours unchanged from base: clean delete.
-				report.Files = append(report.Files, FileMergeReport{Path: path, Status: "deleted"})
-				deletedPaths = append(deletedPaths, path)
-			} else {
-				// Ours modified, theirs deleted: conflict.
-				oursData, err := r.readBlobData(oursMap[path].BlobHash)
-				if err != nil {
-					return nil, fmt.Errorf("cherry-pick: read ours %q: %w", path, err)
-				}
-				content := renderFileConflict(oursData, nil)
-				report.Files = append(report.Files, FileMergeReport{
-					Path:          path,
-					Status:        "conflict",
-					ConflictCount: 1,
-				})
-				report.HasConflicts = true
-				report.TotalConflicts++
-				mergedFiles = append(mergedFiles, mergedFile{
-					path:    path,
-					content: content,
-					mode:    normalizeFileMode(oursMap[path].Mode),
-				})
-			}
-
-		case inBase && !inOurs && inTheirs:
-			// Deleted by ours, present in theirs.
-			if theirsMap[path].BlobHash == baseMap[path].BlobHash {
-				// Theirs unchanged from base: ours' deletion wins.
-				report.Files = append(report.Files, FileMergeReport{Path: path, Status: "deleted"})
-				deletedPaths = append(deletedPaths, path)
-			} else {
-				// Theirs modified, ours deleted: conflict.
-				theirsData, err := r.readBlobData(theirsMap[path].BlobHash)
-				if err != nil {
-					return nil, fmt.Errorf("cherry-pick: read theirs %q: %w", path, err)
-				}
-				content := renderFileConflict(nil, theirsData)
-				report.Files = append(report.Files, FileMergeReport{
-					Path:          path,
-					Status:        "conflict",
-					ConflictCount: 1,
-				})
-				report.HasConflicts = true
-				report.TotalConflicts++
-				mergedFiles = append(mergedFiles, mergedFile{
-					path:    path,
-					content: content,
-					mode:    normalizeFileMode(theirsMap[path].Mode),
-				})
-			}
-
-		case !inBase && inOurs && !inTheirs:
-			// Only in ours: keep as-is (cherry-pick doesn't touch this file).
-			content, err := r.readBlobData(oursMap[path].BlobHash)
-			if err != nil {
-				return nil, fmt.Errorf("cherry-pick: read %q: %w", path, err)
-			}
-			report.Files = append(report.Files, FileMergeReport{Path: path, Status: "added"})
-			mergedFiles = append(mergedFiles, mergedFile{
-				path:    path,
-				content: content,
-				mode:    normalizeFileMode(oursMap[path].Mode),
-			})
-
-		case !inBase && !inOurs && inTheirs:
-			// New in theirs only (added by cherry-picked commit): add.
-			content, err := r.readBlobData(theirsMap[path].BlobHash)
-			if err != nil {
-				return nil, fmt.Errorf("cherry-pick: read %q: %w", path, err)
-			}
-			report.Files = append(report.Files, FileMergeReport{Path: path, Status: "added"})
-			mergedFiles = append(mergedFiles, mergedFile{
-				path:    path,
-				content: content,
-				mode:    normalizeFileMode(theirsMap[path].Mode),
-			})
-
-		case inBase && !inOurs && !inTheirs:
-			// Both deleted: already gone.
-			report.Files = append(report.Files, FileMergeReport{Path: path, Status: "deleted"})
-			deletedPaths = append(deletedPaths, path)
-		}
+	// Apply results to the working directory.
+	if err := r.applyThreeWayResult(mergeResult); err != nil {
+		return nil, fmt.Errorf("cherry-pick: %w", err)
 	}
 
 	// If there are conflicts, return error without committing.
-	if report.HasConflicts {
-		var conflictPaths []string
-		for _, f := range report.Files {
-			if f.Status == "conflict" {
-				conflictPaths = append(conflictPaths, f.Path)
-			}
-		}
-		return nil, fmt.Errorf("cherry-pick: conflicts in %s", strings.Join(conflictPaths, ", "))
+	if mergeResult.HasConflicts {
+		return nil, fmt.Errorf("cherry-pick: conflicts in %s", mergeResult.conflictDetailsString())
 	}
 
-	// Write merged files to working directory.
-	for _, mf := range mergedFiles {
-		absPath := filepath.Join(r.RootDir, filepath.FromSlash(mf.path))
-		dir := filepath.Dir(absPath)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("cherry-pick: mkdir %q: %w", dir, err)
-		}
-		if err := os.WriteFile(absPath, mf.content, filePermFromMode(mf.mode)); err != nil {
-			return nil, fmt.Errorf("cherry-pick: write %q: %w", mf.path, err)
-		}
-	}
-
-	// Remove deleted files.
-	for _, path := range deletedPaths {
-		absPath := filepath.Join(r.RootDir, filepath.FromSlash(path))
-		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("cherry-pick: remove %q: %w", path, err)
-		}
-		r.removeEmptyParents(filepath.Dir(absPath))
-	}
-
-	// Stage all merged files.
+	// Stage all changed/added files.
 	var pathsToAdd []string
-	for _, mf := range mergedFiles {
-		pathsToAdd = append(pathsToAdd, mf.path)
+	for _, f := range mergeResult.Files {
+		if f.Status != "unchanged" && f.Status != "deleted" {
+			pathsToAdd = append(pathsToAdd, f.Path)
+		}
 	}
 	if len(pathsToAdd) > 0 {
 		if err := r.Add(pathsToAdd); err != nil {
@@ -283,12 +106,12 @@ func (r *Repo) CherryPick(targetHash object.Hash) (*CherryPickResult, error) {
 	}
 
 	// Remove deleted files from staging.
-	if len(deletedPaths) > 0 {
+	if len(mergeResult.DeletedPaths) > 0 {
 		stg, err := r.ReadStaging()
 		if err != nil {
 			return nil, fmt.Errorf("cherry-pick: read staging: %w", err)
 		}
-		for _, p := range deletedPaths {
+		for _, p := range mergeResult.DeletedPaths {
 			delete(stg.Entries, p)
 		}
 		if err := r.WriteStaging(stg); err != nil {
