@@ -3,7 +3,7 @@ package repo
 import (
 	"os"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func modeFromFileInfo(info os.FileInfo) string {
@@ -14,10 +14,14 @@ func modeFromFileInfo(info os.FileInfo) string {
 }
 
 func normalizeFileMode(mode string) string {
-	if mode == object.TreeModeExecutable {
+	switch mode {
+	case object.TreeModeExecutable:
 		return object.TreeModeExecutable
+	case object.TreeModeModule:
+		return object.TreeModeModule
+	default:
+		return object.TreeModeFile
 	}
-	return object.TreeModeFile
 }
 
 func filePermFromMode(mode string) os.FileMode {

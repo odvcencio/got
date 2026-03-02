@@ -338,6 +338,8 @@ func parseTreeMode(mode string) (bool, string, error) {
 		return false, TreeModeFile, nil
 	case TreeModeExecutable:
 		return false, TreeModeExecutable, nil
+	case TreeModeModule:
+		return false, TreeModeModule, nil
 	default:
 		return false, "", fmt.Errorf("unknown mode %q", mode)
 	}

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // TreeFileEntry represents a single file in a flattened tree.
@@ -147,6 +147,10 @@ func (r *Repo) flattenTreeInto(h object.Hash, prefix string, out *[]TreeFileEntr
 	}
 
 	for _, entry := range treeObj.Entries {
+		if entry.Mode == object.TreeModeModule {
+			continue // gitlinks are not files to checkout
+		}
+
 		fullPath := entry.Name
 		if prefix != "" {
 			if useFastJoin && isSimplePathElem(entry.Name) {
@@ -207,4 +211,83 @@ func isSimplePathElem(name string) bool {
 		}
 	}
 	return true
+}
+
+// TreeModuleEntry represents a gitlink (submodule) entry in a flattened tree.
+type TreeModuleEntry struct {
+	Path     string      // full path with forward slashes
+	BlobHash object.Hash // the module's pinned commit hash
+}
+
+// FlattenTreeWithModules walks a tree object recursively, returning both
+// file entries and module (gitlink, mode 160000) entries separately.
+func (r *Repo) FlattenTreeWithModules(h object.Hash) ([]TreeFileEntry, []TreeModuleEntry, error) {
+	files := make([]TreeFileEntry, 0, 64)
+	var modules []TreeModuleEntry
+	if err := r.flattenTreeWithModulesInto(h, "", &files, &modules); err != nil {
+		return nil, nil, err
+	}
+	return files, modules, nil
+}
+
+func (r *Repo) flattenTreeWithModulesInto(h object.Hash, prefix string, files *[]TreeFileEntry, modules *[]TreeModuleEntry) error {
+	treeObj, err := r.Store.ReadTree(h)
+	if err != nil {
+		return fmt.Errorf("flatten tree: read %s: %w", h, err)
+	}
+
+	useFastJoin := false
+	dropPrefix := false
+	prefixWithSlash := ""
+	if prefix != "" {
+		if isSimpleCleanPath(prefix) {
+			useFastJoin = true
+			prefixWithSlash = prefix + "/"
+		} else {
+			cleanPrefix := path.Clean(prefix)
+			switch {
+			case cleanPrefix == ".":
+				useFastJoin = true
+				dropPrefix = true
+			case isSimpleCleanPath(cleanPrefix):
+				useFastJoin = true
+				prefixWithSlash = cleanPrefix + "/"
+			}
+		}
+	}
+
+	for _, entry := range treeObj.Entries {
+		fullPath := entry.Name
+		if prefix != "" {
+			if useFastJoin && isSimplePathElem(entry.Name) {
+				if !dropPrefix {
+					fullPath = prefixWithSlash + entry.Name
+				}
+			} else {
+				fullPath = path.Join(prefix, entry.Name)
+			}
+		}
+
+		if entry.Mode == object.TreeModeModule {
+			*modules = append(*modules, TreeModuleEntry{
+				Path:     fullPath,
+				BlobHash: entry.BlobHash,
+			})
+			continue
+		}
+
+		if entry.IsDir {
+			if err := r.flattenTreeWithModulesInto(entry.SubtreeHash, fullPath, files, modules); err != nil {
+				return err
+			}
+		} else {
+			*files = append(*files, TreeFileEntry{
+				Path:           fullPath,
+				BlobHash:       entry.BlobHash,
+				EntityListHash: entry.EntityListHash,
+				Mode:           normalizeFileMode(entry.Mode),
+			})
+		}
+	}
+	return nil
 }
