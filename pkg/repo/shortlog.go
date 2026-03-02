@@ -23,12 +23,15 @@ type ShortlogOptions struct {
 
 // Shortlog walks HEAD history (first-parent) and groups commits by author.
 // By default entries are sorted by author name; with Numbered they are sorted
-// by count descending.
+// by count descending. In a shallow repository, walking stops at shallow
+// boundaries.
 func (r *Repo) Shortlog(opts ShortlogOptions) ([]ShortlogEntry, error) {
 	headHash, err := r.ResolveRef("HEAD")
 	if err != nil {
 		return nil, fmt.Errorf("shortlog: %w", err)
 	}
+
+	shallow, _ := r.ShallowState()
 
 	type authorData struct {
 		titles []string
@@ -65,7 +68,11 @@ func (r *Repo) Shortlog(opts ShortlogOptions) ([]ShortlogEntry, error) {
 		if len(c.Parents) == 0 {
 			break
 		}
-		current = c.Parents[0]
+		next := c.Parents[0]
+		if shallow != nil && shallow.IsShallow(next) {
+			break
+		}
+		current = next
 	}
 
 	entries := make([]ShortlogEntry, 0, len(byAuthor))

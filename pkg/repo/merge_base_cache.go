@@ -1,10 +1,11 @@
 package repo
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 type mergeBaseCacheKey struct {
@@ -62,6 +63,9 @@ func (s *mergeBaseTraversalState) mergeBaseCacheSize() int {
 	return n
 }
 
+// ErrShallowBoundary is returned when a commit walk encounters a shallow boundary.
+var ErrShallowBoundary = fmt.Errorf("shallow boundary reached")
+
 func (s *mergeBaseTraversalState) readCommit(r *Repo, h object.Hash) (*object.CommitObj, error) {
 	s.mu.RLock()
 	cached, ok := s.commits[h]
@@ -70,8 +74,18 @@ func (s *mergeBaseTraversalState) readCommit(r *Repo, h object.Hash) (*object.Co
 		return cached, nil
 	}
 
+	// Check if this is a shallow boundary before trying to read.
+	shallow, _ := r.ShallowState()
+	if shallow != nil && shallow.IsShallow(h) && !r.Store.Has(h) {
+		return nil, fmt.Errorf("%w: commit %s", ErrShallowBoundary, h)
+	}
+
 	commit, err := r.Store.ReadCommit(h)
 	if err != nil {
+		// In shallow repos, missing commits at boundaries are expected.
+		if shallow != nil && shallow.IsShallow(h) {
+			return nil, fmt.Errorf("%w: commit %s", ErrShallowBoundary, h)
+		}
 		return nil, fmt.Errorf("find merge base: read commit %s: %w", h, err)
 	}
 
@@ -124,6 +138,11 @@ func (s *mergeBaseTraversalState) generationRecursive(r *Repo, h object.Hash, vi
 	commit, err := s.readCommit(r, h)
 	if err != nil {
 		delete(visiting, h)
+		// Shallow boundary: treat as generation 0 (root commit).
+		if errors.Is(err, ErrShallowBoundary) {
+			s.storeGeneration(h, 0)
+			return 0, nil
+		}
 		return 0, err
 	}
 
@@ -131,6 +150,10 @@ func (s *mergeBaseTraversalState) generationRecursive(r *Repo, h object.Hash, vi
 	for _, p := range commit.Parents {
 		pg, err := s.generationRecursive(r, p, visiting)
 		if err != nil {
+			// Shallow boundary on a parent: just skip this parent.
+			if errors.Is(err, ErrShallowBoundary) {
+				continue
+			}
 			delete(visiting, h)
 			return 0, err
 		}

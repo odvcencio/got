@@ -13,11 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
+	"github.com/odvcencio/graft/pkg/userconfig"
 )
 
-// Endpoint identifies a Got protocol repository endpoint.
-// BaseURL is normalized to ".../got/{owner}/{repo}" with no trailing slash.
+// Endpoint identifies a Graft protocol repository endpoint.
+// BaseURL is normalized to ".../graft/{owner}/{repo}" with no trailing slash.
 type Endpoint struct {
 	Raw     string
 	BaseURL string
@@ -30,9 +31,9 @@ type Endpoint struct {
 // ParseEndpoint parses a remote URL into a canonical endpoint.
 //
 // Supported inputs include:
-// - https://host/got/owner/repo
-// - https://host/owner/repo (expanded to /got/owner/repo)
-// - https://host/api/v1/got/owner/repo
+// - https://host/graft/owner/repo
+// - https://host/owner/repo (expanded to /graft/owner/repo)
+// - https://host/api/v1/graft/owner/repo
 func ParseEndpoint(raw string) (Endpoint, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -51,24 +52,24 @@ func ParseEndpoint(raw string) (Endpoint, error) {
 		return Endpoint{}, fmt.Errorf("remote URL must include owner and repository")
 	}
 
-	gotIdx := -1
+	graftIdx := -1
 	for i := 0; i+2 < len(segments); i++ {
-		if segments[i] == "got" {
-			gotIdx = i
+		if segments[i] == "graft" {
+			graftIdx = i
 		}
 	}
 
 	var owner, repo string
 	var baseSegments []string
-	if gotIdx >= 0 {
-		owner = segments[gotIdx+1]
-		repo = segments[gotIdx+2]
-		baseSegments = append(baseSegments, segments[:gotIdx+3]...)
+	if graftIdx >= 0 {
+		owner = segments[graftIdx+1]
+		repo = segments[graftIdx+2]
+		baseSegments = append(baseSegments, segments[:graftIdx+3]...)
 	} else {
 		owner = segments[len(segments)-2]
 		repo = segments[len(segments)-1]
 		baseSegments = append(baseSegments, segments[:len(segments)-2]...)
-		baseSegments = append(baseSegments, "got", owner, repo)
+		baseSegments = append(baseSegments, "graft", owner, repo)
 	}
 	if strings.TrimSpace(owner) == "" || strings.TrimSpace(repo) == "" {
 		return Endpoint{}, fmt.Errorf("remote URL must include non-empty owner and repository")
@@ -121,6 +122,14 @@ type ObjectRecord struct {
 	Data []byte
 }
 
+// ShallowFetchOpts controls shallow/depth-related fields in a batch request.
+type ShallowFetchOpts struct {
+	Depth   int           // shallow clone depth (0 = full)
+	Deepen  int           // deepen by N commits (0 = no deepen)
+	Shallow []object.Hash // existing shallow boundary hashes
+	Filter  string        // partial clone filter spec
+}
+
 // RefUpdate is one atomic reference update request.
 type RefUpdate struct {
 	Name string
@@ -142,7 +151,7 @@ const (
 	responseLimitObject  = 32 << 20 // 32MB
 )
 
-// Client is a transport client for gothub's Got protocol.
+// Client is a transport client for orchard's Graft protocol.
 type Client struct {
 	endpoint     Endpoint
 	httpClient   *http.Client
@@ -156,9 +165,10 @@ type Client struct {
 // NewClient creates a remote protocol client with default options.
 //
 // Auth resolution order:
-// 1) GOT_TOKEN (Bearer)
-// 2) GOT_USERNAME + GOT_PASSWORD (Basic)
-// 3) URL userinfo (Basic)
+// 1) GRAFT_TOKEN (Bearer)
+// 2) ~/.graftconfig token (Bearer)
+// 3) GRAFT_USERNAME + GRAFT_PASSWORD (Basic)
+// 4) URL userinfo (Basic)
 func NewClient(remoteURL string) (*Client, error) {
 	return NewClientWithOptions(remoteURL, ClientOptions{})
 }
@@ -178,9 +188,14 @@ func NewClientWithOptions(remoteURL string, opts ClientOptions) (*Client, error)
 		opts.MaxAttempts = 3
 	}
 
-	token := strings.TrimSpace(os.Getenv("GOT_TOKEN"))
-	user := strings.TrimSpace(os.Getenv("GOT_USERNAME"))
-	pass := os.Getenv("GOT_PASSWORD")
+	token := strings.TrimSpace(os.Getenv("GRAFT_TOKEN"))
+	user := strings.TrimSpace(os.Getenv("GRAFT_USERNAME"))
+	pass := os.Getenv("GRAFT_PASSWORD")
+	if token == "" {
+		if cfg, err := userconfig.Load(); err == nil {
+			token = strings.TrimSpace(cfg.Token)
+		}
+	}
 	if token == "" && user == "" && endpoint.user != "" {
 		user = endpoint.user
 		pass = endpoint.pass
@@ -363,19 +378,41 @@ func (c *Client) BatchObjects(ctx context.Context, wants, haves []object.Hash, m
 	return out, resp.Truncated, nil
 }
 
+// BatchShallowResult holds the batch objects along with any shallow boundary
+// hashes advertised by the server in the response.
+type BatchShallowResult struct {
+	Objects   []ObjectRecord
+	Truncated bool
+	Shallow   []object.Hash // shallow boundary hashes from server
+}
+
 // BatchObjectsPack fetches missing objects using pack transport with optional
-// zstd compression. It sends Accept: application/x-got-pack to request pack
+// zstd compression. It sends Accept: application/x-graft-pack to request pack
 // encoding, but falls back to JSON decoding if the server responds with
 // application/json content type.
 func (c *Client) BatchObjectsPack(ctx context.Context, wants, haves []object.Hash, maxObjects int) ([]ObjectRecord, bool, error) {
+	result, err := c.BatchObjectsPackShallow(ctx, wants, haves, maxObjects, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	return result.Objects, result.Truncated, nil
+}
+
+// BatchObjectsPackShallow is like BatchObjectsPack but accepts shallow options
+// and returns shallow boundary hashes from the server response.
+func (c *Client) BatchObjectsPackShallow(ctx context.Context, wants, haves []object.Hash, maxObjects int, shallowOpts *ShallowFetchOpts) (*BatchShallowResult, error) {
 	if len(wants) == 0 {
-		return nil, false, fmt.Errorf("at least one want hash is required")
+		return nil, fmt.Errorf("at least one want hash is required")
 	}
 
 	reqBody := struct {
 		Wants      []string `json:"wants"`
 		Haves      []string `json:"haves,omitempty"`
 		MaxObjects int      `json:"max_objects,omitempty"`
+		Depth      int      `json:"depth,omitempty"`
+		Deepen     int      `json:"deepen,omitempty"`
+		Shallow    []string `json:"shallow,omitempty"`
+		Filter     string   `json:"filter,omitempty"`
 	}{
 		Wants:      make([]string, 0, len(wants)),
 		Haves:      make([]string, 0, len(haves)),
@@ -392,85 +429,116 @@ func (c *Client) BatchObjectsPack(ctx context.Context, wants, haves []object.Has
 		}
 	}
 	if len(reqBody.Wants) == 0 {
-		return nil, false, fmt.Errorf("at least one non-empty want hash is required")
+		return nil, fmt.Errorf("at least one non-empty want hash is required")
+	}
+
+	if shallowOpts != nil {
+		reqBody.Depth = shallowOpts.Depth
+		reqBody.Deepen = shallowOpts.Deepen
+		reqBody.Filter = shallowOpts.Filter
+		for _, h := range shallowOpts.Shallow {
+			if strings.TrimSpace(string(h)) != "" {
+				reqBody.Shallow = append(reqBody.Shallow, string(h))
+			}
+		}
 	}
 
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint.BaseURL+"/objects/batch", bytes.NewReader(payload))
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/x-got-pack")
+	req.Header.Set("Accept", "application/x-graft-pack")
 	req.Header.Set("Accept-Encoding", "zstd")
 	c.applyAuth(req)
 
 	resp, err := retryDo(c.httpClient, req, c.maxAttempts)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	c.cacheServerLimits(resp)
 
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, responseLimitBatch))
 	if readErr != nil {
-		return nil, false, readErr
+		return nil, readErr
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		if re := tryParseRemoteError(body); re != nil {
-			return nil, false, re
+			return nil, re
 		}
 		msg := strings.TrimSpace(string(body))
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return nil, false, fmt.Errorf("remote request failed (%s %s): %s", req.Method, req.URL.Path, msg)
+		return nil, fmt.Errorf("remote request failed (%s %s): %s", req.Method, req.URL.Path, msg)
+	}
+
+	// Parse shallow boundaries from response header.
+	var shallowHashes []object.Hash
+	if raw := resp.Header.Get("X-Shallow"); raw != "" {
+		for _, s := range strings.Split(raw, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				shallowHashes = append(shallowHashes, object.Hash(s))
+			}
+		}
 	}
 
 	ct := resp.Header.Get("Content-Type")
-	if strings.HasPrefix(ct, "application/x-got-pack") {
+	if strings.HasPrefix(ct, "application/x-graft-pack") {
 		// Pack transport response: optionally zstd-compressed.
 		packData := body
 		if isZstdEncoded(resp.Header.Get("Content-Encoding")) {
 			packData, err = decompressZstd(body)
 			if err != nil {
-				return nil, false, fmt.Errorf("decompress pack response: %w", err)
+				return nil, fmt.Errorf("decompress pack response: %w", err)
 			}
 		}
 		records, err := DecodePackTransport(packData)
 		if err != nil {
-			return nil, false, fmt.Errorf("decode pack response: %w", err)
+			return nil, fmt.Errorf("decode pack response: %w", err)
 		}
 		truncated := strings.EqualFold(resp.Header.Get("X-Truncated"), "true")
-		return records, truncated, nil
+		return &BatchShallowResult{Objects: records, Truncated: truncated, Shallow: shallowHashes}, nil
 	}
 
 	// JSON fallback: server returned application/json.
 	var jsonResp struct {
 		Objects []struct {
-			Hash string `json:"hash"`
-			Type string `json:"type"`
-			Data []byte `json:"data"`
+			Hash    string `json:"hash"`
+			Type    string `json:"type"`
+			Data    []byte `json:"data"`
 		} `json:"objects"`
-		Truncated bool `json:"truncated"`
+		Truncated bool     `json:"truncated"`
+		Shallow   []string `json:"shallow"`
 	}
 	if err := json.Unmarshal(body, &jsonResp); err != nil {
-		return nil, false, fmt.Errorf("decode batch response: %w", err)
+		return nil, fmt.Errorf("decode batch response: %w", err)
+	}
+
+	// Merge shallow boundaries from JSON body with header.
+	for _, s := range jsonResp.Shallow {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			shallowHashes = append(shallowHashes, object.Hash(s))
+		}
 	}
 
 	out := make([]ObjectRecord, 0, len(jsonResp.Objects))
 	for _, obj := range jsonResp.Objects {
 		objType, err := parseObjectType(obj.Type)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		h := object.Hash(strings.TrimSpace(obj.Hash))
 		if err := ValidateHash(h); err != nil {
-			return nil, false, fmt.Errorf("invalid hash in batch response: %w", err)
+			return nil, fmt.Errorf("invalid hash in batch response: %w", err)
 		}
 		out = append(out, ObjectRecord{
 			Hash: h,
@@ -478,7 +546,7 @@ func (c *Client) BatchObjectsPack(ctx context.Context, wants, haves []object.Has
 			Data: obj.Data,
 		})
 	}
-	return out, jsonResp.Truncated, nil
+	return &BatchShallowResult{Objects: out, Truncated: jsonResp.Truncated, Shallow: shallowHashes}, nil
 }
 
 // GetObject fetches one object by hash.
@@ -596,7 +664,7 @@ func (c *Client) PushObjectsPack(ctx context.Context, objects []ObjectRecord) er
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/x-got-pack")
+	req.Header.Set("Content-Type", "application/x-graft-pack")
 	req.Header.Set("Content-Encoding", "zstd")
 	c.applyAuth(req)
 

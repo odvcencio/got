@@ -7,11 +7,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 const (
-	// DefaultMaxBatchObjects mirrors gothub's current server-side cap.
+	// DefaultMaxBatchObjects mirrors orchard's current server-side cap.
 	DefaultMaxBatchObjects = 50000
 	// DefaultMaxBatchHaveHashes keeps batch request payloads under server body limits.
 	DefaultMaxBatchHaveHashes = 20000
@@ -43,6 +43,10 @@ type FetchConfig struct {
 	MaxBatchObjects           int
 	MaxBatchHaveHashes        int
 	MaxBatchNegotiationRounds int
+	Depth                     int            // shallow clone depth (0 = full)
+	Deepen                    int            // deepen an existing shallow clone by N commits
+	Filter                    string         // partial clone filter (e.g., "blob:none")
+	ShallowState              *ShallowState  // existing shallow boundaries (read from .graft/shallow)
 }
 
 // DefaultFetchConfig returns the default FetchIntoStore settings.
@@ -62,33 +66,88 @@ func FetchIntoStore(ctx context.Context, c *Client, store *object.Store, wants, 
 	return FetchIntoStoreWithConfig(ctx, c, store, wants, haves, FetchConfig{})
 }
 
+// FetchResult contains the result of a FetchIntoStore operation, including
+// any shallow boundaries reported by the server.
+type FetchResult struct {
+	Written      int
+	ShallowState *ShallowState
+}
+
 // FetchIntoStoreWithConfig fetches all objects reachable from wants into the
 // local store while honoring a caller-provided batch negotiation configuration.
 func FetchIntoStoreWithConfig(ctx context.Context, c *Client, store *object.Store, wants, haves []object.Hash, cfg FetchConfig) (int, error) {
-	cfg, err := resolveFetchConfig(cfg)
+	result, err := FetchIntoStoreShallow(ctx, c, store, wants, haves, cfg)
 	if err != nil {
 		return 0, err
+	}
+	return result.Written, nil
+}
+
+// FetchIntoStoreShallow is like FetchIntoStoreWithConfig but returns
+// the full FetchResult including shallow boundary information.
+func FetchIntoStoreShallow(ctx context.Context, c *Client, store *object.Store, wants, haves []object.Hash, cfg FetchConfig) (*FetchResult, error) {
+	cfg, err := resolveFetchConfig(cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	roots := uniqueHashes(wants)
 	if len(roots) == 0 {
-		return 0, fmt.Errorf("at least one want hash is required")
+		return nil, fmt.Errorf("at least one want hash is required")
+	}
+
+	// Build shallow fetch options from config.
+	var shallowOpts *ShallowFetchOpts
+	isShallow := cfg.Depth > 0 || cfg.Deepen > 0
+	if isShallow || cfg.Filter != "" {
+		shallowOpts = &ShallowFetchOpts{
+			Depth:  cfg.Depth,
+			Deepen: cfg.Deepen,
+			Filter: cfg.Filter,
+		}
+		if cfg.ShallowState != nil {
+			shallowOpts.Shallow = cfg.ShallowState.List()
+		}
+	}
+
+	// Track all shallow boundaries from server responses.
+	resultShallow := NewShallowState()
+	if cfg.ShallowState != nil {
+		for _, h := range cfg.ShallowState.List() {
+			resultShallow.Add(h)
+		}
 	}
 
 	knownHaves, knownHaveSet := initKnownHaves(haves)
 	written := 0
 	negotiationCompleted := false
 	for round := 0; round < cfg.MaxBatchNegotiationRounds; round++ {
-		batchObjects, truncated, err := c.BatchObjectsPack(ctx, roots, selectBatchHaves(knownHaves, cfg.MaxBatchHaveHashes), cfg.MaxBatchObjects)
-		if err != nil {
-			return written, err
+		var batchObjects []ObjectRecord
+		var truncated bool
+
+		if shallowOpts != nil {
+			result, err := c.BatchObjectsPackShallow(ctx, roots, selectBatchHaves(knownHaves, cfg.MaxBatchHaveHashes), cfg.MaxBatchObjects, shallowOpts)
+			if err != nil {
+				return nil, err
+			}
+			batchObjects = result.Objects
+			truncated = result.Truncated
+			for _, h := range result.Shallow {
+				resultShallow.Add(h)
+			}
+		} else {
+			var err error
+			batchObjects, truncated, err = c.BatchObjectsPack(ctx, roots, selectBatchHaves(knownHaves, cfg.MaxBatchHaveHashes), cfg.MaxBatchObjects)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		newInRound := 0
 		for _, obj := range batchObjects {
 			n, err := writeVerifiedObject(store, obj)
 			if err != nil {
-				return written, err
+				return nil, err
 			}
 			written += n
 			if n > 0 {
@@ -109,16 +168,26 @@ func FetchIntoStoreWithConfig(ctx context.Context, c *Client, store *object.Stor
 		}
 	}
 	if !negotiationCompleted {
-		return written, fmt.Errorf("%w: limit=%d", ErrBatchNegotiationRoundLimitExceeded, cfg.MaxBatchNegotiationRounds)
+		return nil, fmt.Errorf("%w: limit=%d", ErrBatchNegotiationRoundLimitExceeded, cfg.MaxBatchNegotiationRounds)
 	}
 
-	// Always run closure for robustness against partial state and truncated batches.
-	n, err := ensureGraphClosure(ctx, c, store, roots)
-	if err != nil {
-		return written, err
+	// For shallow clones, stop at shallow boundaries instead of fetching the
+	// complete reachable graph. For full clones, run normal closure.
+	if isShallow && resultShallow.Len() > 0 {
+		n, err := ensureGraphClosureShallow(ctx, c, store, roots, resultShallow)
+		if err != nil {
+			return nil, err
+		}
+		written += n
+	} else {
+		n, err := ensureGraphClosure(ctx, c, store, roots)
+		if err != nil {
+			return nil, err
+		}
+		written += n
 	}
-	written += n
-	return written, nil
+
+	return &FetchResult{Written: written, ShallowState: resultShallow}, nil
 }
 
 func resolveFetchConfig(cfg FetchConfig) (FetchConfig, error) {
@@ -152,6 +221,12 @@ func resolveFetchConfig(cfg FetchConfig) (FetchConfig, error) {
 			out.MaxBatchNegotiationRounds,
 		)
 	}
+
+	// Carry forward shallow/filter fields unchanged.
+	out.Depth = cfg.Depth
+	out.Deepen = cfg.Deepen
+	out.Filter = cfg.Filter
+	out.ShallowState = cfg.ShallowState
 
 	return out, nil
 }
@@ -276,6 +351,80 @@ func ReachableSet(store *object.Store, roots []object.Hash) (map[object.Hash]str
 	}
 
 	return out, nil
+}
+
+// ensureGraphClosureShallow walks the object graph from roots and fetches
+// any missing objects, but stops at shallow boundaries instead of trying
+// to fetch parent commits beyond the shallow depth.
+func ensureGraphClosureShallow(ctx context.Context, c *Client, store *object.Store, roots []object.Hash, shallow *ShallowState) (int, error) {
+	written := 0
+	seen := make(map[object.Hash]struct{}, len(roots))
+	stack := make([]object.Hash, 0, len(roots))
+	stack = append(stack, roots...)
+
+	for len(stack) > 0 {
+		h := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if h == "" {
+			continue
+		}
+		if _, ok := seen[h]; ok {
+			continue
+		}
+		seen[h] = struct{}{}
+
+		if !store.Has(h) {
+			// If this hash is a shallow boundary, skip fetching it.
+			if shallow.IsShallow(h) {
+				continue
+			}
+			obj, err := c.GetObject(ctx, h)
+			if err != nil {
+				return written, err
+			}
+			n, err := writeVerifiedObject(store, obj)
+			if err != nil {
+				return written, err
+			}
+			written += n
+		}
+
+		objType, data, err := store.Read(h)
+		if err != nil {
+			// If the object is a shallow boundary, we may not have it locally.
+			if shallow.IsShallow(h) {
+				continue
+			}
+			return written, fmt.Errorf("read object %s: %w", h, err)
+		}
+
+		refs, err := referencedHashes(objType, data)
+		if err != nil {
+			return written, fmt.Errorf("parse object %s (%s): %w", h, objType, err)
+		}
+
+		// For commit objects, filter out parent hashes that are shallow boundaries.
+		if objType == object.TypeCommit {
+			commit, parseErr := object.UnmarshalCommit(data)
+			if parseErr == nil {
+				var filtered []object.Hash
+				// Always include the tree hash.
+				filtered = append(filtered, commit.TreeHash)
+				// Only include parents that are not shallow boundaries.
+				for _, p := range commit.Parents {
+					if !shallow.IsShallow(p) {
+						filtered = append(filtered, p)
+					}
+				}
+				stack = append(stack, filtered...)
+				continue
+			}
+		}
+
+		stack = append(stack, refs...)
+	}
+
+	return written, nil
 }
 
 func ensureGraphClosure(ctx context.Context, c *Client, store *object.Store, roots []object.Hash) (int, error) {

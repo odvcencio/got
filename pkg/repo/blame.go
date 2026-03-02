@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 var (
@@ -58,6 +58,8 @@ func (r *Repo) BlameEntity(selector string, limit int) (*EntityBlame, error) {
 		return nil, fmt.Errorf("blame: cannot resolve HEAD: %w", err)
 	}
 
+	shallow, _ := r.ShallowState()
+
 	currentHash := headHash
 	scanned := 0
 	sawEntity := false
@@ -85,7 +87,8 @@ func (r *Repo) BlameEntity(selector string, limit int) (*EntityBlame, error) {
 		if inCurrent {
 			sawEntity = true
 			parentHash := firstParentHash(commit)
-			if parentHash == "" {
+			parentIsShallow := parentHash != "" && shallow != nil && shallow.IsShallow(parentHash)
+			if parentHash == "" || parentIsShallow {
 				return &EntityBlame{
 					Path:       relPath,
 					EntityKey:  entityKey,
@@ -130,6 +133,9 @@ func (r *Repo) BlameEntity(selector string, limit int) (*EntityBlame, error) {
 
 		parentHash := firstParentHash(commit)
 		if parentHash == "" {
+			break
+		}
+		if shallow != nil && shallow.IsShallow(parentHash) {
 			break
 		}
 		currentHash = parentHash
