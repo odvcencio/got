@@ -149,6 +149,11 @@ func (r *Repo) Checkout(target string) error {
 		return fmt.Errorf("checkout: update HEAD: %w", err)
 	}
 
+	// Sync modules if the new commit has module configuration.
+	// Module sync failure is non-fatal during checkout — the user can retry
+	// with 'graft module sync'.
+	_ = r.ModuleSync()
+
 	return nil
 }
 
