@@ -79,7 +79,7 @@ func isLocalPath(url string) bool {
 
 // fetchFromLocal fetches from a local graft repository by opening it,
 // listing its refs, and copying the full object graph.
-func (r *Repo) fetchFromLocal(ctx context.Context, remoteName, path string, result *FetchResult) error {
+func (r *Repo) fetchFromLocal(_ context.Context, remoteName, path string, result *FetchResult) error {
 	srcRepo, err := Open(path)
 	if err != nil {
 		return fmt.Errorf("fetch: open local remote %q: %w", path, err)
