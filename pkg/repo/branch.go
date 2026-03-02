@@ -8,11 +8,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // CreateBranch creates a new branch pointing at the given target hash.
-// It writes the hash to .got/refs/heads/<name>. Returns an error if the
+// It writes the hash to .graft/refs/heads/<name>. Returns an error if the
 // branch already exists.
 func (r *Repo) CreateBranch(name string, target object.Hash) error {
 	refName := filepath.ToSlash(filepath.Join("refs", "heads", name))
@@ -25,7 +25,7 @@ func (r *Repo) CreateBranch(name string, target object.Hash) error {
 	return nil
 }
 
-// DeleteBranch removes the branch ref file .got/refs/heads/<name>.
+// DeleteBranch removes the branch ref file .graft/refs/heads/<name>.
 // Returns an error if the branch is the current branch or does not exist.
 func (r *Repo) DeleteBranch(name string) error {
 	// Check if this is the current branch.
@@ -37,7 +37,7 @@ func (r *Repo) DeleteBranch(name string) error {
 		return fmt.Errorf("delete branch: cannot delete current branch %q", name)
 	}
 
-	refPath := filepath.Join(r.GotDir, "refs", "heads", name)
+	refPath := filepath.Join(r.refsBaseDir(), "refs", "heads", name)
 	if err := os.Remove(refPath); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("delete branch: branch %q does not exist", name)
@@ -47,10 +47,10 @@ func (r *Repo) DeleteBranch(name string) error {
 	return nil
 }
 
-// ListBranches reads .got/refs/heads/ and returns the branch names sorted
+// ListBranches reads .graft/refs/heads/ and returns the branch names sorted
 // alphabetically.
 func (r *Repo) ListBranches() ([]string, error) {
-	headsDir := filepath.Join(r.GotDir, "refs", "heads")
+	headsDir := filepath.Join(r.refsBaseDir(), "refs", "heads")
 
 	entries, err := os.ReadDir(headsDir)
 	if err != nil {

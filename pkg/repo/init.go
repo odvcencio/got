@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 var ErrRefCASMismatch = errors.New("ref compare-and-swap mismatch")
@@ -53,13 +53,13 @@ const (
 	refLockWaitLimit  = 2 * time.Second
 )
 
-// Init creates a new Got repository at path. It creates the .got/ directory
-// structure: HEAD, objects/, and refs/heads/. Returns an error if a .got/
+// Init creates a new Graft repository at path. It creates the .graft/ directory
+// structure: HEAD, objects/, and refs/heads/. Returns an error if a .graft/
 // directory already exists.
 func Init(path string) (*Repo, error) {
-	gotDir := filepath.Join(path, ".got")
+	gotDir := filepath.Join(path, ".graft")
 
-	// Fail if .got/ already exists.
+	// Fail if .graft/ already exists.
 	if _, err := os.Stat(gotDir); err == nil {
 		return nil, fmt.Errorf("init: repository already exists at %s", gotDir)
 	}
@@ -89,8 +89,9 @@ func Init(path string) (*Repo, error) {
 	}, nil
 }
 
-// Open searches upward from path for a .got/ directory and opens the
-// repository. Returns an error if no .got/ directory is found.
+// Open searches upward from path for a .graft/ directory (or .graft file for
+// linked worktrees) and opens the repository. Returns an error if no .graft
+// entry is found.
 func Open(path string) (*Repo, error) {
 	// Resolve to absolute path for consistent traversal.
 	abs, err := filepath.Abs(path)
@@ -100,26 +101,62 @@ func Open(path string) (*Repo, error) {
 
 	cur := abs
 	for {
-		gotDir := filepath.Join(cur, ".got")
+		gotDir := filepath.Join(cur, ".graft")
 		info, err := os.Stat(gotDir)
-		if err == nil && info.IsDir() {
-			return &Repo{
-				RootDir: cur,
-				GotDir:  gotDir,
-				Store:   object.NewStore(gotDir),
-			}, nil
+		if err == nil {
+			if info.IsDir() {
+				// Normal repository.
+				return &Repo{
+					RootDir: cur,
+					GotDir:  gotDir,
+					Store:   object.NewStore(gotDir),
+				}, nil
+			}
+			// .graft is a file -- this is a linked worktree.
+			return openLinkedWorktree(cur, gotDir)
 		}
 
 		parent := filepath.Dir(cur)
 		if parent == cur {
-			// Reached filesystem root without finding .got/.
+			// Reached filesystem root without finding .graft/.
 			return nil, fmt.Errorf("open: not a got repository (or any parent up to /)")
 		}
 		cur = parent
 	}
 }
 
-// Head reads .got/HEAD. If the content starts with "ref: ", it returns the
+// openLinkedWorktree opens a Repo from a linked worktree where .graft is a
+// file containing "gitdir: <path-to-worktree-metadata>".
+func openLinkedWorktree(rootDir, graftFile string) (*Repo, error) {
+	data, err := os.ReadFile(graftFile)
+	if err != nil {
+		return nil, fmt.Errorf("open: read .graft file: %w", err)
+	}
+	content := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(content, "gitdir: ") {
+		return nil, fmt.Errorf("open: invalid .graft file (expected 'gitdir: <path>')")
+	}
+	wtGotDir := strings.TrimPrefix(content, "gitdir: ")
+
+	// Read commondir from the worktree metadata directory.
+	commondirData, err := os.ReadFile(filepath.Join(wtGotDir, "commondir"))
+	if err != nil {
+		return nil, fmt.Errorf("open: read commondir: %w", err)
+	}
+	commonRel := strings.TrimSpace(string(commondirData))
+	commonDir := filepath.Join(wtGotDir, commonRel)
+	// Clean the path to resolve any ".." segments.
+	commonDir = filepath.Clean(commonDir)
+
+	return &Repo{
+		RootDir:   rootDir,
+		GotDir:    wtGotDir,
+		CommonDir: commonDir,
+		Store:     object.NewStore(commonDir),
+	}, nil
+}
+
+// Head reads .graft/HEAD. If the content starts with "ref: ", it returns the
 // ref path (e.g., "refs/heads/main"). Otherwise it returns the raw content
 // as a detached hash string.
 func (r *Repo) Head() (string, error) {
@@ -139,7 +176,7 @@ func (r *Repo) Head() (string, error) {
 //
 // Resolution order:
 //  1. If name is "HEAD", read HEAD. If HEAD is symbolic, resolve the target ref.
-//  2. If name starts with "refs/", read .got/<name>.
+//  2. If name starts with "refs/", read .graft/<name>.
 //  3. Otherwise, try "refs/heads/<name>".
 func (r *Repo) ResolveRef(name string) (object.Hash, error) {
 	if name == "HEAD" {
@@ -155,12 +192,13 @@ func (r *Repo) ResolveRef(name string) (object.Hash, error) {
 		return object.Hash(head), nil
 	}
 
-	// Determine the file to read.
+	// Determine the file to read. Refs are shared (use refsBaseDir), not
+	// worktree-specific.
 	var refPath string
 	if strings.HasPrefix(name, "refs/") {
-		refPath = filepath.Join(r.GotDir, name)
+		refPath = filepath.Join(r.refsBaseDir(), name)
 	} else {
-		refPath = filepath.Join(r.GotDir, "refs", "heads", name)
+		refPath = filepath.Join(r.refsBaseDir(), "refs", "heads", name)
 	}
 
 	data, err := os.ReadFile(refPath)
@@ -170,13 +208,13 @@ func (r *Repo) ResolveRef(name string) (object.Hash, error) {
 	return object.Hash(strings.TrimRight(string(data), "\n")), nil
 }
 
-// UpdateRef writes a hash to the named ref file under .got/. Parent
+// UpdateRef writes a hash to the named ref file under .graft/. Parent
 // directories are created as needed.
 func (r *Repo) UpdateRef(name string, h object.Hash) error {
 	return r.UpdateRefCAS(name, h)
 }
 
-// UpdateRefCAS writes a hash to the named ref file under .got/ using
+// UpdateRefCAS writes a hash to the named ref file under .graft/ using
 // lockfile + rename atomic semantics. If expectedOld is provided, the
 // update only succeeds when the current ref hash matches it.
 //
@@ -192,7 +230,13 @@ func (r *Repo) UpdateRefCAS(name string, h object.Hash, expectedOld ...object.Ha
 		wantOldHash = expectedOld[0]
 	}
 
-	refPath := filepath.Join(r.GotDir, name)
+	// For HEAD, use GotDir (worktree-specific). For all other refs, use
+	// refsBaseDir (shared in linked worktrees).
+	baseDir := r.refsBaseDir()
+	if name == "HEAD" {
+		baseDir = r.GotDir
+	}
+	refPath := filepath.Join(baseDir, name)
 
 	dir := filepath.Dir(refPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

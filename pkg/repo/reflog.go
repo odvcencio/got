@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 const zeroHash = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -31,7 +31,13 @@ func (r *Repo) appendReflog(ref string, oldHash, newHash object.Hash, reason str
 		reason = "update"
 	}
 
-	logPath := filepath.Join(r.GotDir, "logs", filepath.FromSlash(ref))
+	// Reflogs for refs live alongside the refs — in the shared directory
+	// for linked worktrees.
+	baseDir := r.refsBaseDir()
+	if ref == "HEAD" {
+		baseDir = r.GotDir
+	}
+	logPath := filepath.Join(baseDir, "logs", filepath.FromSlash(ref))
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return fmt.Errorf("reflog mkdir: %w", err)
 	}
@@ -67,7 +73,11 @@ func (r *Repo) ReadReflog(ref string, limit int) ([]ReflogEntry, error) {
 		return nil, err
 	}
 
-	logPath := filepath.Join(r.GotDir, "logs", filepath.FromSlash(refName))
+	baseDir := r.refsBaseDir()
+	if refName == "HEAD" {
+		baseDir = r.GotDir
+	}
+	logPath := filepath.Join(baseDir, "logs", filepath.FromSlash(refName))
 	f, err := os.Open(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {

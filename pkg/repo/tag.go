@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // CreateTag creates or updates a lightweight tag ref under refs/tags/.
@@ -100,7 +100,7 @@ func (r *Repo) DeleteTag(name string) error {
 		return fmt.Errorf("delete tag: %w", err)
 	}
 
-	refPath := filepath.Join(r.GotDir, "refs", "tags", filepath.FromSlash(name))
+	refPath := filepath.Join(r.refsBaseDir(), "refs", "tags", filepath.FromSlash(name))
 	if err := os.Remove(refPath); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("delete tag: tag %q does not exist", name)
