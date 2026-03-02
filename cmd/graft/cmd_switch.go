@@ -11,20 +11,27 @@ func newSwitchCmd() *cobra.Command {
 	var createBranch string
 
 	cmd := &cobra.Command{
-		Use:   "switch <branch>",
+		Use:   "switch [branch]",
 		Short: "Switch branches (modern alternative to checkout)",
 		Long: `Switch to a different branch, updating the working directory.
 
 This is the modern alternative to 'graft checkout' for branch switching.
 Use -c to create a new branch and switch to it in one step.`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 && createBranch == "" {
+				return fmt.Errorf("branch name is required (or use -c to create a new branch)")
+			}
+
 			r, err := repo.Open(".")
 			if err != nil {
 				return err
 			}
 
-			target := args[0]
+			var target string
+			if len(args) > 0 {
+				target = args[0]
+			}
 
 			// TODO: handle "-" for previous branch once reflog tracks
 			// checkout operations with enough info to identify the

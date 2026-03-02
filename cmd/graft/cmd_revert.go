@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
@@ -66,10 +65,3 @@ func newRevertCmd() *cobra.Command {
 	return cmd
 }
 
-func branchName(r *repo.Repo) string {
-	head, err := r.Head()
-	if err == nil && strings.HasPrefix(head, "refs/heads/") {
-		return strings.TrimPrefix(head, "refs/heads/")
-	}
-	return "HEAD"
-}

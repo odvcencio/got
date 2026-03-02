@@ -45,8 +45,8 @@ func TestIntegration_SwitchCreateNewBranch(t *testing.T) {
 	// Create an initial commit.
 	commitFile(t, dir, "base.txt", "base content\n", "initial commit")
 
-	// Use switch -c to create and switch to a new branch.
-	out := mustRunGraft(t, dir, "switch", "-c", "new-feature", "new-feature")
+	// Use switch -c to create and switch to a new branch (no positional arg needed).
+	out := mustRunGraft(t, dir, "switch", "-c", "new-feature")
 
 	if !strings.Contains(out, "switched to new branch 'new-feature'") {
 		t.Fatalf("unexpected switch -c output: %s", out)
@@ -76,6 +76,22 @@ func TestIntegration_SwitchNonExistentBranch(t *testing.T) {
 	_, err := runGraft(t, dir, "switch", "does-not-exist")
 	if err == nil {
 		t.Fatal("expected error when switching to non-existent branch")
+	}
+}
+
+func TestIntegration_SwitchNoArgsNoFlag(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	dir := initRepo(t)
+
+	commitFile(t, dir, "base.txt", "base content\n", "initial commit")
+
+	// Switch with no args and no -c should error.
+	_, err := runGraft(t, dir, "switch")
+	if err == nil {
+		t.Fatal("expected error when running switch with no args and no -c flag")
 	}
 }
 
