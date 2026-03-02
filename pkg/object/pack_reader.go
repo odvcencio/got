@@ -170,7 +170,11 @@ func ResolvePackEntries(entries []PackEntry) ([]PackEntry, error) {
 	}
 	byHash := make(map[Hash]int, len(entries))
 
-	for remaining > 0 {
+	// Guard against pathological delta chains that would cause O(n^2)
+	// resolution passes. In practice, well-formed packs resolve in at most
+	// O(depth) passes where depth is the maximum delta chain length.
+	const maxResolutionPasses = 1000
+	for pass := 0; pass < maxResolutionPasses && remaining > 0; pass++ {
 		progress := false
 		for i, entry := range entries {
 			if done[i] {
@@ -239,6 +243,10 @@ func ResolvePackEntries(entries []PackEntry) ([]PackEntry, error) {
 		if !progress {
 			return nil, fmt.Errorf("unable to resolve remaining delta entries")
 		}
+	}
+
+	if remaining > 0 {
+		return nil, fmt.Errorf("exceeded %d resolution passes with %d entries unresolved", maxResolutionPasses, remaining)
 	}
 
 	return resolved, nil

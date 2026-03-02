@@ -213,6 +213,45 @@ func openLinkedWorktree(rootDir, graftFile string) (*Repo, error) {
 	}, nil
 }
 
+// writeHeadAtomic atomically writes the HEAD file using temp+fsync+rename.
+func (r *Repo) writeHeadAtomic(content string) error {
+	headPath := filepath.Join(r.GraftDir, "HEAD")
+	tmpPath := headPath + ".lock"
+	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("write HEAD: create temp: %w", err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write HEAD: write: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write HEAD: sync: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("write HEAD: close: %w", err)
+	}
+	if err := os.Rename(tmpPath, headPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("write HEAD: rename: %w", err)
+	}
+	return nil
+}
+
+// setHeadSymbolic atomically sets HEAD to a symbolic ref.
+func (r *Repo) setHeadSymbolic(refName string) error {
+	return r.writeHeadAtomic("ref: " + refName + "\n")
+}
+
+// setHeadDetached atomically sets HEAD to a detached commit hash.
+func (r *Repo) setHeadDetached(hash object.Hash) error {
+	return r.writeHeadAtomic(string(hash) + "\n")
+}
+
 // Head reads .graft/HEAD. If the content starts with "ref: ", it returns the
 // ref path (e.g., "refs/heads/main"). Otherwise it returns the raw content
 // as a detached hash string.
@@ -367,8 +406,16 @@ func acquireRefLock(lockPath string) (*os.File, error) {
 			return f, nil
 		}
 		if os.IsExist(err) {
+			// Check for stale lock: if the lock file is older than 5 minutes,
+			// it was likely left by a crashed process. Remove it and retry.
+			if info, statErr := os.Stat(lockPath); statErr == nil {
+				if time.Since(info.ModTime()) > 5*time.Minute {
+					os.Remove(lockPath)
+					continue
+				}
+			}
 			if time.Now().After(deadline) {
-				return nil, fmt.Errorf("timeout waiting for lock %q", lockPath)
+				return nil, fmt.Errorf("timeout waiting for lock %q (may be stale — remove manually if no graft process is running)", lockPath)
 			}
 			time.Sleep(refLockRetryDelay)
 			continue

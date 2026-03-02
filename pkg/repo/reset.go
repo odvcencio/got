@@ -69,8 +69,7 @@ func (r *Repo) ResetToCommit(target object.Hash, mode ResetMode) error {
 		}
 	} else {
 		// Detached HEAD.
-		headPath := filepath.Join(r.GraftDir, "HEAD")
-		if err := os.WriteFile(headPath, []byte(string(target)+"\n"), 0o644); err != nil {
+		if err := r.setHeadDetached(target); err != nil {
 			return fmt.Errorf("reset: update HEAD: %w", err)
 		}
 	}

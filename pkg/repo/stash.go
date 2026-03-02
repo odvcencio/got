@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/odvcencio/graft/pkg/object"
@@ -59,6 +60,11 @@ func (r *Repo) writeStashStack(entries []StashEntry) error {
 		tmp.Close()
 		os.Remove(tmpName)
 		return fmt.Errorf("stash: write: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("stash: sync: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
@@ -116,6 +122,9 @@ func (r *Repo) Stash(author string) (*StashEntry, error) {
 		if e.WorkStatus == StatusDeleted {
 			delete(stg.Entries, e.Path)
 		}
+	}
+	if err := r.WriteStaging(stg); err != nil {
+		return nil, fmt.Errorf("stash: write staging: %w", err)
 	}
 
 	// 3. Build tree from current staging.
@@ -287,14 +296,7 @@ func (r *Repo) StashApply(index int) error {
 
 // joinPaths joins a slice of paths with ", ".
 func joinPaths(paths []string) string {
-	if len(paths) == 0 {
-		return ""
-	}
-	result := paths[0]
-	for _, p := range paths[1:] {
-		result += ", " + p
-	}
-	return result
+	return strings.Join(paths, ", ")
 }
 
 // StashApplyMerge applies the stash at index using a 3-way merge and returns
@@ -624,7 +626,7 @@ func formatUnifiedDiff(path string, oldData, newData []byte) []byte {
 
 	// Simple diff: show removed and added lines.
 	if len(oldLines) > 0 || len(newLines) > 0 {
-		buf = append(buf, []byte(fmt.Sprintf("@@ -%d +%d @@\n", len(oldLines), len(newLines)))...)
+		buf = append(buf, []byte(fmt.Sprintf("@@ -1,%d +1,%d @@\n", len(oldLines), len(newLines)))...)
 		for _, l := range oldLines {
 			buf = append(buf, '-')
 			buf = append(buf, l...)

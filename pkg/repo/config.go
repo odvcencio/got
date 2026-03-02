@@ -67,6 +67,11 @@ func (r *Repo) WriteConfig(cfg *Config) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("write config: write: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("write config: sync: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
 		return fmt.Errorf("write config: close: %w", err)

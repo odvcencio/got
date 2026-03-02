@@ -1,7 +1,6 @@
 package object
 
 import (
-	"bytes"
 	"compress/zlib"
 	"crypto/sha256"
 	"encoding/hex"
@@ -112,7 +111,8 @@ func (s *Store) gcWithReachableSet(reachable map[Hash]struct{}) (*GCSummary, err
 		}
 		offset := pw.CurrentOffset()
 		envelope := makeObjectEnvelope(objType, content)
-		if err := pw.WriteEntry(PackBlob, envelope); err != nil {
+		packType := objectTypeToPackType(objType)
+		if err := pw.WriteEntry(packType, envelope); err != nil {
 			_ = packTmp.Close()
 			return nil, fmt.Errorf("gc: write pack entry %s: %w", h, err)
 		}
@@ -349,10 +349,13 @@ func (s *Store) InvalidatePackIndexCache() {
 }
 
 // readPackEntryAt reads and decompresses a single pack entry at the given byte
-// offset from a pack file. It validates the pack header checksum on first read
-// but only decompresses the targeted entry, avoiding the cost of parsing every
-// entry in the pack.
-func readPackEntryAt(packPath string, offset uint64, packChecksum Hash) (PackEntry, error) {
+// offset from a pack file. It validates the pack header on first read but only
+// decompresses the targeted entry, avoiding the cost of parsing every entry in
+// the pack.
+//
+// The function uses an io.SectionReader over the file to avoid reading the
+// entire pack tail into memory, which could be very large for big pack files.
+func readPackEntryAt(packPath string, offset uint64) (PackEntry, error) {
 	f, err := os.Open(packPath)
 	if err != nil {
 		return PackEntry{}, fmt.Errorf("open pack %s: %w", filepath.Base(packPath), err)
@@ -368,15 +371,6 @@ func readPackEntryAt(packPath string, offset uint64, packChecksum Hash) (PackEnt
 		return PackEntry{}, err
 	}
 
-	// Seek to the entry offset.
-	if _, err := f.Seek(int64(offset), io.SeekStart); err != nil {
-		return PackEntry{}, fmt.Errorf("seek to offset %d in %s: %w", offset, filepath.Base(packPath), err)
-	}
-
-	// Read enough data from offset for the entry header + compressed payload.
-	// We read a generous buffer; the zlib reader will stop at the stream boundary.
-	// For very large objects this could be suboptimal, but it avoids needing to
-	// know the compressed size up front.
 	stat, err := f.Stat()
 	if err != nil {
 		return PackEntry{}, fmt.Errorf("stat pack %s: %w", filepath.Base(packPath), err)
@@ -388,14 +382,23 @@ func readPackEntryAt(packPath string, offset uint64, packChecksum Hash) (PackEnt
 	if int64(offset) >= maxEntryEnd {
 		return PackEntry{}, fmt.Errorf("offset %d past pack data boundary in %s", offset, filepath.Base(packPath))
 	}
-	entryBufLen := maxEntryEnd - int64(offset)
-	entryBuf := make([]byte, entryBufLen)
-	if _, err := io.ReadFull(f, entryBuf); err != nil {
-		return PackEntry{}, fmt.Errorf("read entry data at offset %d in %s: %w", offset, filepath.Base(packPath), err)
+
+	// Read a small buffer for the entry header (type byte + size varint +
+	// possible delta base reference). The header is at most ~10 bytes for the
+	// varint, plus up to 10 bytes for an ofs-delta distance, plus 32 bytes
+	// for a ref-delta hash. 64 bytes is more than enough.
+	const maxHeaderBuf = 64
+	headerReadLen := maxEntryEnd - int64(offset)
+	if headerReadLen > maxHeaderBuf {
+		headerReadLen = maxHeaderBuf
+	}
+	entryHeaderBuf := make([]byte, headerReadLen)
+	if _, err := f.ReadAt(entryHeaderBuf, int64(offset)); err != nil {
+		return PackEntry{}, fmt.Errorf("read entry header at offset %d in %s: %w", offset, filepath.Base(packPath), err)
 	}
 
 	// Decode entry header.
-	objType, size, headerLen, err := decodePackEntryHeaderStrict(entryBuf)
+	objType, size, headerLen, err := decodePackEntryHeaderStrict(entryHeaderBuf)
 	if err != nil {
 		return PackEntry{}, fmt.Errorf("decode entry header at offset %d: %w", offset, err)
 	}
@@ -405,7 +408,7 @@ func readPackEntryAt(packPath string, offset uint64, packChecksum Hash) (PackEnt
 	baseDistance := uint64(0)
 	baseRef := Hash("")
 	if objType == PackOfsDelta {
-		dist, dn, err := decodeOfsDeltaDistance(entryBuf[pos:])
+		dist, dn, err := decodeOfsDeltaDistance(entryHeaderBuf[pos:])
 		if err != nil {
 			return PackEntry{}, fmt.Errorf("decode ofs-delta at offset %d: %w", offset, err)
 		}
@@ -413,16 +416,19 @@ func readPackEntryAt(packPath string, offset uint64, packChecksum Hash) (PackEnt
 		pos += dn
 	}
 	if objType == PackRefDelta {
-		if pos+32 > len(entryBuf) {
+		if pos+32 > len(entryHeaderBuf) {
 			return PackEntry{}, fmt.Errorf("truncated ref-delta base hash at offset %d", offset)
 		}
-		baseRef = Hash(hex.EncodeToString(entryBuf[pos : pos+32]))
+		baseRef = Hash(hex.EncodeToString(entryHeaderBuf[pos : pos+32]))
 		pos += 32
 	}
 
-	// Decompress the zlib payload.
-	sub := bytes.NewReader(entryBuf[pos:])
-	zr, err := zlib.NewReader(sub)
+	// Decompress the zlib payload using a section reader over the file,
+	// avoiding reading the entire pack tail into memory.
+	zlibStart := int64(offset) + int64(pos)
+	zlibLen := maxEntryEnd - zlibStart
+	sr := io.NewSectionReader(f, zlibStart, zlibLen)
+	zr, err := zlib.NewReader(sr)
 	if err != nil {
 		return PackEntry{}, fmt.Errorf("zlib reader at offset %d: %w", offset, err)
 	}
@@ -451,8 +457,8 @@ func readPackEntryAt(packPath string, offset uint64, packChecksum Hash) (PackEnt
 
 // readResolvedPackEntryAt reads a single pack entry at the given offset,
 // resolving delta chains by recursively reading base entries.
-func readResolvedPackEntryAt(packPath string, offset uint64, packChecksum Hash) (PackEntry, error) {
-	entry, err := readPackEntryAt(packPath, offset, packChecksum)
+func readResolvedPackEntryAt(packPath string, offset uint64) (PackEntry, error) {
+	entry, err := readPackEntryAt(packPath, offset)
 	if err != nil {
 		return PackEntry{}, err
 	}
@@ -466,7 +472,7 @@ func readResolvedPackEntryAt(packPath string, offset uint64, packChecksum Hash) 
 			return PackEntry{}, fmt.Errorf("invalid ofs-delta base distance %d at offset %d", entry.BaseDistance, entry.Offset)
 		}
 		baseOffset := entry.Offset - entry.BaseDistance
-		base, err := readResolvedPackEntryAt(packPath, baseOffset, packChecksum)
+		base, err := readResolvedPackEntryAt(packPath, baseOffset)
 		if err != nil {
 			return PackEntry{}, fmt.Errorf("resolve ofs-delta base at offset %d: %w", baseOffset, err)
 		}
@@ -502,7 +508,7 @@ func (s *Store) readFromPacks(h Hash) (ObjectType, []byte, error) {
 		}
 
 		packPath := packPathForIndex(idxPath)
-		packEntry, err := readResolvedPackEntryAt(packPath, indexEntry.Offset, idx.PackChecksum)
+		packEntry, err := readResolvedPackEntryAt(packPath, indexEntry.Offset)
 		if err != nil {
 			return "", nil, fmt.Errorf("object read %s: pack %s: %w", h, filepath.Base(packPath), err)
 		}
@@ -561,15 +567,6 @@ func decodeIndexedPackEntry(expected Hash, entry PackEntry) (ObjectType, []byte,
 		)
 	}
 	return objType, entry.Data, nil
-}
-
-func findPackEntryByOffset(entries []PackEntry, offset uint64) (PackEntry, bool) {
-	for _, entry := range entries {
-		if entry.Offset == offset {
-			return entry, true
-		}
-	}
-	return PackEntry{}, false
 }
 
 func (s *Store) packedHashSet() (map[Hash]struct{}, error) {
@@ -673,6 +670,21 @@ func isHexHashComponent(s string, expectedLen int) bool {
 
 func packPathForIndex(idxPath string) string {
 	return strings.TrimSuffix(idxPath, ".idx") + ".pack"
+}
+
+// objectTypeToPackType maps a graft ObjectType to the corresponding
+// PackObjectType for writing into pack files.
+func objectTypeToPackType(t ObjectType) PackObjectType {
+	switch t {
+	case TypeCommit:
+		return PackCommit
+	case TypeTree:
+		return PackTree
+	case TypeTag:
+		return PackTag
+	default:
+		return PackBlob
+	}
 }
 
 func makeObjectEnvelope(objType ObjectType, data []byte) []byte {

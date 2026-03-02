@@ -454,12 +454,12 @@ func (r *Repo) MergeAbort() error {
 		return fmt.Errorf("merge abort: read HEAD: %w", err)
 	}
 	if strings.HasPrefix(head, "refs/") {
-		if err := r.UpdateRef(head, origHead); err != nil {
+		currentRef, _ := r.ResolveRef(head)
+		if err := r.UpdateRefCAS(head, origHead, currentRef); err != nil {
 			return fmt.Errorf("merge abort: restore ref: %w", err)
 		}
 	} else {
-		headPath := filepath.Join(r.GraftDir, "HEAD")
-		if err := os.WriteFile(headPath, []byte(string(origHead)+"\n"), 0o644); err != nil {
+		if err := r.setHeadDetached(origHead); err != nil {
 			return fmt.Errorf("merge abort: set HEAD: %w", err)
 		}
 	}

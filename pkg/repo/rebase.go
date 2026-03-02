@@ -218,10 +218,34 @@ func (r *Repo) RebaseContinue() error {
 		return fmt.Errorf("rebase continue: read original commit %s: %w", stoppedSHA, err)
 	}
 
-	// Create a commit with the original message.
-	commitHash, err := r.Commit(origCommit.Message, origCommit.Author)
+	// Resolve current HEAD for CAS.
+	headHash, err := r.ResolveRef("HEAD")
 	if err != nil {
-		return fmt.Errorf("rebase continue: commit: %w", err)
+		return fmt.Errorf("rebase continue: resolve HEAD: %w", err)
+	}
+
+	// Stage any remaining changes from conflict resolution.
+	stg, err := r.ReadStaging()
+	if err != nil {
+		return fmt.Errorf("rebase continue: read staging: %w", err)
+	}
+	if len(stg.Entries) == 0 {
+		return fmt.Errorf("rebase continue: nothing staged")
+	}
+	for _, entry := range stg.Entries {
+		if entry.Conflict {
+			return fmt.Errorf("rebase continue: unresolved conflicts remain; resolve them and stage the files")
+		}
+	}
+
+	commitHash, err := r.commitFromStaging(commitStagingParams{
+		Message:  origCommit.Message,
+		Author:   origCommit.Author,
+		Parents:  []object.Hash{headHash},
+		HeadHash: headHash,
+	})
+	if err != nil {
+		return fmt.Errorf("rebase continue: %w", err)
 	}
 	_ = commitHash
 
@@ -266,19 +290,19 @@ func (r *Repo) RebaseAbort() error {
 
 	// Update the branch ref back to orig-head.
 	if strings.HasPrefix(headName, "refs/heads/") {
-		if err := r.UpdateRef(headName, object.Hash(origHead)); err != nil {
+		currentRef, _ := r.ResolveRef(headName)
+		if err := r.UpdateRefCAS(headName, object.Hash(origHead), currentRef); err != nil {
 			return fmt.Errorf("rebase abort: restore branch ref: %w", err)
 		}
 	}
 
 	// Reattach HEAD to the branch.
-	headPath := filepath.Join(r.GraftDir, "HEAD")
 	if strings.HasPrefix(headName, "refs/") {
-		if err := os.WriteFile(headPath, []byte("ref: "+headName+"\n"), 0o644); err != nil {
+		if err := r.setHeadSymbolic(headName); err != nil {
 			return fmt.Errorf("rebase abort: reattach HEAD: %w", err)
 		}
 	} else {
-		if err := os.WriteFile(headPath, []byte(origHead+"\n"), 0o644); err != nil {
+		if err := r.setHeadDetached(object.Hash(origHead)); err != nil {
 			return fmt.Errorf("rebase abort: set HEAD: %w", err)
 		}
 	}
@@ -373,7 +397,12 @@ func (r *Repo) resolveToHash(target string) (object.Hash, error) {
 func (r *Repo) collectCommits(stop, tip object.Hash) ([]object.Hash, error) {
 	var commits []object.Hash
 	current := tip
+	seen := make(map[object.Hash]bool)
 	for current != stop && current != "" {
+		if seen[current] {
+			return nil, fmt.Errorf("cycle detected in commit graph at %s", shortHash(current))
+		}
+		seen[current] = true
 		commits = append(commits, current)
 		c, err := r.Store.ReadCommit(current)
 		if err != nil {
@@ -594,8 +623,7 @@ func (r *Repo) replaySingleCommit(commitHash object.Hash) error {
 	}
 
 	// Update detached HEAD.
-	headPath := filepath.Join(r.GraftDir, "HEAD")
-	if err := os.WriteFile(headPath, []byte(string(newHash)+"\n"), 0o644); err != nil {
+	if err := r.setHeadDetached(newHash); err != nil {
 		return fmt.Errorf("update HEAD: %w", err)
 	}
 
@@ -620,15 +648,15 @@ func (r *Repo) finishRebase() error {
 
 	// Update the branch ref to point to the new tip.
 	if strings.HasPrefix(headName, "refs/heads/") {
-		if err := r.UpdateRef(headName, newTip); err != nil {
+		currentRef, _ := r.ResolveRef(headName)
+		if err := r.UpdateRefCAS(headName, newTip, currentRef); err != nil {
 			return fmt.Errorf("rebase finish: update branch ref: %w", err)
 		}
 	}
 
 	// Reattach HEAD to the branch.
-	headPath := filepath.Join(r.GraftDir, "HEAD")
 	if strings.HasPrefix(headName, "refs/") {
-		if err := os.WriteFile(headPath, []byte("ref: "+headName+"\n"), 0o644); err != nil {
+		if err := r.setHeadSymbolic(headName); err != nil {
 			return fmt.Errorf("rebase finish: reattach HEAD: %w", err)
 		}
 	}
@@ -656,9 +684,8 @@ func (r *Repo) detachHead(hash object.Hash) error {
 		return fmt.Errorf("checkout tree: %w", err)
 	}
 
-	headPath := filepath.Join(r.GraftDir, "HEAD")
-	if err := os.WriteFile(headPath, []byte(string(hash)+"\n"), 0o644); err != nil {
-		return fmt.Errorf("write HEAD: %w", err)
+	if err := r.setHeadDetached(hash); err != nil {
+		return err
 	}
 
 	return nil
@@ -818,14 +845,32 @@ func (r *Repo) autostashPop() {
 	if !r.hasAutostash() {
 		return
 	}
+	// Read the expected stash hash.
+	seq := r.rebaseSeq()
+	expectedHash, _ := seq.ReadFile("autostash")
 
-	// Pop the most recent stash (index 0), which is the autostash we created.
-	err := r.StashPop(0)
+	// Find the stash index matching our autostash hash.
+	stack, err := r.readStashStack()
+	if err != nil || len(stack) == 0 {
+		fmt.Fprintf(os.Stderr, "warning: autostash pop: could not read stash stack: %v\n", err)
+		return
+	}
+
+	idx := -1
+	for i, entry := range stack {
+		if string(entry.CommitHash) == expectedHash {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		fmt.Fprintf(os.Stderr, "warning: autostash pop: stash entry not found (may have been manually popped)\n")
+		return
+	}
+
+	err = r.StashPop(idx)
 	if err != nil {
-		// Conflicts or errors during autostash pop should not fail the rebase.
-		fmt.Fprintf(os.Stderr, "warning: autostash pop had conflicts: %v\n", err)
-		// Try to at least apply (without dropping) so the changes are in the
-		// working tree even if there are conflicts.
+		fmt.Fprintf(os.Stderr, "warning: could not restore autostash: %v\nYour changes are still in the stash.\n", err)
 	}
 }
 

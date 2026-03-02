@@ -209,18 +209,8 @@ func (r *Repo) WorktreeList() ([]WorktreeInfo, error) {
 
 		wi := WorktreeInfo{Name: name}
 
-		// Determine the worktree path by looking for who points at this metadata.
-		// The worktree path can be reconstructed: the .graft file in the worktree
-		// working dir points here. But we don't store the path explicitly.
-		// Instead, use commondir to go up and the name to locate.
-		// Actually, we need to store the path. Let's read it from a "path" file
-		// or reconstruct it. Since we don't have a "path" file, let's write one
-		// during WorktreeAdd. For now, let's search for it:
-		// We wrote a .graft file in the worktree path that says "gitdir: <wtMetaDir>".
-		// We don't store the reverse mapping explicitly. Let's add a "path" file.
-		// Actually -- reading the HEAD and commondir is sufficient for listing.
-		// For path, we need to store it. Let's read it from a "gitdir" file.
-		// The simplest approach: store the worktree path in a file during add.
+		// Read the worktree's working directory path from the "path" file
+		// written during WorktreeAdd.
 
 		pathData, err := os.ReadFile(filepath.Join(wtMetaDir, "path"))
 		if err == nil {

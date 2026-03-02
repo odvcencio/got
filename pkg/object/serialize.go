@@ -82,7 +82,8 @@ func UnmarshalTag(data []byte) (*TagObj, error) {
 		case "target":
 			out.TargetHash = Hash(strings.TrimSpace(val))
 		default:
-			return nil, fmt.Errorf("unmarshal tag: unknown header key %q", key)
+			// Skip unknown keys for forward compatibility.
+			continue
 		}
 	}
 	if out.TargetHash == "" {
@@ -155,7 +156,8 @@ func UnmarshalEntity(data []byte) (*EntityObj, error) {
 		case "bodyhash":
 			e.BodyHash = Hash(val)
 		default:
-			return nil, fmt.Errorf("unmarshal entity: unknown header key %q", key)
+			// Skip unknown keys for forward compatibility.
+			continue
 		}
 	}
 	return e, nil
@@ -210,7 +212,8 @@ func UnmarshalEntityList(data []byte) (*EntityListObj, error) {
 		case "path":
 			el.Path = val
 		default:
-			return nil, fmt.Errorf("unmarshal entitylist: unknown header key %q", key)
+			// Skip unknown keys for forward compatibility.
+			continue
 		}
 	}
 
@@ -438,7 +441,8 @@ func UnmarshalCommit(data []byte) (*CommitObj, error) {
 		case "signature":
 			c.Signature = val
 		default:
-			return nil, fmt.Errorf("unmarshal commit: unknown header key %q", key)
+			// Skip unknown keys for forward compatibility.
+			continue
 		}
 	}
 	return c, nil

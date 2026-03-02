@@ -244,7 +244,7 @@ func TestReadPackEntryAtDirectly(t *testing.T) {
 		t.Fatalf("hash %s not found in index", h)
 	}
 
-	entry, err := readResolvedPackEntryAt(packPath, indexEntry.Offset, idx.PackChecksum)
+	entry, err := readResolvedPackEntryAt(packPath, indexEntry.Offset)
 	if err != nil {
 		t.Fatalf("readResolvedPackEntryAt: %v", err)
 	}
@@ -299,7 +299,7 @@ func TestReadPackEntryAtMultipleEntries(t *testing.T) {
 			t.Fatalf("hash %d %s not found in index", i, h)
 		}
 
-		entry, err := readResolvedPackEntryAt(packPath, indexEntry.Offset, idx.PackChecksum)
+		entry, err := readResolvedPackEntryAt(packPath, indexEntry.Offset)
 		if err != nil {
 			t.Fatalf("readResolvedPackEntryAt(%d): %v", i, err)
 		}

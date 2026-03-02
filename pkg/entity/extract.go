@@ -240,6 +240,13 @@ func looksLikeDeclarationNodeType(nodeType string) bool {
 }
 
 func hasNameIdentifierDescendant(bt *gotreesitter.BoundTree, node *gotreesitter.Node) bool {
+	return hasNameIdentifierImpl(bt, node, 0)
+}
+
+func hasNameIdentifierImpl(bt *gotreesitter.BoundTree, node *gotreesitter.Node, depth int) bool {
+	if depth > maxTreeDepth {
+		return false
+	}
 	for i := 0; i < node.ChildCount(); i++ {
 		child := node.Child(i)
 		if child == nil {
@@ -249,7 +256,7 @@ func hasNameIdentifierDescendant(bt *gotreesitter.BoundTree, node *gotreesitter.
 		if nameIdentifierTypes[childType] {
 			return true
 		}
-		if hasNameIdentifierDescendant(bt, child) {
+		if hasNameIdentifierImpl(bt, child, depth+1) {
 			return true
 		}
 	}
@@ -276,7 +283,16 @@ func isContainerDeclaration(nodeType string) bool {
 	return containerDeclarationNodeTypes[nodeType]
 }
 
+const maxTreeDepth = 200
+
 func collectNestedDeclarationNodes(bt *gotreesitter.BoundTree, node *gotreesitter.Node) []*gotreesitter.Node {
+	return collectNestedDeclNodesImpl(bt, node, 0)
+}
+
+func collectNestedDeclNodesImpl(bt *gotreesitter.BoundTree, node *gotreesitter.Node, depth int) []*gotreesitter.Node {
+	if depth > maxTreeDepth {
+		return nil
+	}
 	var out []*gotreesitter.Node
 	for i := 0; i < node.ChildCount(); i++ {
 		child := node.Child(i)
@@ -286,7 +302,7 @@ func collectNestedDeclarationNodes(bt *gotreesitter.BoundTree, node *gotreesitte
 		if isDeclarationNode(bt, child) {
 			childType := bt.NodeType(child)
 			if isContainerDeclaration(childType) {
-				nested := collectNestedDeclarationNodes(bt, child)
+				nested := collectNestedDeclNodesImpl(bt, child, depth+1)
 				if len(nested) > 0 {
 					out = append(out, nested...)
 					continue
@@ -295,7 +311,7 @@ func collectNestedDeclarationNodes(bt *gotreesitter.BoundTree, node *gotreesitte
 			out = append(out, child)
 			continue
 		}
-		out = append(out, collectNestedDeclarationNodes(bt, child)...)
+		out = append(out, collectNestedDeclNodesImpl(bt, child, depth+1)...)
 	}
 	return out
 }

@@ -2,8 +2,6 @@ package repo
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/odvcencio/graft/pkg/object"
@@ -235,19 +233,19 @@ func (r *Repo) RevertAbort() error {
 
 	// Restore the branch ref to orig-head.
 	if strings.HasPrefix(headName, "refs/heads/") {
-		if err := r.UpdateRef(headName, origHead); err != nil {
+		currentRef, _ := r.ResolveRef(headName)
+		if err := r.UpdateRefCAS(headName, origHead, currentRef); err != nil {
 			return fmt.Errorf("revert abort: restore branch ref: %w", err)
 		}
 	}
 
 	// Restore HEAD.
-	headPath := filepath.Join(r.GraftDir, "HEAD")
 	if strings.HasPrefix(headName, "refs/") {
-		if err := os.WriteFile(headPath, []byte("ref: "+headName+"\n"), 0o644); err != nil {
+		if err := r.setHeadSymbolic(headName); err != nil {
 			return fmt.Errorf("revert abort: reattach HEAD: %w", err)
 		}
 	} else {
-		if err := os.WriteFile(headPath, []byte(string(origHead)+"\n"), 0o644); err != nil {
+		if err := r.setHeadDetached(origHead); err != nil {
 			return fmt.Errorf("revert abort: set HEAD: %w", err)
 		}
 	}
