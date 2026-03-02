@@ -518,23 +518,24 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 		return nil, fmt.Errorf("merge: read branch commit: %w", err)
 	}
 
-	oursFiles, err := r.FlattenTree(headCommit.TreeHash)
+	oursFiles, oursModules, err := r.FlattenTreeWithModules(headCommit.TreeHash)
 	if err != nil {
 		return nil, fmt.Errorf("merge: flatten ours tree: %w", err)
 	}
-	theirsFiles, err := r.FlattenTree(branchCommit.TreeHash)
+	theirsFiles, theirsModules, err := r.FlattenTreeWithModules(branchCommit.TreeHash)
 	if err != nil {
 		return nil, fmt.Errorf("merge: flatten theirs tree: %w", err)
 	}
 
 	// Base tree may be empty if this is the first merge (no common ancestor).
 	var baseFiles []TreeFileEntry
+	var baseModules []TreeModuleEntry
 	if baseHash != "" {
 		baseCommit, err := r.Store.ReadCommit(baseHash)
 		if err != nil {
 			return nil, fmt.Errorf("merge: read base commit: %w", err)
 		}
-		baseFiles, err = r.FlattenTree(baseCommit.TreeHash)
+		baseFiles, baseModules, err = r.FlattenTreeWithModules(baseCommit.TreeHash)
 		if err != nil {
 			return nil, fmt.Errorf("merge: flatten base tree: %w", err)
 		}
@@ -620,6 +621,28 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 		}
 	}
 
+	// 5b. Merge module (gitlink) entries.
+	baseModMap := indexModulesByPath(baseModules)
+	oursModMap := indexModulesByPath(oursModules)
+	theirsModMap := indexModulesByPath(theirsModules)
+
+	modResult, err := r.mergeModuleEntries(baseModMap, oursModMap, theirsModMap)
+	if err != nil {
+		return nil, fmt.Errorf("merge modules: %w", err)
+	}
+
+	if modResult.HasConflicts {
+		report.HasConflicts = true
+		for _, c := range modResult.Conflicts {
+			report.TotalConflicts++
+			report.Files = append(report.Files, FileMergeReport{
+				Path:          c.Path,
+				Status:        "conflict",
+				ConflictCount: 1,
+			})
+		}
+	}
+
 	// 6/7. Write files to working directory.
 	for _, mf := range mergedFiles {
 		absPath := filepath.Join(r.RootDir, filepath.FromSlash(mf.path))
@@ -653,14 +676,27 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 			}
 		}
 
-		// Remove deleted files from staging.
-		if len(deletedPaths) > 0 {
+		// Stage resolved module entries and remove deleted files/modules.
+		needsStagingWrite := len(deletedPaths) > 0 ||
+			len(modResult.Resolved) > 0 ||
+			len(modResult.Removed) > 0
+		if needsStagingWrite {
 			stg, err := r.ReadStaging()
 			if err != nil {
 				return nil, fmt.Errorf("merge: read staging: %w", err)
 			}
 			for _, p := range deletedPaths {
 				delete(stg.Entries, p)
+			}
+			for modPath, commitHash := range modResult.Resolved {
+				stg.Entries[modPath] = &StagingEntry{
+					Path:     modPath,
+					BlobHash: commitHash,
+					Mode:     object.TreeModeModule,
+				}
+			}
+			for _, modPath := range modResult.Removed {
+				delete(stg.Entries, modPath)
 			}
 			if err := r.WriteStaging(stg); err != nil {
 				return nil, fmt.Errorf("merge: write staging: %w", err)
@@ -921,6 +957,15 @@ func indexByPath(entries []TreeFileEntry) map[string]TreeFileEntry {
 	m := make(map[string]TreeFileEntry, len(entries))
 	for _, e := range entries {
 		m[e.Path] = e
+	}
+	return m
+}
+
+// indexModulesByPath creates a map from module path to TreeModuleEntry.
+func indexModulesByPath(modules []TreeModuleEntry) map[string]TreeModuleEntry {
+	m := make(map[string]TreeModuleEntry, len(modules))
+	for _, mod := range modules {
+		m[mod.Path] = mod
 	}
 	return m
 }
