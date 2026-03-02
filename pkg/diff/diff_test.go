@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/entity"
+	"github.com/odvcencio/graft/pkg/entity"
 )
 
 // --- Go source snippets used across tests ---

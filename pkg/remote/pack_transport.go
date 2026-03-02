@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // objectTypeToPackType maps Got object types to pack object types.

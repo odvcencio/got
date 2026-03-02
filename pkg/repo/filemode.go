@@ -3,7 +3,7 @@ package repo
 import (
 	"os"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func modeFromFileInfo(info os.FileInfo) string {

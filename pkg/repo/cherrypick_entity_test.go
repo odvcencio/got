@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/entity"
+	"github.com/odvcencio/graft/pkg/entity"
 )
 
 func TestCherryPickEntity_AppliesOnlySelectedEntityDelta(t *testing.T) {
