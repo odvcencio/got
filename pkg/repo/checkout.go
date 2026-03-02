@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // Checkout switches the working directory to the state of the target.
@@ -61,7 +61,14 @@ func (r *Repo) Checkout(target string) error {
 	//    are NOT in the target tree.
 	currentFiles := r.trackedFiles()
 
+	sparseEnabled := r.IsSparseEnabled()
+
 	for path := range currentFiles {
+		// When sparse checkout is enabled, only remove files that were
+		// materialized (i.e. matched sparse patterns).
+		if sparseEnabled && !r.matchesSparsePatterns(path) {
+			continue
+		}
 		absPath := filepath.Join(r.RootDir, filepath.FromSlash(path))
 		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("checkout: remove %q: %w", path, err)
@@ -70,8 +77,12 @@ func (r *Repo) Checkout(target string) error {
 		r.removeEmptyParents(filepath.Dir(absPath))
 	}
 
-	// 5. Write all files from target tree.
+	// 5. Write all files from target tree (skip files excluded by sparse checkout).
 	for _, f := range targetFiles {
+		if sparseEnabled && !r.matchesSparsePatterns(f.Path) {
+			continue
+		}
+
 		absPath := filepath.Join(r.RootDir, filepath.FromSlash(f.Path))
 
 		// Create parent directories.
@@ -91,9 +102,13 @@ func (r *Repo) Checkout(target string) error {
 		}
 	}
 
-	// 6. Update staging to match the new tree.
+	// 6. Update staging to match the new tree (only materialized files).
 	stg := &Staging{Entries: make(map[string]*StagingEntry, len(targetFiles))}
 	for _, f := range targetFiles {
+		if sparseEnabled && !r.matchesSparsePatterns(f.Path) {
+			continue
+		}
+
 		absPath := filepath.Join(r.RootDir, filepath.FromSlash(f.Path))
 		info, err := os.Stat(absPath)
 		if err != nil {

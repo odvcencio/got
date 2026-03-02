@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // FileStatus represents the state of a file in the working tree or index.
@@ -43,7 +43,7 @@ type headTreeState struct {
 //
 // Algorithm:
 //  1. Read staging index.
-//  2. Walk the working directory (skipping .got/ and ignored paths).
+//  2. Walk the working directory (skipping .graft/ and ignored paths).
 //  3. Compare working tree files against staging entries.
 //  4. Compare staging entries against HEAD tree (if available).
 //  5. Return a sorted list of status entries.
@@ -54,6 +54,7 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	}
 
 	ic := NewIgnoreChecker(r.RootDir)
+	sparseEnabled := r.IsSparseEnabled()
 
 	// Collect all working-tree files (repo-relative paths).
 	workFiles := make(map[string]bool)
@@ -77,6 +78,17 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 		if ic.IsIgnored(rel) {
 			if d.IsDir() {
 				return fs.SkipDir
+			}
+			return nil
+		}
+
+		// Skip paths excluded by sparse checkout.
+		if sparseEnabled && !r.matchesSparsePatterns(rel) {
+			if d.IsDir() {
+				if !r.dirCouldContainSparseMatch(rel) {
+					return fs.SkipDir
+				}
+				return nil
 			}
 			return nil
 		}
@@ -217,6 +229,12 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	// For each HEAD entry not in staging → deleted from index.
 	for path := range headEntries {
 		if _, inStaging := stg.Entries[path]; !inStaging {
+			// When sparse checkout is enabled, files excluded from
+			// sparse patterns are intentionally absent from staging;
+			// do not report them as deleted.
+			if sparseEnabled && !r.matchesSparsePatterns(path) {
+				continue
+			}
 			if _, renamed := indexRenamedOldToNew[path]; renamed {
 				continue
 			}
