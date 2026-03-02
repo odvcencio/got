@@ -1,10 +1,11 @@
 package repo
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // GC packs loose objects reachable from refs.
@@ -29,5 +30,16 @@ func (r *Repo) GC() (*object.GCSummary, error) {
 	}
 	sort.Slice(roots, func(i, j int) bool { return roots[i] < roots[j] })
 
-	return r.Store.GCReachable(roots)
+	summary, err := r.Store.GCReachable(roots)
+	if err != nil {
+		return nil, err
+	}
+
+	// Rebuild the commit-graph after packing so that generation numbers
+	// and precomputed metadata stay up-to-date.
+	if err := r.WriteCommitGraph(); err != nil {
+		return summary, fmt.Errorf("gc: write commit graph: %w", err)
+	}
+
+	return summary, nil
 }
