@@ -46,6 +46,7 @@ func main() {
 	root.AddCommand(newSparseCheckoutCmd())
 	root.AddCommand(newLFSCmd())
 	root.AddCommand(newBisectCmd())
+	root.AddCommand(newWorktreeCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
