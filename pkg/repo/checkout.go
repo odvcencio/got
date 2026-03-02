@@ -36,8 +36,12 @@ func (r *Repo) Checkout(target string) error {
 		targetHash = branchHash
 		isBranch = true
 	} else {
-		// Try as raw hash.
-		targetHash = object.Hash(target)
+		// Try full resolution: tags, full refs, ancestor notation, raw hash.
+		h, resolveErr := r.ResolveTreeish(target)
+		if resolveErr != nil {
+			return fmt.Errorf("checkout: cannot resolve %q: %w", target, resolveErr)
+		}
+		targetHash = h
 	}
 
 	// 3. Read the target commit and flatten its tree.
@@ -138,15 +142,14 @@ func (r *Repo) Checkout(target string) error {
 	}
 
 	// 7. Update HEAD.
-	headPath := filepath.Join(r.GraftDir, "HEAD")
-	var headContent string
 	if isBranch {
-		headContent = "ref: refs/heads/" + target + "\n"
+		if err := r.setHeadSymbolic("refs/heads/" + target); err != nil {
+			return fmt.Errorf("checkout: update HEAD: %w", err)
+		}
 	} else {
-		headContent = string(targetHash) + "\n"
-	}
-	if err := os.WriteFile(headPath, []byte(headContent), 0o644); err != nil {
-		return fmt.Errorf("checkout: update HEAD: %w", err)
+		if err := r.setHeadDetached(targetHash); err != nil {
+			return fmt.Errorf("checkout: update HEAD: %w", err)
+		}
 	}
 
 	// Sync modules if the new commit has module configuration.

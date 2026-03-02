@@ -101,7 +101,7 @@ func bootstrapGotFromGit(ctx context.Context, dest, remoteName, remoteURL string
 	}
 
 	if branch != "main" {
-		if err := r.CreateBranch(branch, commitHash); err != nil && !strings.Contains(err.Error(), "already exists") {
+		if err := r.CreateBranch(branch, commitHash); err != nil && !errors.Is(err, repo.ErrBranchAlreadyExists) {
 			return err
 		}
 		if err := r.Checkout(branch); err != nil {

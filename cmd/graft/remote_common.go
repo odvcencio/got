@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -113,9 +112,7 @@ func ensureEmptyDir(path string) error {
 }
 
 func writeSymbolicHead(r *repo.Repo, branch string) error {
-	headPath := filepath.Join(r.GraftDir, "HEAD")
-	content := "ref: refs/heads/" + branch + "\n"
-	return os.WriteFile(headPath, []byte(content), 0o644)
+	return r.SetHeadSymbolic("refs/heads/" + branch)
 }
 
 func remoteTrackingRefName(remoteName, remoteRef string) string {

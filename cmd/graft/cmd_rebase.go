@@ -302,31 +302,24 @@ func commitTitleStr(msg string) string {
 // same resolution order as the repo package: refs/heads/<name>, then full
 // ref path, then raw hash.
 func resolveTarget(r *repo.Repo, target string) (object.Hash, error) {
-	// Try as branch ref first.
-	h, err := r.ResolveRef("refs/heads/" + target)
-	if err == nil {
-		return h, nil
+	h, err := r.ResolveTreeish(target)
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve %q to a commit: %w", target, err)
 	}
-	// Try as full ref path.
-	h, err = r.ResolveRef(target)
-	if err == nil {
-		return h, nil
-	}
-	// Try as raw hash.
-	_, err = r.Store.ReadCommit(object.Hash(target))
-	if err == nil {
-		return object.Hash(target), nil
-	}
-	return "", fmt.Errorf("cannot resolve %q to a commit", target)
+	return h, nil
 }
 
 // countCommits counts the number of commits in the range (stop, tip] by
 // walking first-parent links.
 func countCommits(r *repo.Repo, stop, tip object.Hash) (int, error) {
+	const maxIterations = 1_000_000
 	count := 0
 	current := tip
 	for current != stop && current != "" {
 		count++
+		if count > maxIterations {
+			return count, nil
+		}
 		c, err := r.Store.ReadCommit(current)
 		if err != nil {
 			return 0, fmt.Errorf("count commits: read %s: %w", current, err)

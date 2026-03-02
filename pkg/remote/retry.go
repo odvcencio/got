@@ -2,6 +2,7 @@ package remote
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -16,15 +17,21 @@ func retryDo(client *http.Client, req *http.Request, maxAttempts int) (*http.Res
 		maxAttempts = 1
 	}
 
-	// Buffer body for replay on retry.
+	// Buffer body for replay on retry. Limit size to prevent unbounded
+	// memory usage when retrying large uploads.
+	const maxRetryBodySize = 64 << 20 // 64MB
+
 	var bodyBytes []byte
 	if req.Body != nil {
 		var err error
-		bodyBytes, err = io.ReadAll(req.Body)
+		bodyBytes, err = io.ReadAll(io.LimitReader(req.Body, maxRetryBodySize+1))
 		if err != nil {
 			return nil, err
 		}
 		req.Body.Close()
+		if int64(len(bodyBytes)) > maxRetryBodySize {
+			return nil, fmt.Errorf("request body too large for retry buffering (%d bytes)", len(bodyBytes))
+		}
 	}
 
 	var lastResp *http.Response

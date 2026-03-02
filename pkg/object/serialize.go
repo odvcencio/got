@@ -255,7 +255,7 @@ func MarshalTree(tr *TreeObj) []byte {
 		bh := hashOrDash(e.BlobHash)
 		elh := hashOrDash(e.EntityListHash)
 		sth := hashOrDash(e.SubtreeHash)
-		fmt.Fprintf(&buf, "%s %s %s %s %s\n", e.Name, mode, bh, elh, sth)
+		fmt.Fprintf(&buf, "%s\t%s %s %s %s\n", e.Name, mode, bh, elh, sth)
 	}
 	return buf.Bytes()
 }
@@ -294,21 +294,39 @@ func UnmarshalTree(data []byte) (*TreeObj, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		parts := strings.SplitN(line, " ", 5)
-		if len(parts) != 5 {
-			return nil, fmt.Errorf("unmarshal tree: malformed entry %q", line)
+		// Try tab-delimited format first (new format supports names with spaces).
+		var name, rest string
+		if tabIdx := strings.IndexByte(line, '\t'); tabIdx >= 0 {
+			name = line[:tabIdx]
+			rest = line[tabIdx+1:]
+		} else {
+			// Legacy space-delimited format (names without spaces).
+			parts := strings.SplitN(line, " ", 5)
+			if len(parts) != 5 {
+				return nil, fmt.Errorf("unmarshal tree: expected 5 fields, got %d in line %q", len(parts), line)
+			}
+			name = parts[0]
+			rest = strings.Join(parts[1:], " ")
 		}
-		isDir, mode, err := parseTreeMode(parts[1])
+		fields := strings.SplitN(rest, " ", 4)
+		if len(fields) != 4 {
+			return nil, fmt.Errorf("unmarshal tree: expected 4 fields after name in line %q", line)
+		}
+		mode := fields[0]
+		blobHash := Hash(fields[1])
+		entityListHash := Hash(fields[2])
+		subtreeHash := Hash(fields[3])
+		isDir, parsedMode, err := parseTreeMode(mode)
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal tree: %w", err)
 		}
 		entry := TreeEntry{
-			Name:           parts[0],
+			Name:           name,
 			IsDir:          isDir,
-			Mode:           mode,
-			BlobHash:       dashOrHash(parts[2]),
-			EntityListHash: dashOrHash(parts[3]),
-			SubtreeHash:    dashOrHash(parts[4]),
+			Mode:           parsedMode,
+			BlobHash:       dashOrHash(string(blobHash)),
+			EntityListHash: dashOrHash(string(entityListHash)),
+			SubtreeHash:    dashOrHash(string(subtreeHash)),
 		}
 		tr.Entries = append(tr.Entries, entry)
 	}

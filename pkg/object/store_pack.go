@@ -432,10 +432,15 @@ func readPackEntryAt(packPath string, offset uint64) (PackEntry, error) {
 	if err != nil {
 		return PackEntry{}, fmt.Errorf("zlib reader at offset %d: %w", offset, err)
 	}
-	raw, err := io.ReadAll(zr)
+	lr := io.LimitReader(zr, int64(size)+1)
+	raw, err := io.ReadAll(lr)
 	if err != nil {
 		_ = zr.Close()
-		return PackEntry{}, fmt.Errorf("decompress at offset %d: %w", offset, err)
+		return PackEntry{}, fmt.Errorf("decompress entry at offset %d: %w", offset, err)
+	}
+	if uint64(len(raw)) > size {
+		_ = zr.Close()
+		return PackEntry{}, fmt.Errorf("decompressed size exceeds declared size at offset %d", offset)
 	}
 	if err := zr.Close(); err != nil {
 		return PackEntry{}, fmt.Errorf("close zlib at offset %d: %w", offset, err)
@@ -455,9 +460,19 @@ func readPackEntryAt(packPath string, offset uint64) (PackEntry, error) {
 	}, nil
 }
 
+const maxDeltaChainDepth = 50
+
 // readResolvedPackEntryAt reads a single pack entry at the given offset,
 // resolving delta chains by recursively reading base entries.
 func readResolvedPackEntryAt(packPath string, offset uint64) (PackEntry, error) {
+	return readResolvedPackEntryAtDepth(packPath, offset, 0)
+}
+
+func readResolvedPackEntryAtDepth(packPath string, offset uint64, depth int) (PackEntry, error) {
+	if depth > maxDeltaChainDepth {
+		return PackEntry{}, fmt.Errorf("delta chain depth exceeds limit (%d) at offset %d", maxDeltaChainDepth, offset)
+	}
+
 	entry, err := readPackEntryAt(packPath, offset)
 	if err != nil {
 		return PackEntry{}, err
@@ -472,7 +487,7 @@ func readResolvedPackEntryAt(packPath string, offset uint64) (PackEntry, error) 
 			return PackEntry{}, fmt.Errorf("invalid ofs-delta base distance %d at offset %d", entry.BaseDistance, entry.Offset)
 		}
 		baseOffset := entry.Offset - entry.BaseDistance
-		base, err := readResolvedPackEntryAt(packPath, baseOffset)
+		base, err := readResolvedPackEntryAtDepth(packPath, baseOffset, depth+1)
 		if err != nil {
 			return PackEntry{}, fmt.Errorf("resolve ofs-delta base at offset %d: %w", baseOffset, err)
 		}
@@ -538,6 +553,12 @@ func (s *Store) hasInPacks(h Hash) bool {
 	return false
 }
 
+// decodeIndexedPackEntry decodes the object type and content from a resolved
+// pack entry. It first tries to parse a zlib envelope ("type len\0content")
+// embedded in the entry data — this is the primary mechanism for recovering
+// entity/entitylist types that have no distinct pack type representation
+// (see objectTypeToPackType). If the envelope is absent or its hash does not
+// match, it falls back to deriving the type from the pack entry's type field.
 func decodeIndexedPackEntry(expected Hash, entry PackEntry) (ObjectType, []byte, error) {
 	var envelopeHashMismatchErr error
 	if envelopeType, envelopeData, err := parseObjectEnvelope(entry.Data, expected); err == nil {
@@ -672,8 +693,15 @@ func packPathForIndex(idxPath string) string {
 	return strings.TrimSuffix(idxPath, ".idx") + ".pack"
 }
 
-// objectTypeToPackType maps a graft ObjectType to the corresponding
-// PackObjectType for writing into pack files.
+// objectTypeToPackType maps object types to pack entry types for local GC.
+//
+// IMPORTANT: Entity and entitylist types cannot be represented as distinct
+// pack types (they map to PackBlob). Type information is preserved via the
+// zlib envelope embedded in each entry (see makeObjectEnvelope). The remote
+// transport path in pkg/remote/pack_transport.go uses a different mechanism
+// (PackEntityTrailer). Both strategies must agree: if an object is packed
+// locally and later served to a remote client, the envelope must be parseable
+// by decodeIndexedPackEntry's fallback path.
 func objectTypeToPackType(t ObjectType) PackObjectType {
 	switch t {
 	case TypeCommit:

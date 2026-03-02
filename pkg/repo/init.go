@@ -247,6 +247,11 @@ func (r *Repo) setHeadSymbolic(refName string) error {
 	return r.writeHeadAtomic("ref: " + refName + "\n")
 }
 
+// SetHeadSymbolic atomically sets HEAD to a symbolic ref (public API).
+func (r *Repo) SetHeadSymbolic(refName string) error {
+	return r.setHeadSymbolic(refName)
+}
+
 // setHeadDetached atomically sets HEAD to a detached commit hash.
 func (r *Repo) setHeadDetached(hash object.Hash) error {
 	return r.writeHeadAtomic(string(hash) + "\n")

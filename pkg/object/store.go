@@ -86,6 +86,11 @@ func (s *Store) Write(objType ObjectType, data []byte) (Hash, error) {
 		os.Remove(tmpName)
 		return "", fmt.Errorf("object write: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return "", fmt.Errorf("object write: sync: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
 		return "", fmt.Errorf("object write close: %w", err)
@@ -179,13 +184,23 @@ func compressObject(raw []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+const maxDecompressedObjectSize = 256 << 20 // 256MB
+
 func decompressObject(compressed []byte) ([]byte, error) {
 	zr, err := zlib.NewReader(bytes.NewReader(compressed))
 	if err != nil {
 		return nil, err
 	}
 	defer zr.Close()
-	return io.ReadAll(zr)
+	lr := io.LimitReader(zr, maxDecompressedObjectSize+1)
+	data, err := io.ReadAll(lr)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxDecompressedObjectSize {
+		return nil, fmt.Errorf("decompressed object exceeds maximum size (%d bytes)", maxDecompressedObjectSize)
+	}
+	return data, nil
 }
 
 // ---------------------------------------------------------------------------

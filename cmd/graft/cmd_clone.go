@@ -270,8 +270,7 @@ func cloneFromLocalSource(cmd *cobra.Command, sourceRoot, sourceSpec, absDest, r
 
 	// Point HEAD to an unborn branch so the working tree appears clean
 	// (no HEAD tree, empty staging).  Checkout will set HEAD properly.
-	headPath := filepath.Join(dstGraftDir, "HEAD")
-	if err := os.WriteFile(headPath, []byte("ref: refs/heads/_graft_clone_unborn\n"), 0o644); err != nil {
+	if err := r.SetHeadSymbolic("refs/heads/_graft_clone_unborn"); err != nil {
 		return fmt.Errorf("reset HEAD for clone: %w", err)
 	}
 
@@ -313,6 +312,9 @@ func copyFile(src, dst string, perm os.FileMode) error {
 	defer out.Close()
 
 	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	if err := out.Sync(); err != nil {
 		return err
 	}
 	return nil

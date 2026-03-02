@@ -44,11 +44,16 @@ func mergeGoImports(base, ours, theirs []byte) ([]byte, bool) {
 		merged[imp] = true
 	}
 
-	// Remove imports that were in base but removed by BOTH sides
+	// Remove imports that were in base but removed by one side
+	// (when the other side kept them unchanged from base).
 	for imp := range baseSet {
-		removedByOurs := !oursSet[imp]
-		removedByTheirs := !theirsSet[imp]
-		if removedByOurs && removedByTheirs {
+		inOurs := oursSet[imp]
+		inTheirs := theirsSet[imp]
+		if !inOurs && inTheirs {
+			// Ours removed, theirs kept from base → honor deletion
+			delete(merged, imp)
+		} else if inOurs && !inTheirs {
+			// Theirs removed, ours kept from base → honor deletion
 			delete(merged, imp)
 		}
 	}
@@ -176,14 +181,18 @@ func mergeJSImportBlocks(base, ours, theirs []byte) ([]byte, bool) {
 	for module := range theirsSet {
 		mergedModules[module] = struct{}{}
 	}
+	// Remove imports that were in base but removed by one side
+	// (when the other side kept them unchanged from base).
 	for module := range baseSet {
-		if _, inOurs := oursSet[module]; inOurs {
-			continue
+		_, inOurs := oursSet[module]
+		_, inTheirs := theirsSet[module]
+		if !inOurs && inTheirs {
+			// Ours removed, theirs kept from base → honor deletion
+			delete(mergedModules, module)
+		} else if inOurs && !inTheirs {
+			// Theirs removed, ours kept from base → honor deletion
+			delete(mergedModules, module)
 		}
-		if _, inTheirs := theirsSet[module]; inTheirs {
-			continue
-		}
-		delete(mergedModules, module)
 	}
 
 	modules := make([]string, 0, len(mergedModules))
@@ -341,14 +350,22 @@ func mergeJSImportSpec(module string, left, right, base jsImport) (jsImport, boo
 		merged.namespace = base.namespace
 	}
 
-	for name := range base.named {
-		merged.named[name] = struct{}{}
-	}
+	// Start with union of left and right named imports.
 	for name := range left.named {
 		merged.named[name] = struct{}{}
 	}
 	for name := range right.named {
 		merged.named[name] = struct{}{}
+	}
+	// Honor one-sided deletions from base.
+	for name := range base.named {
+		_, inLeft := left.named[name]
+		_, inRight := right.named[name]
+		if !inLeft && inRight {
+			delete(merged.named, name)
+		} else if inLeft && !inRight {
+			delete(merged.named, name)
+		}
 	}
 
 	if len(left.named) == 0 && len(right.named) == 0 && len(base.named) == 0 {
@@ -436,14 +453,18 @@ func mergeEntryImports(base, ours, theirs []importEntry) ([]byte, bool) {
 			merged[key] = line
 		}
 	}
+	// Remove imports that were in base but removed by one side
+	// (when the other side kept them unchanged from base).
 	for key := range baseSet {
-		if _, inOurs := oursSet[key]; inOurs {
-			continue
+		_, inOurs := oursSet[key]
+		_, inTheirs := theirsSet[key]
+		if !inOurs && inTheirs {
+			// Ours removed, theirs kept from base → honor deletion
+			delete(merged, key)
+		} else if inOurs && !inTheirs {
+			// Theirs removed, ours kept from base → honor deletion
+			delete(merged, key)
 		}
-		if _, inTheirs := theirsSet[key]; inTheirs {
-			continue
-		}
-		delete(merged, key)
 	}
 
 	if len(merged) == 0 {

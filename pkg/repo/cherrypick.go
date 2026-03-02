@@ -2,8 +2,6 @@ package repo
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/odvcencio/graft/pkg/object"
@@ -317,13 +315,12 @@ func (r *Repo) CherryPickAbort() error {
 	}
 
 	// Reattach HEAD to the branch (or set detached HEAD).
-	headPath := filepath.Join(r.GraftDir, "HEAD")
 	if strings.HasPrefix(headName, "refs/") {
-		if err := os.WriteFile(headPath, []byte("ref: "+headName+"\n"), 0o644); err != nil {
+		if err := r.setHeadSymbolic(headName); err != nil {
 			return fmt.Errorf("cherry-pick abort: reattach HEAD: %w", err)
 		}
 	} else {
-		if err := os.WriteFile(headPath, []byte(string(origHead)+"\n"), 0o644); err != nil {
+		if err := r.setHeadDetached(origHead); err != nil {
 			return fmt.Errorf("cherry-pick abort: set HEAD: %w", err)
 		}
 	}

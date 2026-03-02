@@ -60,6 +60,8 @@ func NewSidebandReader(r io.Reader) *SidebandReader {
 	return &SidebandReader{r: r}
 }
 
+const maxSidebandFrameSize = 64 << 20 // 64MB
+
 // ReadFrame reads one sideband frame, returning channel and payload.
 // Returns io.EOF when no more frames are available.
 func (sr *SidebandReader) ReadFrame() (byte, []byte, error) {
@@ -69,6 +71,9 @@ func (sr *SidebandReader) ReadFrame() (byte, []byte, error) {
 	}
 	if frameLen < 1 {
 		return 0, nil, fmt.Errorf("sideband frame too short: %d", frameLen)
+	}
+	if frameLen > maxSidebandFrameSize {
+		return 0, nil, fmt.Errorf("sideband frame too large: %d bytes (max %d)", frameLen, maxSidebandFrameSize)
 	}
 
 	frame := make([]byte, frameLen)

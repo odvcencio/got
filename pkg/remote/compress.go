@@ -1,30 +1,44 @@
 package remote
 
 import (
+	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/klauspost/compress/zstd"
 )
 
+var zstdEncoderPool = sync.Pool{
+	New: func() interface{} {
+		enc, _ := zstd.NewWriter(nil)
+		return enc
+	},
+}
+
+var zstdDecoderPool = sync.Pool{
+	New: func() interface{} {
+		dec, _ := zstd.NewReader(nil)
+		return dec
+	},
+}
+
 // compressZstd compresses data using zstd.
 func compressZstd(data []byte) ([]byte, error) {
-	enc, err := zstd.NewWriter(nil)
-	if err != nil {
-		return nil, err
-	}
-	defer enc.Close()
+	enc := zstdEncoderPool.Get().(*zstd.Encoder)
+	defer zstdEncoderPool.Put(enc)
 	return enc.EncodeAll(data, nil), nil
 }
 
 // decompressZstd decompresses zstd-compressed data.
 func decompressZstd(data []byte) ([]byte, error) {
-	dec, err := zstd.NewReader(nil)
+	dec := zstdDecoderPool.Get().(*zstd.Decoder)
+	defer zstdDecoderPool.Put(dec)
+	result, err := dec.DecodeAll(data, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("zstd decompress: %w", err)
 	}
-	defer dec.Close()
-	return dec.DecodeAll(data, nil)
+	return result, nil
 }
 
 // compressZstdStream compresses from src to dst using streaming zstd.

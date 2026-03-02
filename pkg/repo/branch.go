@@ -11,6 +11,10 @@ import (
 	"github.com/odvcencio/graft/pkg/object"
 )
 
+// ErrBranchAlreadyExists is returned when attempting to create a branch that
+// already exists.
+var ErrBranchAlreadyExists = errors.New("branch already exists")
+
 // CreateBranch creates a new branch pointing at the given target hash.
 // It writes the hash to .graft/refs/heads/<name>. Returns an error if the
 // branch already exists.
@@ -18,7 +22,7 @@ func (r *Repo) CreateBranch(name string, target object.Hash) error {
 	refName := filepath.ToSlash(filepath.Join("refs", "heads", name))
 	if err := r.UpdateRefCAS(refName, target, ""); err != nil {
 		if errors.Is(err, ErrRefCASMismatch) {
-			return fmt.Errorf("create branch: branch %q already exists", name)
+			return fmt.Errorf("create branch %q: %w", name, ErrBranchAlreadyExists)
 		}
 		return fmt.Errorf("create branch %q: %w", name, err)
 	}

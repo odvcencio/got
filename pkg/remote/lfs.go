@@ -199,7 +199,17 @@ func (lc *LFSClient) Download(ctx context.Context, action LFSAction) (io.ReadClo
 		return nil, fmt.Errorf("lfs download: server returned %d", resp.StatusCode)
 	}
 
-	return resp.Body, nil
+	return &limitedReadCloser{
+		Reader: io.LimitReader(resp.Body, lfsDownloadLimit),
+		Closer: resp.Body,
+	}, nil
+}
+
+// limitedReadCloser wraps a Reader and Closer so that reads are bounded
+// while the underlying body can still be closed.
+type limitedReadCloser struct {
+	io.Reader
+	io.Closer
 }
 
 func (lc *LFSClient) applyAuth(req *http.Request) {

@@ -395,6 +395,13 @@ func extractDeclaratorName(bt *gotreesitter.BoundTree, node *gotreesitter.Node) 
 // extractFirstIdentifierName finds the first named child that looks like an
 // identifier and returns its text.
 func extractFirstIdentifierName(bt *gotreesitter.BoundTree, node *gotreesitter.Node) string {
+	return extractFirstIdentifierNameImpl(bt, node, 0)
+}
+
+func extractFirstIdentifierNameImpl(bt *gotreesitter.BoundTree, node *gotreesitter.Node, depth int) string {
+	if depth > maxTreeDepth {
+		return ""
+	}
 	for i := 0; i < node.ChildCount(); i++ {
 		child := node.Child(i)
 		if child == nil {
@@ -404,7 +411,7 @@ func extractFirstIdentifierName(bt *gotreesitter.BoundTree, node *gotreesitter.N
 		if nameIdentifierTypes[childType] {
 			return bt.NodeText(child)
 		}
-		if nested := extractFirstIdentifierName(bt, child); nested != "" {
+		if nested := extractFirstIdentifierNameImpl(bt, child, depth+1); nested != "" {
 			return nested
 		}
 	}

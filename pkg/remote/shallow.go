@@ -50,18 +50,38 @@ func ReadShallowFile(graftDir string) (*ShallowState, error) {
 
 // WriteShallowFile writes the shallow state to the graft directory.
 // Hashes are written one per line in sorted order.
+// The write is atomic: content goes to a temp file, is fsynced, then renamed.
 func WriteShallowFile(graftDir string, state *ShallowState) error {
-	hashes := state.List()
-	lines := make([]string, len(hashes))
-	for i, h := range hashes {
-		lines[i] = string(h)
+	var sb strings.Builder
+	if state != nil {
+		for _, h := range state.List() {
+			sb.WriteString(string(h))
+			sb.WriteByte('\n')
+		}
 	}
-	content := ""
-	if len(lines) > 0 {
-		content = strings.Join(lines, "\n") + "\n"
-	}
+	content := sb.String()
+
 	p := filepath.Join(graftDir, "shallow")
-	return os.WriteFile(p, []byte(content), 0o644)
+	tmp := p + ".lock"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("write shallow: create temp: %w", err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("write shallow: write: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("write shallow: sync: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("write shallow: close: %w", err)
+	}
+	return os.Rename(tmp, p)
 }
 
 // IsShallow returns true if the given commit hash is a shallow boundary.
