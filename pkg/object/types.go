@@ -23,6 +23,7 @@ const (
 	TreeModeDir        = "40000"
 	TreeModeFile       = "100644"
 	TreeModeExecutable = "100755"
+	TreeModeModule     = "160000"
 )
 
 // Blob holds raw file data.
