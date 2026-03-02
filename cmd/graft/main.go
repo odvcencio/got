@@ -48,6 +48,9 @@ func main() {
 	root.AddCommand(newBisectCmd())
 	root.AddCommand(newWorktreeCmd())
 	root.AddCommand(newCleanCmd())
+	root.AddCommand(newGrepCmd())
+	root.AddCommand(newShortlogCmd())
+	root.AddCommand(newArchiveCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
