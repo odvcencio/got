@@ -268,3 +268,32 @@ func (r *Repo) applyThreeWayResult(result *ThreeWayMergeResult) error {
 
 	return nil
 }
+
+// stageMergeResult stages all changed/added files from a three-way merge
+// result and removes deleted paths from the staging area.
+func (r *Repo) stageMergeResult(result *ThreeWayMergeResult) error {
+	var pathsToAdd []string
+	for _, f := range result.Files {
+		if f.Status != "unchanged" && f.Status != "deleted" {
+			pathsToAdd = append(pathsToAdd, f.Path)
+		}
+	}
+	if len(pathsToAdd) > 0 {
+		if err := r.Add(pathsToAdd); err != nil {
+			return fmt.Errorf("stage: %w", err)
+		}
+	}
+	if len(result.DeletedPaths) > 0 {
+		stg, err := r.ReadStaging()
+		if err != nil {
+			return fmt.Errorf("read staging: %w", err)
+		}
+		for _, p := range result.DeletedPaths {
+			delete(stg.Entries, p)
+		}
+		if err := r.WriteStaging(stg); err != nil {
+			return fmt.Errorf("write staging: %w", err)
+		}
+	}
+	return nil
+}

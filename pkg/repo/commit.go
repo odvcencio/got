@@ -320,3 +320,65 @@ func (r *Repo) Log(start object.Hash, limit int) ([]*object.CommitObj, error) {
 
 	return commits, nil
 }
+
+// commitStagingParams holds parameters for commitFromStaging.
+type commitStagingParams struct {
+	Message  string
+	Author   string
+	Parents  []object.Hash
+	HeadName string      // ref to update; empty = resolve from current HEAD
+	HeadHash object.Hash // expected hash for CAS update
+}
+
+// commitFromStaging reads the staging area, builds a tree, creates a commit,
+// and advances the current branch ref. Used by cherry-pick, revert, and
+// their --continue paths to avoid duplicating the stage→commit→ref-update flow.
+func (r *Repo) commitFromStaging(p commitStagingParams) (object.Hash, error) {
+	stg, err := r.ReadStaging()
+	if err != nil {
+		return "", fmt.Errorf("read staging: %w", err)
+	}
+	if len(stg.Entries) == 0 {
+		return "", fmt.Errorf("nothing staged")
+	}
+
+	treeHash, err := r.BuildTree(stg)
+	if err != nil {
+		return "", fmt.Errorf("build tree: %w", err)
+	}
+
+	commitObj := &object.CommitObj{
+		TreeHash:  treeHash,
+		Parents:   p.Parents,
+		Author:    p.Author,
+		Timestamp: time.Now().Unix(),
+		Message:   p.Message,
+	}
+
+	commitHash, err := r.Store.WriteCommit(commitObj)
+	if err != nil {
+		return "", fmt.Errorf("write commit: %w", err)
+	}
+
+	headName := p.HeadName
+	if headName == "" {
+		head, err := r.Head()
+		if err != nil {
+			return "", fmt.Errorf("read HEAD: %w", err)
+		}
+		headName = head
+	}
+
+	if strings.HasPrefix(headName, "refs/") {
+		if err := r.UpdateRefCAS(headName, commitHash, p.HeadHash); err != nil {
+			return "", fmt.Errorf("update ref %q: %w", headName, err)
+		}
+	} else {
+		if err := r.UpdateRefCAS("HEAD", commitHash, p.HeadHash); err != nil {
+			return "", fmt.Errorf("update detached HEAD: %w", err)
+		}
+	}
+
+	r.invalidateStatusCache()
+	return commitHash, nil
+}

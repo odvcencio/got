@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/odvcencio/graft/pkg/object"
 )
@@ -131,81 +130,23 @@ func (r *Repo) Revert(targetHash object.Hash) (*RevertResult, error) {
 		}
 	}
 
-	// Stage all changed/added files.
-	var pathsToAdd []string
-	for _, f := range mergeResult.Files {
-		if f.Status != "unchanged" && f.Status != "deleted" {
-			pathsToAdd = append(pathsToAdd, f.Path)
-		}
-	}
-	if len(pathsToAdd) > 0 {
-		if err := r.Add(pathsToAdd); err != nil {
-			return nil, fmt.Errorf("revert: stage: %w", err)
-		}
+	// Stage merge results and remove deleted paths.
+	if err := r.stageMergeResult(mergeResult); err != nil {
+		return nil, fmt.Errorf("revert: %w", err)
 	}
 
-	// Remove deleted files from staging.
-	if len(mergeResult.DeletedPaths) > 0 {
-		stg, err := r.ReadStaging()
-		if err != nil {
-			return nil, fmt.Errorf("revert: read staging: %w", err)
-		}
-		for _, p := range mergeResult.DeletedPaths {
-			delete(stg.Entries, p)
-		}
-		if err := r.WriteStaging(stg); err != nil {
-			return nil, fmt.Errorf("revert: write staging: %w", err)
-		}
-	}
-
-	// Build revert commit message.
 	message := fmt.Sprintf("Revert %q", commitTitle(targetCommit.Message))
-
-	// Commit with the current user's identity (not the original commit's author).
 	author := r.ResolveAuthor()
 
-	stg, err := r.ReadStaging()
+	commitHash, err := r.commitFromStaging(commitStagingParams{
+		Message:  message,
+		Author:   author,
+		Parents:  []object.Hash{headHash},
+		HeadHash: headHash,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("revert: read staging: %w", err)
+		return nil, fmt.Errorf("revert: %w", err)
 	}
-	if len(stg.Entries) == 0 {
-		return nil, fmt.Errorf("revert: nothing staged")
-	}
-
-	treeHash, err := r.BuildTree(stg)
-	if err != nil {
-		return nil, fmt.Errorf("revert: build tree: %w", err)
-	}
-
-	commitObj := &object.CommitObj{
-		TreeHash:  treeHash,
-		Parents:   []object.Hash{headHash},
-		Author:    author,
-		Timestamp: time.Now().Unix(),
-		Message:   message,
-	}
-
-	commitHash, err := r.Store.WriteCommit(commitObj)
-	if err != nil {
-		return nil, fmt.Errorf("revert: write commit: %w", err)
-	}
-
-	// Update current branch ref.
-	head, err := r.Head()
-	if err != nil {
-		return nil, fmt.Errorf("revert: read HEAD: %w", err)
-	}
-	if strings.HasPrefix(head, "refs/") {
-		if err := r.UpdateRefCAS(head, commitHash, headHash); err != nil {
-			return nil, fmt.Errorf("revert: update ref %q: %w", head, err)
-		}
-	} else {
-		if err := r.UpdateRefCAS("HEAD", commitHash, headHash); err != nil {
-			return nil, fmt.Errorf("revert: update detached HEAD: %w", err)
-		}
-	}
-
-	r.invalidateStatusCache()
 
 	return &RevertResult{
 		TargetCommit: targetHash,
@@ -248,48 +189,18 @@ func (r *Repo) RevertContinue() (*RevertResult, error) {
 	}
 
 	message := fmt.Sprintf("Revert %q", commitTitle(targetCommit.Message))
-
-	// Commit with the current user's identity (not the original commit's author).
 	author := r.ResolveAuthor()
 
-	stg, err := r.ReadStaging()
+	commitHash, err := r.commitFromStaging(commitStagingParams{
+		Message:  message,
+		Author:   author,
+		Parents:  []object.Hash{headHash},
+		HeadName: headName,
+		HeadHash: headHash,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("revert continue: read staging: %w", err)
+		return nil, fmt.Errorf("revert continue: %w", err)
 	}
-	if len(stg.Entries) == 0 {
-		return nil, fmt.Errorf("revert continue: nothing staged")
-	}
-
-	treeHash, err := r.BuildTree(stg)
-	if err != nil {
-		return nil, fmt.Errorf("revert continue: build tree: %w", err)
-	}
-
-	commitObj := &object.CommitObj{
-		TreeHash:  treeHash,
-		Parents:   []object.Hash{headHash},
-		Author:    author,
-		Timestamp: time.Now().Unix(),
-		Message:   message,
-	}
-
-	commitHash, err := r.Store.WriteCommit(commitObj)
-	if err != nil {
-		return nil, fmt.Errorf("revert continue: write commit: %w", err)
-	}
-
-	// Update current branch ref.
-	if strings.HasPrefix(headName, "refs/") {
-		if err := r.UpdateRefCAS(headName, commitHash, headHash); err != nil {
-			return nil, fmt.Errorf("revert continue: update ref %q: %w", headName, err)
-		}
-	} else {
-		if err := r.UpdateRefCAS("HEAD", commitHash, headHash); err != nil {
-			return nil, fmt.Errorf("revert continue: update detached HEAD: %w", err)
-		}
-	}
-
-	r.invalidateStatusCache()
 
 	// Clean up sequencer state.
 	if err := seq.Clean(); err != nil {

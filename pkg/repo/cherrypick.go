@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/odvcencio/graft/pkg/object"
 )
@@ -172,87 +171,31 @@ func (r *Repo) CherryPick(targetHash object.Hash) (*CherryPickResult, error) {
 		}
 	}
 
-	// Stage all changed/added files.
-	var pathsToAdd []string
-	for _, f := range mergeResult.Files {
-		if f.Status != "unchanged" && f.Status != "deleted" {
-			pathsToAdd = append(pathsToAdd, f.Path)
-		}
-	}
-	if len(pathsToAdd) > 0 {
-		if err := r.Add(pathsToAdd); err != nil {
-			return nil, fmt.Errorf("cherry-pick: stage: %w", err)
-		}
+	// Stage merge results and remove deleted paths.
+	if err := r.stageMergeResult(mergeResult); err != nil {
+		return nil, fmt.Errorf("cherry-pick: %w", err)
 	}
 
-	// Remove deleted files from staging.
-	if len(mergeResult.DeletedPaths) > 0 {
-		stg, err := r.ReadStaging()
-		if err != nil {
-			return nil, fmt.Errorf("cherry-pick: read staging: %w", err)
-		}
-		for _, p := range mergeResult.DeletedPaths {
-			delete(stg.Entries, p)
-		}
-		if err := r.WriteStaging(stg); err != nil {
-			return nil, fmt.Errorf("cherry-pick: write staging: %w", err)
-		}
-	}
-
-	// Commit with the original commit's message and author, HEAD as parent.
+	// Commit with the original commit's message and author.
 	author := strings.TrimSpace(targetCommit.Author)
 	if author == "" {
 		author = "graft-cherry-pick"
 	}
-	message := targetCommit.Message
 
-	stg, err := r.ReadStaging()
+	commitHash, err := r.commitFromStaging(commitStagingParams{
+		Message:  targetCommit.Message,
+		Author:   author,
+		Parents:  []object.Hash{headHash},
+		HeadHash: headHash,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("cherry-pick: read staging: %w", err)
+		return nil, fmt.Errorf("cherry-pick: %w", err)
 	}
-	if len(stg.Entries) == 0 {
-		return nil, fmt.Errorf("cherry-pick: nothing staged")
-	}
-
-	treeHash, err := r.BuildTree(stg)
-	if err != nil {
-		return nil, fmt.Errorf("cherry-pick: build tree: %w", err)
-	}
-
-	commitObj := &object.CommitObj{
-		TreeHash:  treeHash,
-		Parents:   []object.Hash{headHash},
-		Author:    author,
-		Timestamp: time.Now().Unix(),
-		Message:   message,
-	}
-
-	commitHash, err := r.Store.WriteCommit(commitObj)
-	if err != nil {
-		return nil, fmt.Errorf("cherry-pick: write commit: %w", err)
-	}
-
-	// Update current branch ref.
-	head, err := r.Head()
-	if err != nil {
-		return nil, fmt.Errorf("cherry-pick: read HEAD: %w", err)
-	}
-	if strings.HasPrefix(head, "refs/") {
-		if err := r.UpdateRefCAS(head, commitHash, headHash); err != nil {
-			return nil, fmt.Errorf("cherry-pick: update ref %q: %w", head, err)
-		}
-	} else {
-		if err := r.UpdateRefCAS("HEAD", commitHash, headHash); err != nil {
-			return nil, fmt.Errorf("cherry-pick: update detached HEAD: %w", err)
-		}
-	}
-
-	r.invalidateStatusCache()
 
 	return &CherryPickResult{
 		TargetCommit: targetHash,
 		CommitHash:   commitHash,
-		Message:      message,
+		Message:      targetCommit.Message,
 	}, nil
 }
 
@@ -308,44 +251,22 @@ func (r *Repo) CherryPickContinue() (*CherryPickResult, error) {
 		}
 	}
 
-	// Build the tree from staging.
-	treeHash, err := r.BuildTree(stg)
-	if err != nil {
-		return nil, fmt.Errorf("cherry-pick continue: build tree: %w", err)
-	}
-
 	// Commit with the original commit's message and author.
 	author := strings.TrimSpace(targetCommit.Author)
 	if author == "" {
 		author = "graft-cherry-pick"
 	}
-	message := targetCommit.Message
 
-	commitObj := &object.CommitObj{
-		TreeHash:  treeHash,
-		Parents:   []object.Hash{headHash},
-		Author:    author,
-		Timestamp: time.Now().Unix(),
-		Message:   message,
-	}
-
-	commitHash, err := r.Store.WriteCommit(commitObj)
+	commitHash, err := r.commitFromStaging(commitStagingParams{
+		Message:  targetCommit.Message,
+		Author:   author,
+		Parents:  []object.Hash{headHash},
+		HeadName: headName,
+		HeadHash: headHash,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("cherry-pick continue: write commit: %w", err)
+		return nil, fmt.Errorf("cherry-pick continue: %w", err)
 	}
-
-	// Update current branch ref using the saved head-name (not current HEAD).
-	if strings.HasPrefix(headName, "refs/") {
-		if err := r.UpdateRefCAS(headName, commitHash, headHash); err != nil {
-			return nil, fmt.Errorf("cherry-pick continue: update ref %q: %w", headName, err)
-		}
-	} else {
-		if err := r.UpdateRefCAS("HEAD", commitHash, headHash); err != nil {
-			return nil, fmt.Errorf("cherry-pick continue: update detached HEAD: %w", err)
-		}
-	}
-
-	r.invalidateStatusCache()
 
 	// Clean up sequencer state.
 	if err := r.cleanCherryPickState(); err != nil {
@@ -355,7 +276,7 @@ func (r *Repo) CherryPickContinue() (*CherryPickResult, error) {
 	return &CherryPickResult{
 		TargetCommit: targetHash,
 		CommitHash:   commitHash,
-		Message:      message,
+		Message:      targetCommit.Message,
 	}, nil
 }
 
