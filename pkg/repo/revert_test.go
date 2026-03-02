@@ -395,6 +395,74 @@ func TestRevert_FileAddedByCommit(t *testing.T) {
 	}
 }
 
+// TestRevert_DeletedFileIsRestored verifies that reverting a commit which
+// deleted a file restores that file in the working directory.
+func TestRevert_DeletedFileIsRestored(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Create base commit with two files: the one that will be deleted and a
+	// companion that keeps staging non-empty after the deletion.
+	writeTestFile(t, filepath.Join(dir, "keep.txt"), []byte("stay\n"))
+	writeTestFile(t, filepath.Join(dir, "removed.txt"), []byte("important content\n"))
+	if err := r.Add([]string{"keep.txt", "removed.txt"}); err != nil {
+		t.Fatalf("Add(base): %v", err)
+	}
+	_, err = r.Commit("add files", "alice")
+	if err != nil {
+		t.Fatalf("Commit(base): %v", err)
+	}
+
+	// Delete removed.txt and commit the deletion.
+	if err := r.Remove([]string{"removed.txt"}, false); err != nil {
+		t.Fatalf("Remove(staging): %v", err)
+	}
+	deleteHash, err := r.Commit("delete removed.txt", "bob")
+	if err != nil {
+		t.Fatalf("Commit(delete): %v", err)
+	}
+
+	// Verify the file is gone before reverting.
+	if _, err := os.Stat(filepath.Join(dir, "removed.txt")); !os.IsNotExist(err) {
+		t.Fatal("removed.txt should not exist after deletion commit")
+	}
+
+	// Revert the deletion commit (should restore removed.txt).
+	result, err := r.Revert(deleteHash)
+	if err != nil {
+		t.Fatalf("Revert: %v", err)
+	}
+
+	// Verify removed.txt is restored.
+	content, err := os.ReadFile(filepath.Join(dir, "removed.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(removed.txt): %v", err)
+	}
+	if string(content) != "important content\n" {
+		t.Errorf("removed.txt = %q, want %q", string(content), "important content\n")
+	}
+
+	// Verify keep.txt is untouched.
+	keepContent, err := os.ReadFile(filepath.Join(dir, "keep.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(keep.txt): %v", err)
+	}
+	if string(keepContent) != "stay\n" {
+		t.Errorf("keep.txt = %q, want %q", string(keepContent), "stay\n")
+	}
+
+	// Verify the revert message references the deletion commit.
+	if !strings.Contains(result.Message, "Revert") {
+		t.Errorf("Message = %q, want to contain %q", result.Message, "Revert")
+	}
+	if !strings.Contains(result.Message, "delete removed.txt") {
+		t.Errorf("Message = %q, want to contain original message %q", result.Message, "delete removed.txt")
+	}
+}
+
 // TestRevert_UsesResolveAuthor verifies that the revert commit uses
 // ResolveAuthor (current user) rather than the HEAD commit's author.
 func TestRevert_UsesResolveAuthor(t *testing.T) {
