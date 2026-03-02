@@ -3,8 +3,33 @@
 // and tags with zlib compression and pack file delta encoding.
 package object
 
+import "fmt"
+
 // Hash is a 64-character hex-encoded SHA-256 digest.
 type Hash string
+
+// ValidateHash checks that s is a well-formed 64-character lowercase hex hash.
+// Returns an error if the hash is invalid.
+func ValidateHash(s string) error {
+	if len(s) != 64 {
+		return fmt.Errorf("invalid hash length %d (expected 64): %q", len(s), truncateForError(s))
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return fmt.Errorf("invalid hash character at position %d: %q", i, truncateForError(s))
+		}
+	}
+	return nil
+}
+
+// truncateForError truncates s to 80 characters for error messages.
+func truncateForError(s string) string {
+	if len(s) > 80 {
+		return s[:80] + "..."
+	}
+	return s
+}
 
 // ObjectType identifies the kind of object stored.
 type ObjectType string

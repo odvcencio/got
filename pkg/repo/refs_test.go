@@ -123,7 +123,7 @@ func TestUpdateRef_CreateNewRef(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	hash := object.Hash("aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666")
+	hash := object.Hash("aaaa1111bbbb2222cccc3333dddd4444eeee5555ffff6666aaaa1111bbbb2222")
 	if err := r.UpdateRef("refs/heads/feature", hash); err != nil {
 		t.Fatalf("UpdateRef: %v", err)
 	}
@@ -143,8 +143,8 @@ func TestUpdateRef_OverwriteExistingRef(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	hash1 := object.Hash("aaaa1111")
-	hash2 := object.Hash("bbbb2222")
+	hash1 := object.Hash("aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111")
+	hash2 := object.Hash("bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222")
 
 	if err := r.UpdateRef("refs/heads/feature", hash1); err != nil {
 		t.Fatalf("UpdateRef(1): %v", err)
@@ -168,7 +168,7 @@ func TestUpdateRef_CreatesParentDirectories(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	hash := object.Hash("dddd4444")
+	hash := object.Hash("dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444")
 	if err := r.UpdateRef("refs/tags/release/v1.0", hash); err != nil {
 		t.Fatalf("UpdateRef nested: %v", err)
 	}
@@ -192,8 +192,8 @@ func TestUpdateRefCAS_MatchingOldSucceeds(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	hash1 := object.Hash("aaaa1111")
-	hash2 := object.Hash("bbbb2222")
+	hash1 := object.Hash("aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111")
+	hash2 := object.Hash("bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222")
 
 	if err := r.UpdateRef("refs/heads/feature", hash1); err != nil {
 		t.Fatalf("UpdateRef: %v", err)
@@ -219,9 +219,9 @@ func TestUpdateRefCAS_MismatchFails(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	hash1 := object.Hash("aaaa1111")
-	hash2 := object.Hash("bbbb2222")
-	wrongOld := object.Hash("cccc3333")
+	hash1 := object.Hash("aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111")
+	hash2 := object.Hash("bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222")
+	wrongOld := object.Hash("cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333cccc3333")
 
 	if err := r.UpdateRef("refs/heads/feature", hash1); err != nil {
 		t.Fatalf("UpdateRef: %v", err)

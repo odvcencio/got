@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // sequencer manages state for interruptible operations (cherry-pick, revert, rebase).
@@ -46,6 +48,18 @@ func (s *sequencer) ReadFile(name string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+// ReadHash reads a file from the sequencer directory and validates it as a hash.
+func (s *sequencer) ReadHash(name string) (object.Hash, error) {
+	val, err := s.ReadFile(name)
+	if err != nil {
+		return "", err
+	}
+	if err := object.ValidateHash(val); err != nil {
+		return "", fmt.Errorf("%s/%s: %w", filepath.Base(s.dir), name, err)
+	}
+	return object.Hash(val), nil
 }
 
 // WriteFile atomically writes a named file to the state directory

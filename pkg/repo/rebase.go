@@ -207,13 +207,13 @@ func (r *Repo) RebaseContinue() error {
 
 	seq := r.rebaseSeq()
 
-	stoppedSHA, err := seq.ReadFile("stopped-sha")
+	stoppedSHA, err := seq.ReadHash("stopped-sha")
 	if err != nil {
 		return fmt.Errorf("rebase continue: no stopped commit found: %w", err)
 	}
 
 	// Read the original commit to preserve its message and author.
-	origCommit, err := r.Store.ReadCommit(object.Hash(stoppedSHA))
+	origCommit, err := r.Store.ReadCommit(stoppedSHA)
 	if err != nil {
 		return fmt.Errorf("rebase continue: read original commit %s: %w", stoppedSHA, err)
 	}
@@ -254,7 +254,7 @@ func (r *Repo) RebaseContinue() error {
 	if done != "" {
 		done += "\n"
 	}
-	done += stoppedSHA + "\n"
+	done += string(stoppedSHA) + "\n"
 	if err := seq.WriteFile("done", done); err != nil {
 		return fmt.Errorf("rebase continue: update done: %w", err)
 	}
@@ -278,7 +278,7 @@ func (r *Repo) RebaseAbort() error {
 	// restore it after aborting.
 	hadAutostash := r.hasAutostash()
 
-	origHead, err := seq.ReadFile("orig-head")
+	origHead, err := seq.ReadHash("orig-head")
 	if err != nil {
 		return fmt.Errorf("rebase abort: read orig-head: %w", err)
 	}
@@ -291,7 +291,7 @@ func (r *Repo) RebaseAbort() error {
 	// Update the branch ref back to orig-head.
 	if strings.HasPrefix(headName, "refs/heads/") {
 		currentRef, _ := r.ResolveRef(headName)
-		if err := r.UpdateRefCAS(headName, object.Hash(origHead), currentRef); err != nil {
+		if err := r.UpdateRefCAS(headName, origHead, currentRef); err != nil {
 			return fmt.Errorf("rebase abort: restore branch ref: %w", err)
 		}
 	}
@@ -302,13 +302,13 @@ func (r *Repo) RebaseAbort() error {
 			return fmt.Errorf("rebase abort: reattach HEAD: %w", err)
 		}
 	} else {
-		if err := r.setHeadDetached(object.Hash(origHead)); err != nil {
+		if err := r.setHeadDetached(origHead); err != nil {
 			return fmt.Errorf("rebase abort: set HEAD: %w", err)
 		}
 	}
 
 	// Checkout the original state.
-	origCommit, err := r.Store.ReadCommit(object.Hash(origHead))
+	origCommit, err := r.Store.ReadCommit(origHead)
 	if err != nil {
 		return fmt.Errorf("rebase abort: read orig commit: %w", err)
 	}
@@ -337,7 +337,7 @@ func (r *Repo) RebaseSkip() error {
 
 	seq := r.rebaseSeq()
 
-	stoppedSHA, err := seq.ReadFile("stopped-sha")
+	stoppedSHA, err := seq.ReadHash("stopped-sha")
 	if err != nil {
 		return fmt.Errorf("rebase skip: no stopped commit found: %w", err)
 	}
@@ -347,7 +347,7 @@ func (r *Repo) RebaseSkip() error {
 	if done != "" {
 		done += "\n"
 	}
-	done += stoppedSHA + "\n"
+	done += string(stoppedSHA) + "\n"
 	if err := seq.WriteFile("done", done); err != nil {
 		return fmt.Errorf("rebase skip: update done: %w", err)
 	}
@@ -384,10 +384,11 @@ func (r *Repo) resolveToHash(target string) (object.Hash, error) {
 	if err == nil {
 		return h, nil
 	}
-	// Try as raw hash — verify it exists.
-	_, err = r.Store.ReadCommit(object.Hash(target))
-	if err == nil {
-		return object.Hash(target), nil
+	// Try as raw hash — validate format and verify it exists.
+	if object.ValidateHash(target) == nil {
+		if _, err = r.Store.ReadCommit(object.Hash(target)); err == nil {
+			return object.Hash(target), nil
+		}
 	}
 	return "", fmt.Errorf("cannot resolve %q to a commit", target)
 }
@@ -789,6 +790,12 @@ func (r *Repo) writeSequencerState(headName string, origHead, onto object.Hash, 
 // Returns trimmed content. Used by rebase_interactive.go.
 func (r *Repo) readSequencerFile(name string) (string, error) {
 	return r.rebaseSeq().ReadFile(name)
+}
+
+// readSequencerHash reads a hash from the rebase-merge directory with validation.
+// Used by rebase_interactive.go.
+func (r *Repo) readSequencerHash(name string) (object.Hash, error) {
+	return r.rebaseSeq().ReadHash(name)
 }
 
 // hasAutostash returns true if an autostash file exists in the sequencer directory.

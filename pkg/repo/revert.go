@@ -162,11 +162,10 @@ func (r *Repo) RevertContinue() (*RevertResult, error) {
 
 	seq := r.revertSeq()
 
-	targetHashStr, err := seq.ReadFile("target-hash")
+	targetHash, err := seq.ReadHash("target-hash")
 	if err != nil {
 		return nil, fmt.Errorf("revert continue: read target-hash: %w", err)
 	}
-	targetHash := object.Hash(targetHashStr)
 
 	// Read the target commit to build the revert message.
 	targetCommit, err := r.Store.ReadCommit(targetHash)
@@ -220,11 +219,10 @@ func (r *Repo) RevertAbort() error {
 
 	seq := r.revertSeq()
 
-	origHeadStr, err := seq.ReadFile("orig-head")
+	origHead, err := seq.ReadHash("orig-head")
 	if err != nil {
 		return fmt.Errorf("revert abort: read orig-head: %w", err)
 	}
-	origHead := object.Hash(origHeadStr)
 
 	headName, err := seq.ReadFile("head-name")
 	if err != nil {

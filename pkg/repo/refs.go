@@ -171,10 +171,12 @@ func (r *Repo) resolveBaseTreeish(base string) (object.Hash, error) {
 	if h, err := r.ResolveRef(base); err == nil {
 		return h, nil
 	}
-	// Treat as raw hash: verify the commit exists.
-	h := object.Hash(base)
-	if _, err := r.Store.ReadCommit(h); err == nil {
-		return h, nil
+	// Treat as raw hash: validate format and verify the commit exists.
+	if object.ValidateHash(base) == nil {
+		h := object.Hash(base)
+		if _, err := r.Store.ReadCommit(h); err == nil {
+			return h, nil
+		}
 	}
 	return "", fmt.Errorf("cannot resolve base ref %q", base)
 }
@@ -206,7 +208,11 @@ func (r *Repo) ListRefs(prefix string) (map[string]object.Hash, error) {
 		if err != nil {
 			return err
 		}
-		refs[name] = object.Hash(strings.TrimSpace(string(data)))
+		hashStr := strings.TrimSpace(string(data))
+		if err := object.ValidateHash(hashStr); err != nil {
+			return fmt.Errorf("ref %q: %w", name, err)
+		}
+		refs[name] = object.Hash(hashStr)
 		return nil
 	})
 	if os.IsNotExist(err) {

@@ -210,11 +210,10 @@ func (r *Repo) CherryPickContinue() (*CherryPickResult, error) {
 	seq := r.cherryPickSeq()
 
 	// Read the target hash from sequencer state.
-	targetHashStr, err := seq.ReadFile("target-hash")
+	targetHash, err := seq.ReadHash("target-hash")
 	if err != nil {
 		return nil, fmt.Errorf("cherry-pick continue: read target-hash: %w", err)
 	}
-	targetHash := object.Hash(targetHashStr)
 
 	// Read the original commit for message and author.
 	targetCommit, err := r.Store.ReadCommit(targetHash)
@@ -290,11 +289,10 @@ func (r *Repo) CherryPickAbort() error {
 	seq := r.cherryPickSeq()
 
 	// Read original HEAD.
-	origHeadStr, err := seq.ReadFile("orig-head")
+	origHead, err := seq.ReadHash("orig-head")
 	if err != nil {
 		return fmt.Errorf("cherry-pick abort: read orig-head: %w", err)
 	}
-	origHead := object.Hash(origHeadStr)
 
 	// Read head-name.
 	headName, err := seq.ReadFile("head-name")

@@ -528,11 +528,10 @@ func (r *Repo) RebaseInteractiveContinue() error {
 		os.Remove(filepath.Join(r.rebaseMergeDir(), "edit-mode"))
 	}
 
-	stoppedSHA, err := r.readSequencerFile("stopped-sha")
+	stoppedSHA, err := r.readSequencerHash("stopped-sha")
 	if err != nil {
 		return fmt.Errorf("rebase continue: no stopped commit found: %w", err)
 	}
-	stoppedSHA = strings.TrimSpace(stoppedSHA)
 
 	if editMode {
 		// Amend the current HEAD commit with whatever the user has staged.
@@ -541,7 +540,7 @@ func (r *Repo) RebaseInteractiveContinue() error {
 		}
 	} else {
 		// Read the original commit to preserve its message and author.
-		origCommit, err := r.Store.ReadCommit(object.Hash(stoppedSHA))
+		origCommit, err := r.Store.ReadCommit(stoppedSHA)
 		if err != nil {
 			return fmt.Errorf("rebase continue: read original commit %s: %w", stoppedSHA, err)
 		}
@@ -654,11 +653,10 @@ func (r *Repo) resolveShortHash(h object.Hash) (object.Hash, error) {
 
 	// Walk recent commits to find a match by prefix.
 	// Use the orig-head from sequencer state if available.
-	origHeadStr, err := r.readSequencerFile("orig-head")
+	origHead, err := r.readSequencerHash("orig-head")
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve short hash %s: no sequencer state", h)
 	}
-	origHead := object.Hash(strings.TrimSpace(origHeadStr))
 
 	// Walk from orig-head backward.
 	current := origHead

@@ -285,6 +285,9 @@ func (r *Repo) ResolveRef(name string) (object.Hash, error) {
 			return r.ResolveRef(head)
 		}
 		// Detached HEAD: the value is a hash.
+		if err := object.ValidateHash(head); err != nil {
+			return "", fmt.Errorf("ref %q: %w", "HEAD", err)
+		}
 		return object.Hash(head), nil
 	}
 
@@ -301,7 +304,11 @@ func (r *Repo) ResolveRef(name string) (object.Hash, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve ref %q: %w", name, err)
 	}
-	return object.Hash(strings.TrimRight(string(data), "\n")), nil
+	hashStr := strings.TrimRight(string(data), "\n")
+	if err := object.ValidateHash(hashStr); err != nil {
+		return "", fmt.Errorf("ref %q: %w", name, err)
+	}
+	return object.Hash(hashStr), nil
 }
 
 // UpdateRef writes a hash to the named ref file under .graft/. Parent
@@ -432,5 +439,12 @@ func readRefHash(refPath string) (object.Hash, error) {
 		}
 		return "", err
 	}
-	return object.Hash(strings.TrimSpace(string(data))), nil
+	hashStr := strings.TrimSpace(string(data))
+	if hashStr == "" {
+		return "", nil
+	}
+	if err := object.ValidateHash(hashStr); err != nil {
+		return "", fmt.Errorf("ref file %q: %w", refPath, err)
+	}
+	return object.Hash(hashStr), nil
 }
