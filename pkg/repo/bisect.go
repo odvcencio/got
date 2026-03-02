@@ -257,7 +257,7 @@ func (r *Repo) IsBisecting() bool {
 
 // bisectDir returns the path to the .graft/bisect/ directory.
 func (r *Repo) bisectDir() string {
-	return filepath.Join(r.GotDir, "bisect")
+	return filepath.Join(r.GraftDir, "bisect")
 }
 
 // bisectWriteState writes all bisect state files to .graft/bisect/.

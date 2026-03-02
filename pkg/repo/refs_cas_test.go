@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func TestUpdateRefCAS_ConcurrentSingleWinner(t *testing.T) {
@@ -101,7 +101,7 @@ func TestUpdateRefCAS_CleansLockOnMismatch(t *testing.T) {
 		t.Fatalf("expected CAS mismatch, got: %v", err)
 	}
 
-	lockPath := filepath.Join(r.GotDir, "refs", "heads", "main.lock")
+	lockPath := filepath.Join(r.GraftDir, "refs", "heads", "main.lock")
 	if _, statErr := os.Stat(lockPath); !os.IsNotExist(statErr) {
 		t.Fatalf("expected no lingering lockfile at %q, stat err=%v", lockPath, statErr)
 	}

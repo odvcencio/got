@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
-// Test 1: Init creates .got/ structure (HEAD, objects/, refs/heads/).
+// Test 1: Init creates .graft/ structure (HEAD, objects/, refs/heads/).
 func TestInit_CreatesStructure(t *testing.T) {
 	dir := t.TempDir()
 
@@ -21,23 +21,23 @@ func TestInit_CreatesStructure(t *testing.T) {
 		t.Errorf("RootDir = %q, want %q", r.RootDir, dir)
 	}
 
-	gotDir := filepath.Join(dir, ".got")
-	if r.GotDir != gotDir {
-		t.Errorf("GotDir = %q, want %q", r.GotDir, gotDir)
+	graftDir := filepath.Join(dir, ".graft")
+	if r.GraftDir != graftDir {
+		t.Errorf("GraftDir = %q, want %q", r.GraftDir, graftDir)
 	}
 
-	// .got/ directory exists
-	assertDir(t, gotDir)
+	// .graft/ directory exists
+	assertDir(t, graftDir)
 
 	// HEAD file exists
-	assertFile(t, filepath.Join(gotDir, "HEAD"))
+	assertFile(t, filepath.Join(graftDir, "HEAD"))
 
 	// objects/ directory exists
-	assertDir(t, filepath.Join(gotDir, "objects"))
+	assertDir(t, filepath.Join(graftDir, "objects"))
 
 	// refs/heads/ directory exists
-	assertDir(t, filepath.Join(gotDir, "refs", "heads"))
-	assertDir(t, filepath.Join(gotDir, "logs", "refs", "heads"))
+	assertDir(t, filepath.Join(graftDir, "refs", "heads"))
+	assertDir(t, filepath.Join(graftDir, "logs", "refs", "heads"))
 
 	// Store is non-nil
 	if r.Store == nil {
@@ -60,7 +60,7 @@ func TestInit_ExistingRepo_Error(t *testing.T) {
 	}
 }
 
-// Test 3: Open finds .got/ from subdirectory.
+// Test 3: Open finds .graft/ from subdirectory.
 func TestOpen_FromSubdirectory(t *testing.T) {
 	dir := t.TempDir()
 
@@ -82,8 +82,8 @@ func TestOpen_FromSubdirectory(t *testing.T) {
 	if r.RootDir != dir {
 		t.Errorf("RootDir = %q, want %q", r.RootDir, dir)
 	}
-	if r.GotDir != filepath.Join(dir, ".got") {
-		t.Errorf("GotDir = %q, want %q", r.GotDir, filepath.Join(dir, ".got"))
+	if r.GraftDir != filepath.Join(dir, ".graft") {
+		t.Errorf("GraftDir = %q, want %q", r.GraftDir, filepath.Join(dir, ".graft"))
 	}
 	if r.Store == nil {
 		t.Error("Store is nil after Open")
@@ -150,7 +150,7 @@ func TestUpdateRef_InitPathReflogFailureIsExplicit(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	logDir := filepath.Join(r.GotDir, "logs", "refs", "heads")
+	logDir := filepath.Join(r.GraftDir, "logs", "refs", "heads")
 	if err := os.Remove(logDir); err != nil {
 		t.Fatalf("remove reflog dir: %v", err)
 	}

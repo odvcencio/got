@@ -49,7 +49,7 @@ func (r *Repo) WorktreeAdd(path, branch string) (*Repo, error) {
 	name := filepath.Base(absPath)
 
 	// Check that worktree metadata dir doesn't already exist.
-	wtMetaDir := filepath.Join(r.GotDir, "worktrees", name)
+	wtMetaDir := filepath.Join(r.GraftDir, "worktrees", name)
 	if _, err := os.Stat(wtMetaDir); err == nil {
 		return nil, fmt.Errorf("worktree add: worktree %q already exists", name)
 	}
@@ -71,7 +71,7 @@ func (r *Repo) WorktreeAdd(path, branch string) (*Repo, error) {
 	}
 
 	// Write commondir: relative path from wtMetaDir back to main .graft/.
-	commonRel, err := filepath.Rel(wtMetaDir, r.GotDir)
+	commonRel, err := filepath.Rel(wtMetaDir, r.GraftDir)
 	if err != nil {
 		return nil, fmt.Errorf("worktree add: compute commondir: %w", err)
 	}
@@ -93,9 +93,9 @@ func (r *Repo) WorktreeAdd(path, branch string) (*Repo, error) {
 	// Build the worktree Repo for writing files and staging.
 	wtRepo := &Repo{
 		RootDir:   absPath,
-		GotDir:    wtMetaDir,
-		CommonDir: r.GotDir,
-		Store:     object.NewStore(r.GotDir),
+		GraftDir:  wtMetaDir,
+		CommonDir: r.GraftDir,
+		Store:     object.NewStore(r.GraftDir),
 	}
 
 	// Read the commit and flatten its tree into the worktree directory.
@@ -151,12 +151,12 @@ func (r *Repo) WorktreeAdd(path, branch string) (*Repo, error) {
 // WorktreeList returns information about all worktrees. The main worktree
 // is always first, followed by any linked worktrees sorted by name.
 func (r *Repo) WorktreeList() ([]WorktreeInfo, error) {
-	// Determine the main repo's GotDir and RootDir.
-	mainGotDir := r.GotDir
+	// Determine the main repo's GraftDir and RootDir.
+	mainGraftDir := r.GraftDir
 	mainRootDir := r.RootDir
 	if r.IsLinkedWorktree() {
-		mainGotDir = r.CommonDir
-		mainRootDir = filepath.Dir(mainGotDir)
+		mainGraftDir = r.CommonDir
+		mainRootDir = filepath.Dir(mainGraftDir)
 	}
 
 	var infos []WorktreeInfo
@@ -167,13 +167,13 @@ func (r *Repo) WorktreeList() ([]WorktreeInfo, error) {
 		Path: mainRootDir,
 	}
 	// Read main HEAD.
-	mainHeadData, err := os.ReadFile(filepath.Join(mainGotDir, "HEAD"))
+	mainHeadData, err := os.ReadFile(filepath.Join(mainGraftDir, "HEAD"))
 	if err == nil {
 		headStr := strings.TrimRight(string(mainHeadData), "\n")
 		if strings.HasPrefix(headStr, "ref: refs/heads/") {
 			mainInfo.Branch = strings.TrimPrefix(headStr, "ref: refs/heads/")
 			// Try to resolve the branch to a hash.
-			refData, err := os.ReadFile(filepath.Join(mainGotDir, "refs", "heads", mainInfo.Branch))
+			refData, err := os.ReadFile(filepath.Join(mainGraftDir, "refs", "heads", mainInfo.Branch))
 			if err == nil {
 				mainInfo.Head = object.Hash(strings.TrimSpace(string(refData)))
 			}
@@ -186,7 +186,7 @@ func (r *Repo) WorktreeList() ([]WorktreeInfo, error) {
 	infos = append(infos, mainInfo)
 
 	// Read linked worktrees from .graft/worktrees/.
-	worktreesDir := filepath.Join(mainGotDir, "worktrees")
+	worktreesDir := filepath.Join(mainGraftDir, "worktrees")
 	entries, err := os.ReadDir(worktreesDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -234,7 +234,7 @@ func (r *Repo) WorktreeList() ([]WorktreeInfo, error) {
 			if strings.HasPrefix(headStr, "ref: refs/heads/") {
 				wi.Branch = strings.TrimPrefix(headStr, "ref: refs/heads/")
 				// Resolve the branch to a hash from the shared refs.
-				refData, err := os.ReadFile(filepath.Join(mainGotDir, "refs", "heads", wi.Branch))
+				refData, err := os.ReadFile(filepath.Join(mainGraftDir, "refs", "heads", wi.Branch))
 				if err == nil {
 					wi.Head = object.Hash(strings.TrimSpace(string(refData)))
 				}
@@ -254,12 +254,12 @@ func (r *Repo) WorktreeList() ([]WorktreeInfo, error) {
 // WorktreeRemove removes a linked worktree by name. It removes both the
 // worktree working directory and the metadata in .graft/worktrees/<name>/.
 func (r *Repo) WorktreeRemove(name string) error {
-	mainGotDir := r.GotDir
+	mainGraftDir := r.GraftDir
 	if r.IsLinkedWorktree() {
-		mainGotDir = r.CommonDir
+		mainGraftDir = r.CommonDir
 	}
 
-	wtMetaDir := filepath.Join(mainGotDir, "worktrees", name)
+	wtMetaDir := filepath.Join(mainGraftDir, "worktrees", name)
 	if _, err := os.Stat(wtMetaDir); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("worktree remove: worktree %q not found", name)
@@ -289,12 +289,12 @@ func (r *Repo) WorktreeRemove(name string) error {
 // WorktreePrune removes stale worktree entries where the working directory
 // no longer exists on disk.
 func (r *Repo) WorktreePrune() error {
-	mainGotDir := r.GotDir
+	mainGraftDir := r.GraftDir
 	if r.IsLinkedWorktree() {
-		mainGotDir = r.CommonDir
+		mainGraftDir = r.CommonDir
 	}
 
-	worktreesDir := filepath.Join(mainGotDir, "worktrees")
+	worktreesDir := filepath.Join(mainGraftDir, "worktrees")
 	entries, err := os.ReadDir(worktreesDir)
 	if err != nil {
 		if os.IsNotExist(err) {

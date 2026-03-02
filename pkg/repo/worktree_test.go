@@ -252,7 +252,7 @@ func TestWorktree_Remove(t *testing.T) {
 	if _, err := os.Stat(wtPath); err != nil {
 		t.Fatalf("worktree dir should exist: %v", err)
 	}
-	wtMetaDir := filepath.Join(r.GotDir, "worktrees", "wt-feature")
+	wtMetaDir := filepath.Join(r.GraftDir, "worktrees", "wt-feature")
 	if _, err := os.Stat(wtMetaDir); err != nil {
 		t.Fatalf("worktree metadata dir should exist: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestWorktree_Prune(t *testing.T) {
 	}
 
 	// The metadata entry still exists.
-	wtMetaDir := filepath.Join(r.GotDir, "worktrees", "wt-stale")
+	wtMetaDir := filepath.Join(r.GraftDir, "worktrees", "wt-stale")
 	if _, err := os.Stat(wtMetaDir); err != nil {
 		t.Fatalf("metadata should exist before prune: %v", err)
 	}

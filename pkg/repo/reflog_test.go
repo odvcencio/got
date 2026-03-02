@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func TestUpdateRef_WritesReflog(t *testing.T) {
@@ -42,7 +42,7 @@ func TestUpdateRef_WritesReflog(t *testing.T) {
 		t.Fatalf("previous reflog new hash = %q, want %q", entries[1].NewHash, h1)
 	}
 
-	assertFile(t, filepath.Join(r.GotDir, "logs", "refs", "heads", "main"))
+	assertFile(t, filepath.Join(r.GraftDir, "logs", "refs", "heads", "main"))
 }
 
 func TestReadReflog_RespectsLimit(t *testing.T) {
@@ -75,7 +75,7 @@ func TestUpdateRef_ReflogFailureIsReturned(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	logDir := filepath.Join(r.GotDir, "logs", "refs", "heads")
+	logDir := filepath.Join(r.GraftDir, "logs", "refs", "heads")
 	if err := os.Remove(logDir); err != nil {
 		t.Fatalf("remove reflog dir: %v", err)
 	}

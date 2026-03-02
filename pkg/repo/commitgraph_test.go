@@ -38,7 +38,7 @@ func TestCommitGraph_WriteAndRead(t *testing.T) {
 	}
 
 	// Verify the file exists on disk.
-	graphPath := filepath.Join(r.GotDir, "objects", "info", "commit-graph")
+	graphPath := filepath.Join(r.GraftDir, "objects", "info", "commit-graph")
 	if _, err := os.Stat(graphPath); err != nil {
 		t.Fatalf("commit-graph file missing: %v", err)
 	}

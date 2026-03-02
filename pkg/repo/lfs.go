@@ -148,7 +148,7 @@ func (r *Repo) ReadLFSObject(oid string) ([]byte, error) {
 // LFSObjectPath returns the filesystem path for an LFS object given its OID.
 // The layout is .graft/lfs/objects/<oid[:2]>/<oid[2:]>.
 func (r *Repo) LFSObjectPath(oid string) string {
-	return filepath.Join(r.GotDir, "lfs", "objects", oid[:2], oid[2:])
+	return filepath.Join(r.GraftDir, "lfs", "objects", oid[:2], oid[2:])
 }
 
 // LFSStatus lists tracked LFS files with pointer and content status.

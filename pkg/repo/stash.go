@@ -19,7 +19,7 @@ type StashEntry struct {
 
 // stashPath returns the filesystem path to the stash file.
 func (r *Repo) stashPath() string {
-	return filepath.Join(r.GotDir, "stash")
+	return filepath.Join(r.GraftDir, "stash")
 }
 
 // readStashStack loads the stash stack from .graft/stash. If the file does
@@ -48,7 +48,7 @@ func (r *Repo) writeStashStack(entries []StashEntry) error {
 	}
 
 	// Atomic write via temp file + rename.
-	tmp, err := os.CreateTemp(r.GotDir, ".stash-tmp-*")
+	tmp, err := os.CreateTemp(r.GraftDir, ".stash-tmp-*")
 	if err != nil {
 		return fmt.Errorf("stash: tmpfile: %w", err)
 	}

@@ -12,7 +12,7 @@ import (
 // Repo represents an opened Graft repository.
 type Repo struct {
 	RootDir   string        // working directory root
-	GotDir    string        // .graft/ directory (worktree-specific for linked worktrees)
+	GraftDir  string        // .graft/ directory (worktree-specific for linked worktrees)
 	CommonDir string        // shared .graft/ directory (set for linked worktrees; empty for main)
 	Store     *object.Store // content-addressed object store
 

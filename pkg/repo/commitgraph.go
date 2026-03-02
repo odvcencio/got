@@ -32,7 +32,7 @@ type commitGraphFile struct {
 
 // commitGraphPath returns the path to the commit-graph file.
 func (r *Repo) commitGraphPath() string {
-	return filepath.Join(r.GotDir, "objects", "info", "commit-graph")
+	return filepath.Join(r.GraftDir, "objects", "info", "commit-graph")
 }
 
 // WriteCommitGraph computes and writes the commit-graph by walking all

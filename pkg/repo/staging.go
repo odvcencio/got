@@ -57,7 +57,7 @@ type AddProgressFunc func(AddProgress)
 
 // indexPath returns the filesystem path to the staging index file.
 func (r *Repo) indexPath() string {
-	return filepath.Join(r.GotDir, "index")
+	return filepath.Join(r.GraftDir, "index")
 }
 
 // ReadStaging loads the staging area from .graft/index. If the file does not
@@ -93,7 +93,7 @@ func (r *Repo) writeStaging(s *Staging, invalidateStatusCache bool) error {
 	}
 
 	// Atomic write via temp file + rename.
-	tmp, err := os.CreateTemp(r.GotDir, ".index-tmp-*")
+	tmp, err := os.CreateTemp(r.GraftDir, ".index-tmp-*")
 	if err != nil {
 		return fmt.Errorf("write staging: tmpfile: %w", err)
 	}

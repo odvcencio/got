@@ -14,10 +14,10 @@ type Config struct {
 }
 
 func (r *Repo) configPath() string {
-	return filepath.Join(r.GotDir, "config.json")
+	return filepath.Join(r.GraftDir, "config.json")
 }
 
-// ReadConfig reads .got/config.json. Missing config returns an empty config.
+// ReadConfig reads .graft/config.json. Missing config returns an empty config.
 func (r *Repo) ReadConfig() (*Config, error) {
 	data, err := os.ReadFile(r.configPath())
 	if err != nil {
@@ -36,7 +36,7 @@ func (r *Repo) ReadConfig() (*Config, error) {
 	return &cfg, nil
 }
 
-// WriteConfig atomically writes .got/config.json.
+// WriteConfig atomically writes .graft/config.json.
 func (r *Repo) WriteConfig(cfg *Config) error {
 	if cfg == nil {
 		cfg = &Config{}
@@ -49,7 +49,7 @@ func (r *Repo) WriteConfig(cfg *Config) error {
 		return fmt.Errorf("write config: marshal: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(r.GotDir, ".config-tmp-*")
+	tmp, err := os.CreateTemp(r.GraftDir, ".config-tmp-*")
 	if err != nil {
 		return fmt.Errorf("write config: tmpfile: %w", err)
 	}

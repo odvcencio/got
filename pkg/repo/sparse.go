@@ -10,7 +10,7 @@ import (
 
 // sparseCheckoutPath returns the filesystem path to the sparse-checkout file.
 func (r *Repo) sparseCheckoutPath() string {
-	return filepath.Join(r.GotDir, "info", "sparse-checkout")
+	return filepath.Join(r.GraftDir, "info", "sparse-checkout")
 }
 
 // IsSparseEnabled returns true if sparse checkout is active (the sparse

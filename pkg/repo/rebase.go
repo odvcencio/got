@@ -30,7 +30,7 @@ var ErrNoRebaseInProgress = fmt.Errorf("rebase: no rebase in progress")
 
 // rebaseMergeDir returns the path to the sequencer state directory.
 func (r *Repo) rebaseMergeDir() string {
-	return filepath.Join(r.GotDir, "rebase-merge")
+	return filepath.Join(r.GraftDir, "rebase-merge")
 }
 
 // isRebaseInProgress checks if a rebase is currently active.
@@ -227,7 +227,7 @@ func (r *Repo) RebaseAbort() error {
 	}
 
 	// Reattach HEAD to the branch.
-	headPath := filepath.Join(r.GotDir, "HEAD")
+	headPath := filepath.Join(r.GraftDir, "HEAD")
 	if strings.HasPrefix(headName, "refs/") {
 		if err := os.WriteFile(headPath, []byte("ref: "+headName+"\n"), 0o644); err != nil {
 			return fmt.Errorf("rebase abort: reattach HEAD: %w", err)
@@ -682,7 +682,7 @@ func (r *Repo) replaySingleCommit(commitHash object.Hash) error {
 	}
 
 	// Update detached HEAD.
-	headPath := filepath.Join(r.GotDir, "HEAD")
+	headPath := filepath.Join(r.GraftDir, "HEAD")
 	if err := os.WriteFile(headPath, []byte(string(newHash)+"\n"), 0o644); err != nil {
 		return fmt.Errorf("update HEAD: %w", err)
 	}
@@ -713,7 +713,7 @@ func (r *Repo) finishRebase() error {
 	}
 
 	// Reattach HEAD to the branch.
-	headPath := filepath.Join(r.GotDir, "HEAD")
+	headPath := filepath.Join(r.GraftDir, "HEAD")
 	if strings.HasPrefix(headName, "refs/") {
 		if err := os.WriteFile(headPath, []byte("ref: "+headName+"\n"), 0o644); err != nil {
 			return fmt.Errorf("rebase finish: reattach HEAD: %w", err)
@@ -739,7 +739,7 @@ func (r *Repo) detachHead(hash object.Hash) error {
 		return fmt.Errorf("checkout tree: %w", err)
 	}
 
-	headPath := filepath.Join(r.GotDir, "HEAD")
+	headPath := filepath.Join(r.GraftDir, "HEAD")
 	if err := os.WriteFile(headPath, []byte(string(hash)+"\n"), 0o644); err != nil {
 		return fmt.Errorf("write HEAD: %w", err)
 	}

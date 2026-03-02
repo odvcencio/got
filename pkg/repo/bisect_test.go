@@ -116,7 +116,7 @@ func TestBisect_StartSavesState(t *testing.T) {
 		t.Fatalf("BisectStart: %v", err)
 	}
 
-	bisectDir := filepath.Join(r.GotDir, "bisect")
+	bisectDir := filepath.Join(r.GraftDir, "bisect")
 
 	// Check that the bisect directory exists.
 	info, err := os.Stat(bisectDir)

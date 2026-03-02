@@ -244,7 +244,7 @@ func printBisectResult(out io.Writer, result *repo.BisectResult) {
 // readBisectStartRef reads the original HEAD ref from bisect state, before
 // reset cleans it up. Returns the raw string (branch name or hash).
 func readBisectStartRef(r *repo.Repo) string {
-	data, err := os.ReadFile(filepath.Join(r.GotDir, "bisect", "start-ref"))
+	data, err := os.ReadFile(filepath.Join(r.GraftDir, "bisect", "start-ref"))
 	if err != nil {
 		return "unknown"
 	}

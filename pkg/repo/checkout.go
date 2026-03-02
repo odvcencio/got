@@ -138,7 +138,7 @@ func (r *Repo) Checkout(target string) error {
 	}
 
 	// 7. Update HEAD.
-	headPath := filepath.Join(r.GotDir, "HEAD")
+	headPath := filepath.Join(r.GraftDir, "HEAD")
 	var headContent string
 	if isBranch {
 		headContent = "ref: refs/heads/" + target + "\n"

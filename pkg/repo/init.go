@@ -57,18 +57,18 @@ const (
 // structure: HEAD, objects/, and refs/heads/. Returns an error if a .graft/
 // directory already exists.
 func Init(path string) (*Repo, error) {
-	gotDir := filepath.Join(path, ".graft")
+	graftDir := filepath.Join(path, ".graft")
 
 	// Fail if .graft/ already exists.
-	if _, err := os.Stat(gotDir); err == nil {
-		return nil, fmt.Errorf("init: repository already exists at %s", gotDir)
+	if _, err := os.Stat(graftDir); err == nil {
+		return nil, fmt.Errorf("init: repository already exists at %s", graftDir)
 	}
 
 	// Create directory structure.
 	dirs := []string{
-		filepath.Join(gotDir, "objects"),
-		filepath.Join(gotDir, "refs", "heads"),
-		filepath.Join(gotDir, "logs", "refs", "heads"),
+		filepath.Join(graftDir, "objects"),
+		filepath.Join(graftDir, "refs", "heads"),
+		filepath.Join(graftDir, "logs", "refs", "heads"),
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -77,15 +77,15 @@ func Init(path string) (*Repo, error) {
 	}
 
 	// Write default HEAD.
-	headPath := filepath.Join(gotDir, "HEAD")
+	headPath := filepath.Join(graftDir, "HEAD")
 	if err := os.WriteFile(headPath, []byte("ref: refs/heads/main\n"), 0o644); err != nil {
 		return nil, fmt.Errorf("init: write HEAD: %w", err)
 	}
 
 	return &Repo{
 		RootDir: path,
-		GotDir:  gotDir,
-		Store:   object.NewStore(gotDir),
+		GraftDir: graftDir,
+		Store:    object.NewStore(graftDir),
 	}, nil
 }
 
@@ -101,25 +101,25 @@ func Open(path string) (*Repo, error) {
 
 	cur := abs
 	for {
-		gotDir := filepath.Join(cur, ".graft")
-		info, err := os.Stat(gotDir)
+		graftDir := filepath.Join(cur, ".graft")
+		info, err := os.Stat(graftDir)
 		if err == nil {
 			if info.IsDir() {
 				// Normal repository.
 				return &Repo{
-					RootDir: cur,
-					GotDir:  gotDir,
-					Store:   object.NewStore(gotDir),
+					RootDir:  cur,
+					GraftDir: graftDir,
+					Store:    object.NewStore(graftDir),
 				}, nil
 			}
 			// .graft is a file -- this is a linked worktree.
-			return openLinkedWorktree(cur, gotDir)
+			return openLinkedWorktree(cur, graftDir)
 		}
 
 		parent := filepath.Dir(cur)
 		if parent == cur {
 			// Reached filesystem root without finding .graft/.
-			return nil, fmt.Errorf("open: not a got repository (or any parent up to /)")
+			return nil, fmt.Errorf("open: not a graft repository (or any parent up to /)")
 		}
 		cur = parent
 	}
@@ -136,21 +136,21 @@ func openLinkedWorktree(rootDir, graftFile string) (*Repo, error) {
 	if !strings.HasPrefix(content, "gitdir: ") {
 		return nil, fmt.Errorf("open: invalid .graft file (expected 'gitdir: <path>')")
 	}
-	wtGotDir := strings.TrimPrefix(content, "gitdir: ")
+	wtGraftDir := strings.TrimPrefix(content, "gitdir: ")
 
 	// Read commondir from the worktree metadata directory.
-	commondirData, err := os.ReadFile(filepath.Join(wtGotDir, "commondir"))
+	commondirData, err := os.ReadFile(filepath.Join(wtGraftDir, "commondir"))
 	if err != nil {
 		return nil, fmt.Errorf("open: read commondir: %w", err)
 	}
 	commonRel := strings.TrimSpace(string(commondirData))
-	commonDir := filepath.Join(wtGotDir, commonRel)
+	commonDir := filepath.Join(wtGraftDir, commonRel)
 	// Clean the path to resolve any ".." segments.
 	commonDir = filepath.Clean(commonDir)
 
 	return &Repo{
 		RootDir:   rootDir,
-		GotDir:    wtGotDir,
+		GraftDir:  wtGraftDir,
 		CommonDir: commonDir,
 		Store:     object.NewStore(commonDir),
 	}, nil
@@ -160,7 +160,7 @@ func openLinkedWorktree(rootDir, graftFile string) (*Repo, error) {
 // ref path (e.g., "refs/heads/main"). Otherwise it returns the raw content
 // as a detached hash string.
 func (r *Repo) Head() (string, error) {
-	data, err := os.ReadFile(filepath.Join(r.GotDir, "HEAD"))
+	data, err := os.ReadFile(filepath.Join(r.GraftDir, "HEAD"))
 	if err != nil {
 		return "", fmt.Errorf("head: %w", err)
 	}
@@ -230,11 +230,11 @@ func (r *Repo) UpdateRefCAS(name string, h object.Hash, expectedOld ...object.Ha
 		wantOldHash = expectedOld[0]
 	}
 
-	// For HEAD, use GotDir (worktree-specific). For all other refs, use
+	// For HEAD, use GraftDir (worktree-specific). For all other refs, use
 	// refsBaseDir (shared in linked worktrees).
 	baseDir := r.refsBaseDir()
 	if name == "HEAD" {
-		baseDir = r.GotDir
+		baseDir = r.GraftDir
 	}
 	refPath := filepath.Join(baseDir, name)
 

@@ -191,7 +191,7 @@ func TestLFS_ObjectPath(t *testing.T) {
 	dir := t.TempDir()
 	r := &Repo{
 		RootDir: dir,
-		GotDir:  filepath.Join(dir, ".graft"),
+		GraftDir:  filepath.Join(dir, ".graft"),
 	}
 
 	oid := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"

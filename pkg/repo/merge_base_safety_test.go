@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func setMergeBaseTraversalLimitsForTest(t *testing.T, maxSteps, maxDepth int) {
@@ -47,7 +47,7 @@ func writeCorruptCommitAtHash(t *testing.T, r *Repo, h object.Hash, commit *obje
 	raw := []byte(fmt.Sprintf("%s %d\x00", object.TypeCommit, len(data)))
 	raw = append(raw, data...)
 
-	objPath := filepath.Join(r.GotDir, "objects", string(h[:2]), string(h[2:]))
+	objPath := filepath.Join(r.GraftDir, "objects", string(h[:2]), string(h[2:]))
 	if err := os.MkdirAll(filepath.Dir(objPath), 0o755); err != nil {
 		t.Fatalf("MkdirAll(%s): %v", objPath, err)
 	}

@@ -41,7 +41,7 @@ const (
 // and run with the working directory set to the repository root.
 // Hook stdout and stderr are connected to os.Stdout and os.Stderr.
 func (r *Repo) RunHook(name HookName, args ...string) error {
-	hookPath := filepath.Join(r.GotDir, "hooks", string(name))
+	hookPath := filepath.Join(r.GraftDir, "hooks", string(name))
 
 	info, err := os.Stat(hookPath)
 	if err != nil {
@@ -60,7 +60,7 @@ func (r *Repo) RunHook(name HookName, args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(),
-		"GRAFT_DIR="+r.GotDir,
+		"GRAFT_DIR="+r.GraftDir,
 		"GRAFT_WORK_TREE="+r.RootDir,
 	)
 

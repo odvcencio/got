@@ -11,12 +11,12 @@ import (
 
 // refsBaseDir returns the directory used for shared refs. For a linked
 // worktree this is CommonDir (the main .graft/); for a normal repo it is
-// GotDir. HEAD and index always live in GotDir.
+// GraftDir. HEAD and index always live in GraftDir.
 func (r *Repo) refsBaseDir() string {
 	if r.CommonDir != "" {
 		return r.CommonDir
 	}
-	return r.GotDir
+	return r.GraftDir
 }
 
 // ResolveTreeish resolves a treeish string to a commit hash. It tries, in

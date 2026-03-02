@@ -6,19 +6,19 @@ import (
 	"testing"
 )
 
-// Test 1: .got/ is always ignored — no .gotignore file needed.
-func TestIgnore_GotDirAlwaysIgnored(t *testing.T) {
+// Test 1: .graft/ is always ignored — no .graftignore file needed.
+func TestIgnore_GraftDirAlwaysIgnored(t *testing.T) {
 	dir := t.TempDir()
 
 	ic := NewIgnoreChecker(dir)
 
-	if !ic.IsIgnored(".got/HEAD") {
-		t.Error("expected .got/HEAD to be ignored")
+	if !ic.IsIgnored(".graft/HEAD") {
+		t.Error("expected .graft/HEAD to be ignored")
 	}
-	if !ic.IsIgnored(".got/objects/abc") {
-		t.Error("expected .got/objects/abc to be ignored")
+	if !ic.IsIgnored(".graft/objects/abc") {
+		t.Error("expected .graft/objects/abc to be ignored")
 	}
-	if !ic.IsIgnored(".got") {
+	if !ic.IsIgnored(".graft") {
 		t.Error("expected .got to be ignored")
 	}
 }
@@ -37,7 +37,7 @@ func TestIgnore_GitDirAlwaysIgnored(t *testing.T) {
 	}
 }
 
-// Test 3: Simple pattern — .gotignore contains *.log, file debug.log is ignored.
+// Test 3: Simple pattern — .graftignore contains *.log, file debug.log is ignored.
 func TestIgnore_SimpleGlobPattern(t *testing.T) {
 	dir := t.TempDir()
 
@@ -53,7 +53,7 @@ func TestIgnore_SimpleGlobPattern(t *testing.T) {
 	}
 }
 
-// Test 4: Directory pattern — .gotignore contains build/, build/output.o is ignored.
+// Test 4: Directory pattern — .graftignore contains build/, build/output.o is ignored.
 func TestIgnore_DirectoryPattern(t *testing.T) {
 	dir := t.TempDir()
 
@@ -69,7 +69,7 @@ func TestIgnore_DirectoryPattern(t *testing.T) {
 	}
 }
 
-// Test 5: Negation — .gotignore contains *.log and !important.log,
+// Test 5: Negation — .graftignore contains *.log and !important.log,
 // important.log is NOT ignored.
 func TestIgnore_NegationPattern(t *testing.T) {
 	dir := t.TempDir()
@@ -103,18 +103,18 @@ func TestIgnore_CommentLines(t *testing.T) {
 	}
 }
 
-// Test 7: No .gotignore file — only hardcoded patterns apply.
+// Test 7: No .graftignore file — only hardcoded patterns apply.
 func TestIgnore_NoGotignoreFile(t *testing.T) {
 	dir := t.TempDir()
 
 	ic := NewIgnoreChecker(dir)
 
 	// Hardcoded patterns still work.
-	if !ic.IsIgnored(".got/HEAD") {
-		t.Error("expected .got/HEAD to be ignored even without .gotignore")
+	if !ic.IsIgnored(".graft/HEAD") {
+		t.Error("expected .graft/HEAD to be ignored even without .graftignore")
 	}
 	if !ic.IsIgnored(".git/config") {
-		t.Error("expected .git/config to be ignored even without .gotignore")
+		t.Error("expected .git/config to be ignored even without .graftignore")
 	}
 
 	// Regular files are not ignored.
@@ -264,10 +264,10 @@ func TestIgnore_BracketWildcardWithLiteralPrefix(t *testing.T) {
 	}
 }
 
-// helper: write a .gotignore file in the given directory.
+// helper: write a .graftignore file in the given directory.
 func writeGotignore(t *testing.T, dir, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, ".gotignore"), []byte(content), 0o644); err != nil {
-		t.Fatalf("write .gotignore: %v", err)
+	if err := os.WriteFile(filepath.Join(dir, ".graftignore"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write .graftignore: %v", err)
 	}
 }

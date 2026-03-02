@@ -590,7 +590,7 @@ func (r *Repo) squashCommit(commitHash object.Hash, combineMessages bool) error 
 	}
 
 	// Update detached HEAD to the amended commit.
-	headPath := filepath.Join(r.GotDir, "HEAD")
+	headPath := filepath.Join(r.GraftDir, "HEAD")
 	if err := os.WriteFile(headPath, []byte(string(newHash)+"\n"), 0o644); err != nil {
 		return fmt.Errorf("update HEAD: %w", err)
 	}
@@ -667,7 +667,7 @@ func (r *Repo) rewordLastCommit() error {
 	}
 
 	// Update HEAD.
-	headPath := filepath.Join(r.GotDir, "HEAD")
+	headPath := filepath.Join(r.GraftDir, "HEAD")
 	if err := os.WriteFile(headPath, []byte(string(newHash)+"\n"), 0o644); err != nil {
 		return fmt.Errorf("update HEAD: %w", err)
 	}

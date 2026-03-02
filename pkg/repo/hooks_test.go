@@ -11,7 +11,7 @@ import (
 // installHook creates a hook script in the repo's hooks directory.
 func installHook(t *testing.T, r *Repo, name HookName, script string, executable bool) {
 	t.Helper()
-	hooksDir := filepath.Join(r.GotDir, "hooks")
+	hooksDir := filepath.Join(r.GraftDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll hooks: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestNoHookDirIsOk(t *testing.T) {
 	r := initRepoWithFile(t, "main.go", []byte("package main\n\nfunc main() {}\n"))
 
 	// Ensure no hooks directory exists.
-	hooksDir := filepath.Join(r.GotDir, "hooks")
+	hooksDir := filepath.Join(r.GraftDir, "hooks")
 	os.RemoveAll(hooksDir)
 
 	h, err := r.Commit("no hooks", "test-author")

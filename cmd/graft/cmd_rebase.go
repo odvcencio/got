@@ -282,7 +282,7 @@ func countCommits(r *repo.Repo, stop, tip object.Hash) (int, error) {
 
 // readSequencerOnto reads the "onto" hash from the rebase sequencer state.
 func readSequencerOnto(r *repo.Repo) object.Hash {
-	data, err := os.ReadFile(filepath.Join(r.GotDir, "rebase-merge", "onto"))
+	data, err := os.ReadFile(filepath.Join(r.GraftDir, "rebase-merge", "onto"))
 	if err != nil {
 		return ""
 	}
@@ -291,7 +291,7 @@ func readSequencerOnto(r *repo.Repo) object.Hash {
 
 // readSequencerOrigHead reads the "orig-head" hash from the rebase sequencer state.
 func readSequencerOrigHead(r *repo.Repo) object.Hash {
-	data, err := os.ReadFile(filepath.Join(r.GotDir, "rebase-merge", "orig-head"))
+	data, err := os.ReadFile(filepath.Join(r.GraftDir, "rebase-merge", "orig-head"))
 	if err != nil {
 		return ""
 	}
@@ -300,7 +300,7 @@ func readSequencerOrigHead(r *repo.Repo) object.Hash {
 
 // readSequencerStopped reads the "stopped-sha" from the rebase sequencer state.
 func readSequencerStopped(r *repo.Repo) object.Hash {
-	data, err := os.ReadFile(filepath.Join(r.GotDir, "rebase-merge", "stopped-sha"))
+	data, err := os.ReadFile(filepath.Join(r.GraftDir, "rebase-merge", "stopped-sha"))
 	if err != nil {
 		return ""
 	}

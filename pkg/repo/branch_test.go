@@ -153,7 +153,7 @@ func TestBranch_CreateWritesCorrectHash(t *testing.T) {
 	}
 
 	// Read the ref file directly to verify content.
-	refPath := filepath.Join(r.GotDir, "refs", "heads", "feature")
+	refPath := filepath.Join(r.GraftDir, "refs", "heads", "feature")
 	data, err := os.ReadFile(refPath)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)

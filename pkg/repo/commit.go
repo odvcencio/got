@@ -37,7 +37,7 @@ func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (ob
 
 	// 0b. Run commit-msg hook. Write message to temp file, let hook modify it,
 	// then read back the (possibly modified) message.
-	msgFile := filepath.Join(r.GotDir, "COMMIT_EDITMSG")
+	msgFile := filepath.Join(r.GraftDir, "COMMIT_EDITMSG")
 	if err := os.WriteFile(msgFile, []byte(message), 0o644); err != nil {
 		return "", fmt.Errorf("commit: write message file: %w", err)
 	}

@@ -51,8 +51,8 @@ func TestCompat_InitCreatesValidStructure(t *testing.T) {
 	if r.RootDir != dir {
 		t.Errorf("RootDir = %q, want %q", r.RootDir, dir)
 	}
-	if r.GotDir != graftDir {
-		t.Errorf("GotDir = %q, want %q", r.GotDir, graftDir)
+	if r.GraftDir != graftDir {
+		t.Errorf("GraftDir = %q, want %q", r.GraftDir, graftDir)
 	}
 	if r.Store == nil {
 		t.Error("Store is nil after Init")

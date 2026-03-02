@@ -49,7 +49,7 @@ func (r *Repo) appendReflog(ref string, oldHash, newHash object.Hash, reason str
 	// for linked worktrees.
 	baseDir := r.refsBaseDir()
 	if ref == "HEAD" {
-		baseDir = r.GotDir
+		baseDir = r.GraftDir
 	}
 	logPath := filepath.Join(baseDir, "logs", filepath.FromSlash(ref))
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
@@ -98,7 +98,7 @@ func (r *Repo) appendReflogWithEntities(ref string, oldHash, newHash object.Hash
 
 	baseDir := r.refsBaseDir()
 	if ref == "HEAD" {
-		baseDir = r.GotDir
+		baseDir = r.GraftDir
 	}
 	logPath := filepath.Join(baseDir, "logs", filepath.FromSlash(ref))
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
@@ -150,7 +150,7 @@ func (r *Repo) ReadReflogWithEntities(ref string, limit int) ([]ReflogEntryWithE
 
 	baseDir := r.refsBaseDir()
 	if refName == "HEAD" {
-		baseDir = r.GotDir
+		baseDir = r.GraftDir
 	}
 	logPath := filepath.Join(baseDir, "logs", filepath.FromSlash(refName))
 	f, err := os.Open(logPath)
@@ -404,7 +404,7 @@ func (r *Repo) ReadReflog(ref string, limit int) ([]ReflogEntry, error) {
 
 	baseDir := r.refsBaseDir()
 	if refName == "HEAD" {
-		baseDir = r.GotDir
+		baseDir = r.GraftDir
 	}
 	logPath := filepath.Join(baseDir, "logs", filepath.FromSlash(refName))
 	f, err := os.Open(logPath)
