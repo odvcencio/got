@@ -27,15 +27,9 @@ func (e *ErrRevertConflict) Error() string {
 	return fmt.Sprintf("revert: conflicts reverting %s: %s\nfix conflicts and run 'graft revert --continue'", shortHash(e.TargetHash), e.Details)
 }
 
-// revertDir returns the path to the revert sequencer state directory.
-func (r *Repo) revertDir() string {
-	return filepath.Join(r.GraftDir, "revert")
-}
-
 // IsRevertInProgress returns true if a revert operation is paused due to conflicts.
 func (r *Repo) IsRevertInProgress() bool {
-	_, err := os.Stat(r.revertDir())
-	return err == nil
+	return r.revertSeq().IsActive()
 }
 
 // Revert creates a new commit that undoes the changes introduced by the target
@@ -167,11 +161,8 @@ func (r *Repo) Revert(targetHash object.Hash) (*RevertResult, error) {
 	// Build revert commit message.
 	message := fmt.Sprintf("Revert %q", commitTitle(targetCommit.Message))
 
-	// Commit with current user info; use HEAD's author as fallback.
-	author := strings.TrimSpace(headCommit.Author)
-	if author == "" {
-		author = "graft-revert"
-	}
+	// Commit with the current user's identity (not the original commit's author).
+	author := r.ResolveAuthor()
 
 	stg, err := r.ReadStaging()
 	if err != nil {
@@ -230,11 +221,13 @@ func (r *Repo) RevertContinue() (*RevertResult, error) {
 		return nil, fmt.Errorf("revert: no revert in progress")
 	}
 
-	targetHashStr, err := r.readRevertFile("target-hash")
+	seq := r.revertSeq()
+
+	targetHashStr, err := seq.ReadFile("target-hash")
 	if err != nil {
 		return nil, fmt.Errorf("revert continue: read target-hash: %w", err)
 	}
-	targetHash := object.Hash(strings.TrimSpace(targetHashStr))
+	targetHash := object.Hash(targetHashStr)
 
 	// Read the target commit to build the revert message.
 	targetCommit, err := r.Store.ReadCommit(targetHash)
@@ -242,21 +235,22 @@ func (r *Repo) RevertContinue() (*RevertResult, error) {
 		return nil, fmt.Errorf("revert continue: read target commit %s: %w", targetHash, err)
 	}
 
+	// Read saved head-name and verify HEAD hasn't moved to a different branch.
+	headName, _ := seq.ReadFile("head-name")
+	currentHead, err := r.Head()
+	if err == nil && strings.TrimSpace(currentHead) != headName {
+		return nil, fmt.Errorf("revert continue: HEAD has moved since revert started (expected %s, got %s); abort and retry", headName, currentHead)
+	}
+
 	headHash, err := r.ResolveRef("HEAD")
 	if err != nil {
 		return nil, fmt.Errorf("revert continue: resolve HEAD: %w", err)
 	}
-	headCommit, err := r.Store.ReadCommit(headHash)
-	if err != nil {
-		return nil, fmt.Errorf("revert continue: read HEAD commit: %w", err)
-	}
 
 	message := fmt.Sprintf("Revert %q", commitTitle(targetCommit.Message))
 
-	author := strings.TrimSpace(headCommit.Author)
-	if author == "" {
-		author = "graft-revert"
-	}
+	// Commit with the current user's identity (not the original commit's author).
+	author := r.ResolveAuthor()
 
 	stg, err := r.ReadStaging()
 	if err != nil {
@@ -285,8 +279,6 @@ func (r *Repo) RevertContinue() (*RevertResult, error) {
 	}
 
 	// Update current branch ref.
-	headName, _ := r.readRevertFile("head-name")
-	headName = strings.TrimSpace(headName)
 	if strings.HasPrefix(headName, "refs/") {
 		if err := r.UpdateRefCAS(headName, commitHash, headHash); err != nil {
 			return nil, fmt.Errorf("revert continue: update ref %q: %w", headName, err)
@@ -300,7 +292,7 @@ func (r *Repo) RevertContinue() (*RevertResult, error) {
 	r.invalidateStatusCache()
 
 	// Clean up sequencer state.
-	if err := os.RemoveAll(r.revertDir()); err != nil {
+	if err := seq.Clean(); err != nil {
 		return nil, fmt.Errorf("revert continue: cleanup: %w", err)
 	}
 
@@ -317,17 +309,18 @@ func (r *Repo) RevertAbort() error {
 		return fmt.Errorf("revert: no revert in progress")
 	}
 
-	origHeadStr, err := r.readRevertFile("orig-head")
+	seq := r.revertSeq()
+
+	origHeadStr, err := seq.ReadFile("orig-head")
 	if err != nil {
 		return fmt.Errorf("revert abort: read orig-head: %w", err)
 	}
-	origHead := object.Hash(strings.TrimSpace(origHeadStr))
+	origHead := object.Hash(origHeadStr)
 
-	headName, err := r.readRevertFile("head-name")
+	headName, err := seq.ReadFile("head-name")
 	if err != nil {
 		return fmt.Errorf("revert abort: read head-name: %w", err)
 	}
-	headName = strings.TrimSpace(headName)
 
 	// Restore the branch ref to orig-head.
 	if strings.HasPrefix(headName, "refs/heads/") {
@@ -358,7 +351,7 @@ func (r *Repo) RevertAbort() error {
 	}
 
 	// Clean up sequencer state.
-	if err := os.RemoveAll(r.revertDir()); err != nil {
+	if err := seq.Clean(); err != nil {
 		return fmt.Errorf("revert abort: cleanup: %w", err)
 	}
 
@@ -367,9 +360,9 @@ func (r *Repo) RevertAbort() error {
 
 // writeRevertState saves the sequencer state for a paused revert.
 func (r *Repo) writeRevertState(targetHash, origHead object.Hash) error {
-	dir := r.revertDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %q: %w", dir, err)
+	seq := r.revertSeq()
+	if err := seq.Init(); err != nil {
+		return fmt.Errorf("mkdir %q: %w", seq.Dir(), err)
 	}
 
 	headName := "HEAD"
@@ -384,21 +377,5 @@ func (r *Repo) writeRevertState(targetHash, origHead object.Hash) error {
 		"head-name":   headName + "\n",
 	}
 
-	for name, content := range files {
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			return fmt.Errorf("write %q: %w", name, err)
-		}
-	}
-
-	return nil
-}
-
-// readRevertFile reads a file from the revert sequencer state directory.
-func (r *Repo) readRevertFile(name string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(r.revertDir(), name))
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
+	return seq.WriteFiles(files)
 }

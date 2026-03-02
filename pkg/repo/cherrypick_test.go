@@ -428,30 +428,31 @@ func TestCherryPickConflict_SavesState(t *testing.T) {
 	}
 
 	// Verify target-hash file.
-	targetHashStr, err := r.readCherryPickFile("target-hash")
+	seq := r.cherryPickSeq()
+	targetHashStr, err := seq.ReadFile("target-hash")
 	if err != nil {
-		t.Fatalf("readCherryPickFile(target-hash): %v", err)
+		t.Fatalf("ReadFile(target-hash): %v", err)
 	}
-	if got := strings.TrimSpace(targetHashStr); got != string(featureHash) {
-		t.Errorf("target-hash = %q, want %q", got, featureHash)
+	if targetHashStr != string(featureHash) {
+		t.Errorf("target-hash = %q, want %q", targetHashStr, featureHash)
 	}
 
 	// Verify orig-head file.
-	origHeadStr, err := r.readCherryPickFile("orig-head")
+	origHeadStr, err := seq.ReadFile("orig-head")
 	if err != nil {
-		t.Fatalf("readCherryPickFile(orig-head): %v", err)
+		t.Fatalf("ReadFile(orig-head): %v", err)
 	}
-	if got := strings.TrimSpace(origHeadStr); got != string(mainHash) {
-		t.Errorf("orig-head = %q, want %q", got, mainHash)
+	if origHeadStr != string(mainHash) {
+		t.Errorf("orig-head = %q, want %q", origHeadStr, mainHash)
 	}
 
 	// Verify head-name file.
-	headNameStr, err := r.readCherryPickFile("head-name")
+	headNameStr, err := seq.ReadFile("head-name")
 	if err != nil {
-		t.Fatalf("readCherryPickFile(head-name): %v", err)
+		t.Fatalf("ReadFile(head-name): %v", err)
 	}
-	if got := strings.TrimSpace(headNameStr); got != "refs/heads/main" {
-		t.Errorf("head-name = %q, want %q", got, "refs/heads/main")
+	if headNameStr != "refs/heads/main" {
+		t.Errorf("head-name = %q, want %q", headNameStr, "refs/heads/main")
 	}
 
 	// HEAD should not have changed.
@@ -669,6 +670,50 @@ func TestCherryPickSkip_NoInProgress(t *testing.T) {
 	err = r.CherryPickSkip()
 	if !errors.Is(err, ErrNoCherryPickInProgress) {
 		t.Errorf("error = %v, want %v", err, ErrNoCherryPickInProgress)
+	}
+}
+
+// TestCherryPickContinue_RejectsMovedHEAD verifies that CherryPickContinue
+// fails if HEAD has been moved to a different branch since the cherry-pick started.
+func TestCherryPickContinue_RejectsMovedHEAD(t *testing.T) {
+	r, dir, featureHash, _ := setupCherryPickConflict(t)
+
+	// Cherry-pick to trigger conflict (started on "main").
+	_, err := r.CherryPick(featureHash)
+	if err == nil {
+		t.Fatal("CherryPick should fail on conflict")
+	}
+	if !r.IsCherryPickInProgress() {
+		t.Fatal("expected cherry-pick in progress")
+	}
+
+	// Simulate switching to a different branch while cherry-pick is paused by
+	// directly writing the HEAD file (Checkout refuses a dirty working tree).
+	baseHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD): %v", err)
+	}
+	if err := r.CreateBranch("other", baseHash); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+	headPath := filepath.Join(r.GraftDir, "HEAD")
+	if err := os.WriteFile(headPath, []byte("ref: refs/heads/other\n"), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	// Stage something so continue doesn't fail on "nothing staged".
+	cherryPickWriteFile(t, filepath.Join(dir, "file.txt"), []byte("resolved\n"))
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add(resolved): %v", err)
+	}
+
+	// CherryPickContinue should reject because HEAD moved.
+	_, err = r.CherryPickContinue()
+	if err == nil {
+		t.Fatal("CherryPickContinue should fail when HEAD has moved")
+	}
+	if !strings.Contains(err.Error(), "HEAD has moved") {
+		t.Errorf("error = %q, want to contain %q", err.Error(), "HEAD has moved")
 	}
 }
 

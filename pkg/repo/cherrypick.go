@@ -10,6 +10,9 @@ import (
 	"github.com/odvcencio/graft/pkg/object"
 )
 
+// NOTE: cherry-pick sequencer state is managed via r.cherryPickSeq() defined
+// in sequencer.go. The helpers below delegate to that shared abstraction.
+
 // CherryPickResult captures the outcome of a commit-level cherry-pick.
 type CherryPickResult struct {
 	TargetCommit object.Hash
@@ -32,62 +35,18 @@ func (e *ErrCherryPickConflict) Error() string {
 // called with no active cherry-pick.
 var ErrNoCherryPickInProgress = fmt.Errorf("cherry-pick: no cherry-pick in progress")
 
-// cherryPickDir returns the path to the cherry-pick sequencer state directory.
-func (r *Repo) cherryPickDir() string {
-	return filepath.Join(r.GraftDir, "cherry-pick")
-}
-
 // IsCherryPickInProgress returns true if a cherry-pick is currently paused
 // (waiting for conflict resolution).
 func (r *Repo) IsCherryPickInProgress() bool {
-	_, err := os.Stat(r.cherryPickDir())
-	return err == nil
-}
-
-// readCherryPickFile reads a file from the cherry-pick sequencer directory.
-func (r *Repo) readCherryPickFile(name string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(r.cherryPickDir(), name))
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-// writeCherryPickFileAtomic writes a file to the cherry-pick directory using
-// temp file + rename for atomicity.
-func (r *Repo) writeCherryPickFileAtomic(name, content string) error {
-	dir := r.cherryPickDir()
-	target := filepath.Join(dir, name)
-
-	tmp, err := os.CreateTemp(dir, name+".tmp.*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return err
-	}
-	return os.Rename(tmpPath, target)
+	return r.cherryPickSeq().IsActive()
 }
 
 // saveCherryPickState saves sequencer state so the user can resolve conflicts
 // and then run --continue, --abort, or --skip.
 func (r *Repo) saveCherryPickState(targetHash object.Hash, origHead object.Hash, headName string) error {
-	dir := r.cherryPickDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("cherry-pick: mkdir %q: %w", dir, err)
+	seq := r.cherryPickSeq()
+	if err := seq.Init(); err != nil {
+		return fmt.Errorf("cherry-pick: mkdir %q: %w", seq.Dir(), err)
 	}
 
 	files := map[string]string{
@@ -96,17 +55,15 @@ func (r *Repo) saveCherryPickState(targetHash object.Hash, origHead object.Hash,
 		"head-name":   headName + "\n",
 	}
 
-	for name, content := range files {
-		if err := r.writeCherryPickFileAtomic(name, content); err != nil {
-			return fmt.Errorf("cherry-pick: write %q: %w", name, err)
-		}
+	if err := seq.WriteFiles(files); err != nil {
+		return fmt.Errorf("cherry-pick: %w", err)
 	}
 	return nil
 }
 
 // cleanCherryPickState removes the cherry-pick sequencer directory.
 func (r *Repo) cleanCherryPickState() error {
-	return os.RemoveAll(r.cherryPickDir())
+	return r.cherryPickSeq().Clean()
 }
 
 // CherryPick applies the changes introduced by the given commit onto HEAD
@@ -307,17 +264,26 @@ func (r *Repo) CherryPickContinue() (*CherryPickResult, error) {
 		return nil, ErrNoCherryPickInProgress
 	}
 
+	seq := r.cherryPickSeq()
+
 	// Read the target hash from sequencer state.
-	targetHashStr, err := r.readCherryPickFile("target-hash")
+	targetHashStr, err := seq.ReadFile("target-hash")
 	if err != nil {
 		return nil, fmt.Errorf("cherry-pick continue: read target-hash: %w", err)
 	}
-	targetHash := object.Hash(strings.TrimSpace(targetHashStr))
+	targetHash := object.Hash(targetHashStr)
 
 	// Read the original commit for message and author.
 	targetCommit, err := r.Store.ReadCommit(targetHash)
 	if err != nil {
 		return nil, fmt.Errorf("cherry-pick continue: read target commit %s: %w", targetHash, err)
+	}
+
+	// Read saved head-name and verify HEAD hasn't moved to a different branch.
+	headName, _ := seq.ReadFile("head-name")
+	currentHead, err := r.Head()
+	if err == nil && strings.TrimSpace(currentHead) != headName {
+		return nil, fmt.Errorf("cherry-pick continue: HEAD has moved since cherry-pick started (expected %s, got %s); abort and retry", headName, currentHead)
 	}
 
 	// Resolve current HEAD.
@@ -368,14 +334,10 @@ func (r *Repo) CherryPickContinue() (*CherryPickResult, error) {
 		return nil, fmt.Errorf("cherry-pick continue: write commit: %w", err)
 	}
 
-	// Update current branch ref.
-	head, err := r.Head()
-	if err != nil {
-		return nil, fmt.Errorf("cherry-pick continue: read HEAD: %w", err)
-	}
-	if strings.HasPrefix(head, "refs/") {
-		if err := r.UpdateRefCAS(head, commitHash, headHash); err != nil {
-			return nil, fmt.Errorf("cherry-pick continue: update ref %q: %w", head, err)
+	// Update current branch ref using the saved head-name (not current HEAD).
+	if strings.HasPrefix(headName, "refs/") {
+		if err := r.UpdateRefCAS(headName, commitHash, headHash); err != nil {
+			return nil, fmt.Errorf("cherry-pick continue: update ref %q: %w", headName, err)
 		}
 	} else {
 		if err := r.UpdateRefCAS("HEAD", commitHash, headHash); err != nil {
@@ -404,19 +366,20 @@ func (r *Repo) CherryPickAbort() error {
 		return ErrNoCherryPickInProgress
 	}
 
+	seq := r.cherryPickSeq()
+
 	// Read original HEAD.
-	origHeadStr, err := r.readCherryPickFile("orig-head")
+	origHeadStr, err := seq.ReadFile("orig-head")
 	if err != nil {
 		return fmt.Errorf("cherry-pick abort: read orig-head: %w", err)
 	}
-	origHead := object.Hash(strings.TrimSpace(origHeadStr))
+	origHead := object.Hash(origHeadStr)
 
 	// Read head-name.
-	headName, err := r.readCherryPickFile("head-name")
+	headName, err := seq.ReadFile("head-name")
 	if err != nil {
 		return fmt.Errorf("cherry-pick abort: read head-name: %w", err)
 	}
-	headName = strings.TrimSpace(headName)
 
 	// Checkout the original commit's tree to restore working directory.
 	origCommit, err := r.Store.ReadCommit(origHead)

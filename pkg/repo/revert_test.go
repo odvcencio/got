@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,7 +128,7 @@ func TestRevert_ConflictSavesState(t *testing.T) {
 	}
 
 	var revertErr *ErrRevertConflict
-	if !isRevertConflictErr(err, &revertErr) {
+	if !errors.As(err, &revertErr) {
 		t.Fatalf("error type = %T, want *ErrRevertConflict; error = %v", err, err)
 	}
 
@@ -136,12 +137,12 @@ func TestRevert_ConflictSavesState(t *testing.T) {
 		t.Fatal("IsRevertInProgress should be true after conflict")
 	}
 
-	targetHashStr, err := r.readRevertFile("target-hash")
+	targetHashStr, err := r.revertSeq().ReadFile("target-hash")
 	if err != nil {
-		t.Fatalf("readRevertFile(target-hash): %v", err)
+		t.Fatalf("ReadFile(target-hash): %v", err)
 	}
-	if strings.TrimSpace(targetHashStr) != string(secondHash) {
-		t.Errorf("saved target-hash = %q, want %q", strings.TrimSpace(targetHashStr), secondHash)
+	if targetHashStr != string(secondHash) {
+		t.Errorf("saved target-hash = %q, want %q", targetHashStr, secondHash)
 	}
 }
 
@@ -394,6 +395,211 @@ func TestRevert_FileAddedByCommit(t *testing.T) {
 	}
 }
 
+// TestRevert_UsesResolveAuthor verifies that the revert commit uses
+// ResolveAuthor (current user) rather than the HEAD commit's author.
+func TestRevert_UsesResolveAuthor(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Set repo-level user config so ResolveAuthor returns a known identity.
+	cfg := &Config{
+		User: &UserConfig{Name: "Reverter", Email: "reverter@example.com"},
+	}
+	if err := r.WriteConfig(cfg); err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+
+	// Create base commit with a different author.
+	writeTestFile(t, filepath.Join(dir, "a.txt"), []byte("line1\n"))
+	if err := r.Add([]string{"a.txt"}); err != nil {
+		t.Fatalf("Add(base): %v", err)
+	}
+	_, err = r.Commit("base commit", "original-author")
+	if err != nil {
+		t.Fatalf("Commit(base): %v", err)
+	}
+
+	// Create a second commit by a different author.
+	writeTestFile(t, filepath.Join(dir, "a.txt"), []byte("line1\nline2\n"))
+	if err := r.Add([]string{"a.txt"}); err != nil {
+		t.Fatalf("Add(second): %v", err)
+	}
+	secondHash, err := r.Commit("add line2", "other-author")
+	if err != nil {
+		t.Fatalf("Commit(second): %v", err)
+	}
+
+	// Revert the second commit.
+	result, err := r.Revert(secondHash)
+	if err != nil {
+		t.Fatalf("Revert: %v", err)
+	}
+
+	// The revert commit should be attributed to the configured user, not
+	// the original commit's author.
+	revertCommit, err := r.Store.ReadCommit(result.CommitHash)
+	if err != nil {
+		t.Fatalf("ReadCommit: %v", err)
+	}
+	wantAuthor := "Reverter <reverter@example.com>"
+	if revertCommit.Author != wantAuthor {
+		t.Errorf("revert commit Author = %q, want %q", revertCommit.Author, wantAuthor)
+	}
+}
+
+// TestRevert_ContinueUsesResolveAuthor verifies that RevertContinue also uses
+// ResolveAuthor for the commit author.
+func TestRevert_ContinueUsesResolveAuthor(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Set repo-level user config.
+	cfg := &Config{
+		User: &UserConfig{Name: "Reverter", Email: "reverter@example.com"},
+	}
+	if err := r.WriteConfig(cfg); err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+
+	// Create base commit.
+	writeTestFile(t, filepath.Join(dir, "file.txt"), []byte("original\n"))
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add(base): %v", err)
+	}
+	_, err = r.Commit("base", "alice")
+	if err != nil {
+		t.Fatalf("Commit(base): %v", err)
+	}
+
+	// Second commit changes the file.
+	writeTestFile(t, filepath.Join(dir, "file.txt"), []byte("changed\n"))
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add(second): %v", err)
+	}
+	secondHash, err := r.Commit("change file", "bob")
+	if err != nil {
+		t.Fatalf("Commit(second): %v", err)
+	}
+
+	// Third commit further modifies the file in a conflicting way.
+	writeTestFile(t, filepath.Join(dir, "file.txt"), []byte("further changed\n"))
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add(third): %v", err)
+	}
+	_, err = r.Commit("further change", "carol")
+	if err != nil {
+		t.Fatalf("Commit(third): %v", err)
+	}
+
+	// Revert should fail with conflict.
+	_, err = r.Revert(secondHash)
+	if err == nil {
+		t.Fatal("Revert should fail on conflict")
+	}
+
+	// Resolve the conflict and stage.
+	writeTestFile(t, filepath.Join(dir, "file.txt"), []byte("resolved\n"))
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add(resolved): %v", err)
+	}
+
+	// Continue the revert.
+	result, err := r.RevertContinue()
+	if err != nil {
+		t.Fatalf("RevertContinue: %v", err)
+	}
+
+	// The revert commit should be attributed to the configured user.
+	revertCommit, err := r.Store.ReadCommit(result.CommitHash)
+	if err != nil {
+		t.Fatalf("ReadCommit: %v", err)
+	}
+	wantAuthor := "Reverter <reverter@example.com>"
+	if revertCommit.Author != wantAuthor {
+		t.Errorf("revert continue commit Author = %q, want %q", revertCommit.Author, wantAuthor)
+	}
+}
+
+// TestRevertContinue_RejectsMovedHEAD verifies that RevertContinue fails if
+// HEAD has been moved to a different branch since the revert started.
+func TestRevertContinue_RejectsMovedHEAD(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Create base commit.
+	writeTestFile(t, filepath.Join(dir, "file.txt"), []byte("original\n"))
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add(base): %v", err)
+	}
+	baseHash, err := r.Commit("base", "alice")
+	if err != nil {
+		t.Fatalf("Commit(base): %v", err)
+	}
+
+	// Second commit changes the file.
+	writeTestFile(t, filepath.Join(dir, "file.txt"), []byte("changed\n"))
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add(second): %v", err)
+	}
+	secondHash, err := r.Commit("change file", "bob")
+	if err != nil {
+		t.Fatalf("Commit(second): %v", err)
+	}
+
+	// Third commit further modifies the file.
+	writeTestFile(t, filepath.Join(dir, "file.txt"), []byte("further changed\n"))
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add(third): %v", err)
+	}
+	_, err = r.Commit("further change", "carol")
+	if err != nil {
+		t.Fatalf("Commit(third): %v", err)
+	}
+
+	// Revert should fail with conflict (revert was started on "main").
+	_, err = r.Revert(secondHash)
+	if err == nil {
+		t.Fatal("Revert should fail on conflict")
+	}
+	if !r.IsRevertInProgress() {
+		t.Fatal("expected revert in progress")
+	}
+
+	// Simulate switching to a different branch while revert is paused by
+	// directly writing the HEAD file (Checkout refuses a dirty working tree).
+	if err := r.CreateBranch("other", baseHash); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+	headPath := filepath.Join(r.GraftDir, "HEAD")
+	if err := os.WriteFile(headPath, []byte("ref: refs/heads/other\n"), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	// Stage something so continue doesn't fail on "nothing staged".
+	writeTestFile(t, filepath.Join(dir, "file.txt"), []byte("resolved\n"))
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add(resolved): %v", err)
+	}
+
+	// RevertContinue should reject because HEAD moved.
+	_, err = r.RevertContinue()
+	if err == nil {
+		t.Fatal("RevertContinue should fail when HEAD has moved")
+	}
+	if !strings.Contains(err.Error(), "HEAD has moved") {
+		t.Errorf("error = %q, want to contain %q", err.Error(), "HEAD has moved")
+	}
+}
+
 // writeTestFile is a test helper that creates parent directories and writes content.
 func writeTestFile(t *testing.T, path string, content []byte) {
 	t.Helper()
@@ -405,13 +611,3 @@ func writeTestFile(t *testing.T, path string, content []byte) {
 	}
 }
 
-// isRevertConflictErr checks if err is *ErrRevertConflict and optionally assigns it.
-func isRevertConflictErr(err error, target **ErrRevertConflict) bool {
-	if e, ok := err.(*ErrRevertConflict); ok {
-		if target != nil {
-			*target = e
-		}
-		return true
-	}
-	return false
-}
