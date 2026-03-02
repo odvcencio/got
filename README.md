@@ -4,13 +4,13 @@ Structural version control. Merges functions, not lines.
 
 Git treats source files as bags of lines. Two developers add different functions to the same file — conflict. Both add different imports — conflict. One renames a variable, another adds a function nearby — conflict. None of these are real conflicts.
 
-**got** is a standalone version control system that decomposes source into structural entities via [gotreesitter](https://github.com/odvcencio/gotreesitter) — functions, methods, classes, imports — and merges at that level. Independent additions merge cleanly. Import blocks get set-union merged. Only genuine semantic overlaps produce conflicts.
+**graft** is a standalone version control system that decomposes source into structural entities via [gotreesitter](https://github.com/odvcencio/gotreesitter) — functions, methods, classes, imports — and merges at that level. Independent additions merge cleanly. Import blocks get set-union merged. Only genuine semantic overlaps produce conflicts.
 
 ```
 # Git: CONFLICT (both modified main.go)
-# Got: clean merge — two independent functions added
+# Graft: clean merge — two independent functions added
 
-$ got merge feature
+$ graft merge feature
 merging feature into main...
   main.go: clean
 merge completed cleanly
@@ -18,7 +18,7 @@ merge completed cleanly
 
 ## How it works
 
-Got parses every source file into an ordered list of **entities**:
+Graft parses every source file into an ordered list of **entities**:
 
 | Entity kind | Examples |
 |------------|---------|
@@ -43,18 +43,18 @@ The critical invariant: reconstructing entities always reproduces the original s
 ## Install
 
 ```bash
-go install github.com/odvcencio/got/cmd/got@latest
+go install github.com/odvcencio/graft/cmd/graft@latest
 ```
 
 Requires Go 1.25+. Pure Go, no C dependencies.
 
 ## Usage
 
-Got follows the same mental model as Git:
+Graft follows the same mental model as Git:
 
 ```bash
 # Initialize a repository
-got init myproject
+graft init myproject
 cd myproject
 
 # Stage and commit
@@ -62,98 +62,166 @@ echo 'package main
 
 func Hello() {}
 ' > main.go
-got add main.go
-got commit -m "initial commit"
+graft add main.go
+graft commit -m "initial commit"
 
 # Branch and diverge
-got branch feature
-got checkout feature
+graft branch feature
+graft checkout feature
 # ... add func Goodbye() ...
-got add main.go
-got commit -m "add Goodbye"
+graft add main.go
+graft commit -m "add Goodbye"
 
 # Back to main, make a different change
-got checkout main
+graft checkout main
 # ... add func Greet() ...
-got add main.go
-got commit -m "add Greet"
+graft add main.go
+graft commit -m "add Greet"
 
 # Structural merge — no conflict
-got merge feature
+graft merge feature
 ```
 
 ### Commands
 
+**Core**
 ```
-got init [path]              Create a new repository
-got add <files...>           Stage files for commit
-got reset [paths...]         Unstage paths (restore index from HEAD)
-got rm [--cached] <paths...> Remove paths from index and/or working tree
-got status                   Show working tree status
-got commit -m <message>      Record changes
-got log [--oneline] [-n N]   Show commit history
-got show [commit-ish]        Show commit metadata and changed files
-got blame [path]             Show structural blame for a file
-got diff [--staged] [--entity]  Show changes
-got branch [name] [-d name]  List, create, or delete branches
-got tag [name]               List, create, or delete tags
-got checkout <target> [-b]   Switch branches
-got merge <branch>           Three-way structural merge
-got cherrypick-entity ...    Apply entity-scoped changes from another commit
-got remote                   Manage remotes
-got publish [owner/repo]     Create remote repo on Gothub, set origin, and push
-got clone <url> [dir]        Clone from Got protocol endpoint
-got pull [remote] [branch]   Fetch and fast-forward local branch
-got push [remote] [branch]   Push local branch to remote
-got reflog                   Show local ref update history
-got gc                       Pack loose objects and prune unreachable data
-got verify                   Verify repository object integrity
+graft init [path]                     Create a new repository
+graft add <files...>                  Stage files for commit
+graft commit -m <message>             Record changes
+graft status                          Show working tree status
+graft diff [--staged] [--entity]      Show changes (line-level or entity-level)
+graft log [--oneline] [-n N] [--entity <selector>]  Show commit history
+graft show [commit-ish]               Show commit metadata and changed files
+```
+
+**Branching & Merging**
+```
+graft branch [name] [-d name]        List, create, or delete branches
+graft checkout <target> [-b]          Switch branches
+graft merge <branch>                  Three-way structural merge
+graft rebase [--onto] [-i] <upstream> Reapply commits on a new base (--continue/--abort/--skip)
+graft cherry-pick [--entity <sel>] <commit>  Cherry-pick a commit or a single entity
+```
+
+**Remote**
+```
+graft clone <url> [dir]               Clone from Graft/Orchard or Git forge
+graft push [remote] [branch]          Push local branch to remote
+graft pull [remote] [branch]          Fetch and fast-forward local branch
+graft fetch [remote]                  Download objects and refs without merging
+graft remote                          Manage remotes (add, remove, list)
+graft publish [owner/repo]            Create remote repo on Orchard, set origin, and push
+graft auth                            Authenticate with Orchard (setup, ssh-login, bootstrap-ssh, status, logout)
+```
+
+**History & Inspection**
+```
+graft blame <path>                    Show structural blame for a file
+graft bisect start|good|bad|skip|reset|log|run  Binary search for a bug-introducing commit
+graft reflog                          Show local ref update history
+graft shortlog [-s] [-n]              Summarise commit history by author
+graft tag [name]                      List, create, or delete tags
+```
+
+**Working Tree**
+```
+graft clean [-n] [-f] [-d]            Remove untracked files from the working tree
+graft grep [-i] [-F] <pattern>        Search tracked files for a pattern
+graft stash [push|pop|apply|list|drop|show]  Stash and restore working directory changes
+graft reset [paths...]                Unstage paths (restore index from HEAD)
+graft rm [--cached] <paths...>        Remove paths from index and/or working tree
+graft sparse-checkout set|add|list|disable  Manage sparse checkout patterns
+graft worktree add|list|remove|prune  Manage multiple linked working trees
+```
+
+**Large Files**
+```
+graft lfs track <pattern>             Track files matching pattern with LFS
+graft lfs untrack <pattern>           Stop tracking pattern with LFS
+graft lfs ls-files                    List LFS-tracked files in staging
+graft lfs status                      Show LFS status for tracked files
+```
+
+**Archive & Maintenance**
+```
+graft archive [--format=tar|zip] <tree-ish>  Create an archive of files from a commit
+graft gc                              Pack loose objects and prune unreachable data
+graft verify                          Verify repository object integrity
+graft version                         Print version
 ```
 
 ### Remote shorthand
 
-Use `gothub:owner/repo` instead of full URLs:
+Use `orchard:owner/repo` instead of full URLs:
 
 ```bash
-got remote add origin gothub:alice/demo
-got clone gothub:alice/demo
-got publish alice/demo
+graft remote add origin orchard:alice/demo
+graft clone orchard:alice/demo
+graft publish alice/demo
+```
+
+### Auth configuration
+
+`graft` supports global auth/config in `~/.graftconfig` (token, default host, owner/username).
+Environment variables still override file values.
+
+```bash
+# Interactive setup (magic-link login + optional SSH key registration)
+graft auth setup --host https://orchard.dev
+
+# Agent-native login (no browser/magic-link flow, uses registered SSH key)
+graft auth ssh-login --host https://orchard.dev --username alice --ssh-key ~/.ssh/id_ed25519
+
+# First-key bootstrap for headless agents.
+# If already authenticated, graft auto-mints a short-lived bootstrap token.
+graft auth bootstrap-ssh --host https://orchard.dev --username alice --ssh-key ~/.ssh/id_ed25519
+
+# First-time from terminal (no prior auth token):
+# requests magic-link auth, verifies, mints bootstrap token, registers key.
+graft auth bootstrap-ssh --host https://orchard.dev --email alice@example.com --username alice --ssh-key ~/.ssh/id_ed25519
+
+# Optional explicit token override for automation:
+GRAFT_BOOTSTRAP_TOKEN=... graft auth bootstrap-ssh --host https://orchard.dev --username alice --ssh-key ~/.ssh/id_ed25519
+
+# Inspect stored auth state
+graft auth status
 ```
 
 Git forge shorthand is also supported:
 
 ```bash
-got clone github:owner/repo
-got clone gitlab:group/subgroup/repo
-got clone bitbucket:workspace/repo
+graft clone github:owner/repo
+graft clone gitlab:group/subgroup/repo
+graft clone bitbucket:workspace/repo
 ```
 
-For Git-forge clones, `got` bootstraps a local `.got` repository from the cloned Git HEAD snapshot.
+For Git-forge clones, `graft` bootstraps a local `.graft` repository from the cloned Git HEAD snapshot.
 
-For self-hosted instances, set `GOT_GOTHUB_URL`:
+For self-hosted instances, set `GRAFT_ORCHARD_URL`:
 
 ```bash
-export GOT_GOTHUB_URL=https://code.example.com
-got remote add origin gothub:alice/demo
+export GRAFT_ORCHARD_URL=https://code.example.com
+graft remote add origin orchard:alice/demo
 ```
 
-When a remote is a Git forge URL, `got` routes `clone/pull/push` through Git transport; Gothub remotes continue to use native Got transport.
-`got clone` from a Git forge bootstraps `.got` from the cloned Git HEAD snapshot so structural workflows can start immediately.
+When a remote is a Git forge URL, `graft` routes `clone/pull/push` through Git transport; Orchard remotes continue to use native Graft transport.
+`graft clone` from a Git forge bootstraps `.graft` from the cloned Git HEAD snapshot so structural workflows can start immediately.
 
 ### Structural diff
 
 ```bash
 # Line-level diff (default)
-got diff
+graft diff
 
 # Entity-level diff — shows which functions/types changed
-got diff --entity
+graft diff --entity
 ```
 
 ## Architecture
 
 ```
-.got/
+.graft/
   HEAD                    ref: refs/heads/main
   objects/                SHA-256 content-addressed store (2-char fan-out)
   refs/heads/             Branch tips
@@ -168,16 +236,18 @@ got diff --entity
 
 | Package | Purpose |
 |---------|---------|
-| `pkg/object` | Content-addressed store with atomic writes |
+| `pkg/object` | Content-addressed store with atomic writes and pack files |
 | `pkg/entity` | Tree-sitter entity extraction and reconstruction |
 | `pkg/diff3` | Myers diff + three-way line merge |
 | `pkg/diff` | Entity-level diff computation |
 | `pkg/merge` | Structural three-way merge orchestrator |
-| `pkg/repo` | Repository operations (init, commit, branch, checkout, merge) |
+| `pkg/repo` | Repository operations (init, commit, branch, checkout, merge, rebase, stash, bisect, ...) |
+| `pkg/remote` | Remote sync, pack transport, and protocol client |
+| `pkg/userconfig` | Global user configuration (`~/.graftconfig`) |
 
 ## Language support
 
-Got uses [gotreesitter](https://github.com/odvcencio/gotreesitter), a pure-Go tree-sitter runtime with 205 embedded grammars. Entity extraction is tested against:
+Graft uses [gotreesitter](https://github.com/odvcencio/gotreesitter), a pure-Go tree-sitter runtime with 205 embedded grammars. Entity extraction is tested against:
 
 - Go
 - Python
@@ -197,20 +267,27 @@ What exists:
 - Three-way structural merge with entity-level resolution
 - Set-union import merging
 - Entity-level and line-level diff
-- Pack files with delta support (`got gc`) and repository verification (`got verify`)
-- Full CLI: init, add, reset, rm, status, commit, log, show, blame, diff, branch, tag, checkout, merge, cherrypick-entity, remote, publish, clone, pull, push, reflog, gc, verify
-- `.gotignore` support
+- Pack files with delta support (`graft gc`) and repository verification (`graft verify`)
+- Full CLI: 36 commands covering core workflows, branching, remotes, history, working tree, LFS, and maintenance
+- Stash workflow (push, pop, apply, list, drop, show)
+- Rebase (standard, `--onto`, interactive, conflict resolution with `--continue`/`--abort`/`--skip`)
+- Cherry-pick at commit level and entity level (`--entity`)
+- Bisect with automated script runner (`bisect run`)
+- Multiple worktrees, sparse checkout, grep, clean, shortlog, archive
+- SSH challenge/response auth for Orchard remotes
+- Git forge clone support (GitHub, GitLab, Bitbucket shorthand)
+- Large file storage (LFS) with pattern-based tracking
+- `.graftignore` support
 
 What doesn't exist yet:
-- Stash workflow
-- Rebase/cherry-pick (commit-level porcelain)
-- SSH transport for remotes
 - Submodules
 
 ## Dependencies
 
 - [gotreesitter](https://github.com/odvcencio/gotreesitter) — Pure-Go tree-sitter runtime (205 languages, no CGo)
 - [cobra](https://github.com/spf13/cobra) — CLI framework
+- [klauspost/compress](https://github.com/klauspost/compress) — Zstd compression for pack transport
+- [golang.org/x/crypto](https://pkg.go.dev/golang.org/x/crypto) — SSH key parsing and challenge/response auth
 
 ## License
 
