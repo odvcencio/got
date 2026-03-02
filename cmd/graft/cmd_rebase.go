@@ -18,12 +18,14 @@ func newRebaseCmd() *cobra.Command {
 	var continueFlag bool
 	var abortFlag bool
 	var skipFlag bool
+	var interactiveFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "rebase [<upstream>]",
 		Short: "Reapply commits on top of another base tip",
 		Long: `Rebase the current branch onto upstream (or --onto newbase).
 
+Use -i/--interactive to edit the list of commits before replaying.
 Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a commit.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -75,6 +77,9 @@ Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a
 			}
 			upstream := args[0]
 
+			if interactiveFlag {
+				return rebaseInteractiveStart(r, out, upstream)
+			}
 			if ontoFlag != "" {
 				return rebaseOnto(r, out, ontoFlag, upstream)
 			}
@@ -86,8 +91,35 @@ Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a
 	cmd.Flags().BoolVar(&continueFlag, "continue", false, "continue rebase after conflict resolution")
 	cmd.Flags().BoolVar(&abortFlag, "abort", false, "abort and restore original state")
 	cmd.Flags().BoolVar(&skipFlag, "skip", false, "skip the conflicting commit")
+	cmd.Flags().BoolVarP(&interactiveFlag, "interactive", "i", false, "interactive rebase: edit the todo list before replaying")
 
 	return cmd
+}
+
+// rebaseInteractiveStart handles: graft rebase -i <upstream>
+func rebaseInteractiveStart(r *repo.Repo, out io.Writer, upstream string) error {
+	ontoHash, err := resolveTarget(r, upstream)
+	if err != nil {
+		return err
+	}
+
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		return err
+	}
+	mergeBase, err := r.FindMergeBase(headHash, ontoHash)
+	if err != nil {
+		return err
+	}
+	count, err := countCommits(r, mergeBase, headHash)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "Interactive rebase onto %s... %d commit(s)\n", shortHashStr(ontoHash), count)
+
+	err = r.RebaseInteractive(upstream)
+	return handleRebaseResult(r, out, ontoHash, err)
 }
 
 // rebaseStart handles: graft rebase <upstream>
