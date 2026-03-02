@@ -53,6 +53,7 @@ func main() {
 	root.AddCommand(newGrepCmd())
 	root.AddCommand(newShortlogCmd())
 	root.AddCommand(newArchiveCmd())
+	root.AddCommand(newModuleCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
