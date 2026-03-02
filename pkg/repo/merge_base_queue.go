@@ -1,6 +1,6 @@
 package repo
 
-import "github.com/odvcencio/got/pkg/object"
+import "github.com/odvcencio/graft/pkg/object"
 
 type mergeBaseQueueItem struct {
 	hash       object.Hash

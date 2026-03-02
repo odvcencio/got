@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/entity"
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/entity"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func TestLogByEntity_SkipsCommitWhenExtractionFails(t *testing.T) {

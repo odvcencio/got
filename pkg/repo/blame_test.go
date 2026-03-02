@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/entity"
+	"github.com/odvcencio/graft/pkg/entity"
 )
 
 func TestBlameEntity_FindsMostRecentEntityChange(t *testing.T) {

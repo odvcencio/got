@@ -19,6 +19,7 @@ func newRebaseCmd() *cobra.Command {
 	var abortFlag bool
 	var skipFlag bool
 	var interactiveFlag bool
+	var autosquashFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "rebase [<upstream>]",
@@ -26,6 +27,7 @@ func newRebaseCmd() *cobra.Command {
 		Long: `Rebase the current branch onto upstream (or --onto newbase).
 
 Use -i/--interactive to edit the list of commits before replaying.
+Use --autosquash with -i to auto-reorder fixup!/squash! commits.
 Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a commit.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -42,6 +44,11 @@ Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a
 			}
 			if flagCount > 1 {
 				return fmt.Errorf("only one of --continue, --abort, --skip may be used")
+			}
+
+			// --autosquash requires -i.
+			if autosquashFlag && !interactiveFlag {
+				return fmt.Errorf("--autosquash requires --interactive (-i)")
 			}
 
 			r, err := repo.Open(".")
@@ -78,6 +85,9 @@ Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a
 			upstream := args[0]
 
 			if interactiveFlag {
+				if autosquashFlag {
+					return rebaseInteractiveAutosquashStart(r, out, upstream)
+				}
 				return rebaseInteractiveStart(r, out, upstream)
 			}
 			if ontoFlag != "" {
@@ -92,6 +102,7 @@ Use --continue after resolving conflicts, --abort to cancel, or --skip to skip a
 	cmd.Flags().BoolVar(&abortFlag, "abort", false, "abort and restore original state")
 	cmd.Flags().BoolVar(&skipFlag, "skip", false, "skip the conflicting commit")
 	cmd.Flags().BoolVarP(&interactiveFlag, "interactive", "i", false, "interactive rebase: edit the todo list before replaying")
+	cmd.Flags().BoolVar(&autosquashFlag, "autosquash", false, "auto-reorder fixup!/squash! commits (requires -i)")
 
 	return cmd
 }
@@ -119,6 +130,32 @@ func rebaseInteractiveStart(r *repo.Repo, out io.Writer, upstream string) error 
 	fmt.Fprintf(out, "Interactive rebase onto %s... %d commit(s)\n", shortHash(ontoHash), count)
 
 	err = r.RebaseInteractive(upstream)
+	return handleRebaseResult(r, out, ontoHash, err)
+}
+
+// rebaseInteractiveAutosquashStart handles: graft rebase -i --autosquash <upstream>
+func rebaseInteractiveAutosquashStart(r *repo.Repo, out io.Writer, upstream string) error {
+	ontoHash, err := resolveTarget(r, upstream)
+	if err != nil {
+		return err
+	}
+
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		return err
+	}
+	mergeBase, err := r.FindMergeBase(headHash, ontoHash)
+	if err != nil {
+		return err
+	}
+	count, err := countCommits(r, mergeBase, headHash)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "Interactive rebase (autosquash) onto %s... %d commit(s)\n", shortHash(ontoHash), count)
+
+	err = r.RebaseInteractiveWithAutosquash(upstream)
 	return handleRebaseResult(r, out, ontoHash, err)
 }
 
@@ -236,7 +273,22 @@ func handleRebaseResult(r *repo.Repo, out io.Writer, ontoHash object.Hash, err e
 		return nil
 	}
 
+	var editErr *repo.ErrRebaseEditStop
+	if errors.As(err, &editErr) {
+		fmt.Fprintf(out, "Stopped at %s (%s)\n", shortHash(editErr.CommitHash), commitTitleStr(editErr.Message))
+		fmt.Fprintf(out, "Make your changes and amend the commit, then run: graft rebase --continue\n")
+		return nil
+	}
+
 	return err
+}
+
+// commitTitleStr returns the first line of a commit message.
+func commitTitleStr(msg string) string {
+	if idx := strings.IndexByte(msg, '\n'); idx >= 0 {
+		return msg[:idx]
+	}
+	return msg
 }
 
 // resolveTarget resolves a branch name or hash to a commit hash using the

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/diff3"
-	"github.com/odvcencio/got/pkg/entity"
+	"github.com/odvcencio/graft/pkg/diff3"
+	"github.com/odvcencio/graft/pkg/entity"
 )
 
 // FormatEntityDiff produces a human-readable entity-level summary of changes.

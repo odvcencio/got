@@ -5,7 +5,7 @@ import (
 	"os"
 	"reflect"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 type statusFileFingerprint struct {

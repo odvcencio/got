@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/diff3"
+	"github.com/odvcencio/graft/pkg/diff3"
 )
 
 // MergeImports performs set-based merge of import blocks.

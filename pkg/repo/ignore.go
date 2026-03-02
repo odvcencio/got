@@ -31,19 +31,23 @@ type ignorePattern struct {
 }
 
 // NewIgnoreChecker creates an IgnoreChecker for the given repository root.
-// It always ignores .got/ and .git/. If a .gotignore file exists in repoRoot,
-// its patterns are parsed and applied.
+// It always ignores .graft/, .got/, and .git/. If a .graftignore (or legacy
+// .gotignore) file exists in repoRoot, its patterns are parsed and applied.
 func NewIgnoreChecker(repoRoot string) *IgnoreChecker {
 	ic := &IgnoreChecker{}
 
-	// Hardcoded patterns: always ignore .got/ and .git/.
+	// Hardcoded patterns: always ignore .graft/, .got/, and .git/.
 	ic.patterns = append(ic.patterns,
+		ignorePattern{pattern: ".graft", dirOnly: false, hasSlash: false},
 		ignorePattern{pattern: ".got", dirOnly: false, hasSlash: false},
 		ignorePattern{pattern: ".git", dirOnly: false, hasSlash: false},
 	)
 
-	// Read .gotignore if it exists.
-	ignorePath := filepath.Join(repoRoot, ".gotignore")
+	// Read .graftignore if it exists, falling back to .gotignore.
+	ignorePath := filepath.Join(repoRoot, ".graftignore")
+	if _, err := os.Stat(ignorePath); os.IsNotExist(err) {
+		ignorePath = filepath.Join(repoRoot, ".gotignore")
+	}
 	f, err := os.Open(ignorePath)
 	if err == nil {
 		defer f.Close()
@@ -167,8 +171,8 @@ func (ic *IgnoreChecker) compile() {
 	for idx := range ic.patterns {
 		p := ic.patterns[idx]
 
-		// Keep hardcoded .got/.git special prefix behavior.
-		if p.dirOnly || p.pattern == ".got" || p.pattern == ".git" {
+		// Keep hardcoded .graft/.got/.git special prefix behavior.
+		if p.dirOnly || p.pattern == ".graft" || p.pattern == ".got" || p.pattern == ".git" {
 			ic.dirPrefixPatterns[p.pattern] = append(ic.dirPrefixPatterns[p.pattern], idx)
 			if p.dirOnly {
 				continue
@@ -248,9 +252,9 @@ func wildcardLiteralPrefix(pattern string) string {
 
 // matches checks if the given relative path matches this ignore pattern.
 func (p *ignorePattern) matches(path string) bool {
-	// For hardcoded patterns (.got, .git) and dir-only patterns,
+	// For hardcoded patterns (.graft, .got, .git) and dir-only patterns,
 	// check if the path is the directory itself or starts with it.
-	if p.dirOnly || p.pattern == ".got" || p.pattern == ".git" {
+	if p.dirOnly || p.pattern == ".graft" || p.pattern == ".got" || p.pattern == ".git" {
 		// Check exact match or prefix match (path is under this directory).
 		if path == p.pattern || strings.HasPrefix(path, p.pattern+"/") {
 			return true

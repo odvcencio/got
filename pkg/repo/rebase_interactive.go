@@ -22,6 +22,7 @@ const (
 	TodoFixup  TodoAction = "fixup"
 	TodoDrop   TodoAction = "drop"
 	TodoExec   TodoAction = "exec"
+	TodoEdit   TodoAction = "edit"
 )
 
 // TodoItem represents a single entry in an interactive rebase todo list.
@@ -29,6 +30,18 @@ type TodoItem struct {
 	Action  TodoAction
 	Hash    object.Hash // empty for exec
 	Message string      // original commit message summary, or command for exec
+}
+
+// ErrRebaseEditStop is returned when an "edit" action pauses the rebase
+// so the user can amend the commit before continuing.
+type ErrRebaseEditStop struct {
+	CommitHash object.Hash
+	Message    string
+}
+
+func (e *ErrRebaseEditStop) Error() string {
+	return fmt.Sprintf("rebase: stopped at %s (%s) -- amend the commit and run 'graft rebase --continue'",
+		shortHash(e.CommitHash), commitTitle(e.Message))
 }
 
 // RebaseInteractive starts an interactive rebase, opening the user's editor
@@ -130,6 +143,113 @@ func (r *Repo) RebaseInteractive(upstream string) error {
 	return r.rebaseWithTodoList(upstream, items)
 }
 
+// RebaseInteractiveWithAutosquash starts an interactive rebase with autosquash.
+// Commits whose messages start with "fixup! <title>" or "squash! <title>" are
+// automatically reordered to follow their target commit and their action is
+// changed to fixup or squash respectively.
+func (r *Repo) RebaseInteractiveWithAutosquash(upstream string) error {
+	if r.isRebaseInProgress() {
+		return ErrRebaseInProgress
+	}
+
+	// 1. Resolve upstream.
+	upstreamHash, err := r.resolveToHash(upstream)
+	if err != nil {
+		return fmt.Errorf("rebase: resolve upstream %q: %w", upstream, err)
+	}
+
+	// 2. Resolve HEAD.
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		return fmt.Errorf("rebase: resolve HEAD: %w", err)
+	}
+
+	// 3. Find merge base.
+	mergeBase, err := r.FindMergeBase(headHash, upstreamHash)
+	if err != nil {
+		return fmt.Errorf("rebase: %w", err)
+	}
+
+	// 4. Already up to date?
+	if headHash == upstreamHash || mergeBase == headHash {
+		return nil // no-op
+	}
+
+	// 5. Collect commits from merge-base..HEAD (oldest first).
+	commits, err := r.collectCommits(mergeBase, headHash)
+	if err != nil {
+		return fmt.Errorf("rebase: %w", err)
+	}
+	if len(commits) == 0 {
+		return nil // nothing to replay
+	}
+
+	// 6. Build todo items from commits.
+	items, err := r.buildTodoItems(commits)
+	if err != nil {
+		return fmt.Errorf("rebase: build todo items: %w", err)
+	}
+
+	// 7. Apply autosquash reordering.
+	items = autosquashTodoList(items)
+
+	// 8. Generate the todo list content for the editor.
+	todoContent := formatTodoItems(items)
+
+	// 9. Write to temp file and open editor.
+	tmpFile, err := os.CreateTemp("", "graft-rebase-todo-*.txt")
+	if err != nil {
+		return fmt.Errorf("rebase: create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.WriteString(todoContent); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("rebase: write todo file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("rebase: close todo file: %w", err)
+	}
+
+	// Open editor.
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+
+	editorCmd := exec.Command(editor, tmpPath)
+	editorCmd.Stdin = os.Stdin
+	editorCmd.Stdout = os.Stdout
+	editorCmd.Stderr = os.Stderr
+	if err := editorCmd.Run(); err != nil {
+		return fmt.Errorf("rebase: editor exited with error: %w", err)
+	}
+
+	// 10. Read back the edited todo list.
+	editedContent, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return fmt.Errorf("rebase: read edited todo file: %w", err)
+	}
+
+	// 11. Parse the todo list.
+	editedItems, err := parseTodoList(string(editedContent))
+	if err != nil {
+		return fmt.Errorf("rebase: %w", err)
+	}
+
+	// 12. If todo list is empty after editing, abort.
+	if len(editedItems) == 0 {
+		return fmt.Errorf("rebase: nothing to do (empty todo list)")
+	}
+
+	// 13. Execute via the shared path.
+	return r.rebaseWithTodoList(upstream, editedItems)
+}
+
 // rebaseWithTodoList executes an interactive rebase with the given todo items.
 // This is the shared execution path used by both RebaseInteractive (after
 // the editor) and tests (which supply items directly).
@@ -161,6 +281,12 @@ func (r *Repo) rebaseWithTodoList(upstream string, items []TodoItem) error {
 		return fmt.Errorf("rebase: save state: %w", err)
 	}
 
+	// Mark this as an interactive rebase so RebaseContinue knows how to resume.
+	if err := r.writeSequencerFileAtomic("interactive", "true\n"); err != nil {
+		os.RemoveAll(r.rebaseMergeDir())
+		return fmt.Errorf("rebase: save interactive flag: %w", err)
+	}
+
 	// Detach HEAD to upstream.
 	if err := r.detachHead(upstreamHash); err != nil {
 		os.RemoveAll(r.rebaseMergeDir())
@@ -169,8 +295,9 @@ func (r *Repo) rebaseWithTodoList(upstream string, items []TodoItem) error {
 
 	// Execute the todo list.
 	if err := r.executeTodoList(items); err != nil {
-		// On error, clean up sequencer state.
-		os.RemoveAll(r.rebaseMergeDir())
+		// On error, preserve sequencer state so --continue or --abort can work.
+		// The executeTodoList method already saved the remaining todo items
+		// and stopped-sha before returning.
 		return err
 	}
 
@@ -200,6 +327,7 @@ func (r *Repo) generateTodoList(commits []object.Hash) (string, error) {
 	b.WriteString("# Commands:\n")
 	b.WriteString("# pick = use commit\n")
 	b.WriteString("# reword = use commit but edit message\n")
+	b.WriteString("# edit = use commit, stop for amending\n")
 	b.WriteString("# squash = meld into previous commit, combine messages\n")
 	b.WriteString("# fixup = meld into previous commit, discard this message\n")
 	b.WriteString("# drop = remove commit\n")
@@ -228,7 +356,7 @@ func parseTodoList(content string) ([]TodoItem, error) {
 		action := TodoAction(strings.ToLower(parts[0]))
 
 		switch action {
-		case TodoPick, TodoReword, TodoSquash, TodoFixup, TodoDrop:
+		case TodoPick, TodoReword, TodoSquash, TodoFixup, TodoDrop, TodoEdit:
 			if len(parts) < 2 {
 				return nil, fmt.Errorf("parse todo: line %d: %s requires a commit hash", lineNum+1, action)
 			}
@@ -263,7 +391,23 @@ func parseTodoList(content string) ([]TodoItem, error) {
 	return items, nil
 }
 
-// executeTodoList runs each action in the todo list.
+// serializeTodoItems converts a slice of TodoItems into the sequencer file format.
+// Each line is: action hash message
+func serializeTodoItems(items []TodoItem) string {
+	var b strings.Builder
+	for _, item := range items {
+		if item.Action == TodoExec {
+			fmt.Fprintf(&b, "exec %s\n", item.Message)
+		} else {
+			fmt.Fprintf(&b, "%s %s %s\n", item.Action, item.Hash, item.Message)
+		}
+	}
+	return b.String()
+}
+
+// executeTodoList runs each action in the todo list. On error (conflict or
+// edit stop), it saves the remaining items to the sequencer state so the
+// rebase can be continued or aborted.
 func (r *Repo) executeTodoList(items []TodoItem) error {
 	for i := 0; i < len(items); i++ {
 		item := items[i]
@@ -272,41 +416,74 @@ func (r *Repo) executeTodoList(items []TodoItem) error {
 		case TodoPick:
 			hash, err := r.resolveShortHash(item.Hash)
 			if err != nil {
+				r.saveInteractiveTodoState(items[i+1:], hash)
 				return fmt.Errorf("rebase interactive: resolve %s: %w", item.Hash, err)
 			}
 			if err := r.replaySingleCommit(hash); err != nil {
+				r.saveInteractiveTodoState(items[i+1:], hash)
 				return err
 			}
 
 		case TodoReword:
 			hash, err := r.resolveShortHash(item.Hash)
 			if err != nil {
+				r.saveInteractiveTodoState(items[i+1:], hash)
 				return fmt.Errorf("rebase interactive: resolve %s: %w", item.Hash, err)
 			}
 			if err := r.replaySingleCommit(hash); err != nil {
+				r.saveInteractiveTodoState(items[i+1:], hash)
 				return err
 			}
 			// Amend the just-created commit with a new message from the editor.
 			if err := r.rewordLastCommit(); err != nil {
+				r.saveInteractiveTodoState(items[i+1:], hash)
 				return fmt.Errorf("rebase interactive: reword: %w", err)
+			}
+
+		case TodoEdit:
+			hash, err := r.resolveShortHash(item.Hash)
+			if err != nil {
+				r.saveInteractiveTodoState(items[i+1:], hash)
+				return fmt.Errorf("rebase interactive: resolve %s: %w", item.Hash, err)
+			}
+			if err := r.replaySingleCommit(hash); err != nil {
+				r.saveInteractiveTodoState(items[i+1:], hash)
+				return err
+			}
+			// Save the remaining items (after this one) and stop.
+			r.saveInteractiveTodoState(items[i+1:], hash)
+			// Write an edit-mode marker so RebaseContinue knows to amend.
+			r.writeSequencerFileAtomic("edit-mode", "true\n") //nolint:errcheck
+			origCommit, _ := r.Store.ReadCommit(hash)
+			msg := ""
+			if origCommit != nil {
+				msg = origCommit.Message
+			}
+			return &ErrRebaseEditStop{
+				CommitHash: hash,
+				Message:    msg,
 			}
 
 		case TodoSquash:
 			hash, err := r.resolveShortHash(item.Hash)
 			if err != nil {
+				r.saveInteractiveTodoState(items[i+1:], hash)
 				return fmt.Errorf("rebase interactive: resolve %s: %w", item.Hash, err)
 			}
 			if err := r.squashCommit(hash, true); err != nil {
-				return fmt.Errorf("rebase interactive: squash: %w", err)
+				r.saveInteractiveTodoState(items[i+1:], hash)
+				return err
 			}
 
 		case TodoFixup:
 			hash, err := r.resolveShortHash(item.Hash)
 			if err != nil {
+				r.saveInteractiveTodoState(items[i+1:], hash)
 				return fmt.Errorf("rebase interactive: resolve %s: %w", item.Hash, err)
 			}
 			if err := r.squashCommit(hash, false); err != nil {
-				return fmt.Errorf("rebase interactive: fixup: %w", err)
+				r.saveInteractiveTodoState(items[i+1:], hash)
+				return err
 			}
 
 		case TodoDrop:
@@ -315,12 +492,157 @@ func (r *Repo) executeTodoList(items []TodoItem) error {
 
 		case TodoExec:
 			if err := r.execCommand(item.Message); err != nil {
+				r.saveInteractiveTodoState(items[i+1:], "")
 				return fmt.Errorf("rebase interactive: exec %q: %w", item.Message, err)
 			}
 		}
 	}
 
 	return nil
+}
+
+// saveInteractiveTodoState writes the remaining interactive todo items and
+// the stopped commit hash to sequencer state for --continue to resume.
+func (r *Repo) saveInteractiveTodoState(remaining []TodoItem, stoppedHash object.Hash) {
+	// Write the remaining interactive todo items.
+	todoContent := serializeTodoItems(remaining)
+	r.writeSequencerFileAtomic("interactive-todo", todoContent) //nolint:errcheck
+
+	// Write stopped-sha so RebaseContinue knows which commit to finish.
+	if stoppedHash != "" {
+		r.writeSequencerFileAtomic("stopped-sha", string(stoppedHash)+"\n") //nolint:errcheck
+	}
+}
+
+// RebaseInteractiveContinue resumes a paused interactive rebase after the user
+// has resolved conflicts (or made edits for an edit stop) and staged changes.
+func (r *Repo) RebaseInteractiveContinue() error {
+	if !r.isRebaseInProgress() {
+		return ErrNoRebaseInProgress
+	}
+
+	// Check for edit-mode: the user was stopped at an "edit" action
+	// and should amend the current commit with their working tree changes.
+	editMode := false
+	if em, err := r.readSequencerFile("edit-mode"); err == nil && strings.TrimSpace(em) == "true" {
+		editMode = true
+		os.Remove(filepath.Join(r.rebaseMergeDir(), "edit-mode"))
+	}
+
+	stoppedSHA, err := r.readSequencerFile("stopped-sha")
+	if err != nil {
+		return fmt.Errorf("rebase continue: no stopped commit found: %w", err)
+	}
+	stoppedSHA = strings.TrimSpace(stoppedSHA)
+
+	if editMode {
+		// Amend the current HEAD commit with whatever the user has staged.
+		if err := r.amendHeadWithStaged(); err != nil {
+			return fmt.Errorf("rebase continue: amend edit: %w", err)
+		}
+	} else {
+		// Read the original commit to preserve its message and author.
+		origCommit, err := r.Store.ReadCommit(object.Hash(stoppedSHA))
+		if err != nil {
+			return fmt.Errorf("rebase continue: read original commit %s: %w", stoppedSHA, err)
+		}
+
+		// Create a commit with the original message.
+		commitHash, err := r.Commit(origCommit.Message, origCommit.Author)
+		if err != nil {
+			return fmt.Errorf("rebase continue: commit: %w", err)
+		}
+		_ = commitHash
+	}
+
+	// Remove stopped-sha.
+	os.Remove(filepath.Join(r.rebaseMergeDir(), "stopped-sha"))
+
+	// Read remaining interactive todo items.
+	todoContent, err := r.readSequencerFile("interactive-todo")
+	if err != nil || strings.TrimSpace(todoContent) == "" {
+		// No remaining items -- finish the rebase.
+		return r.finishRebase()
+	}
+
+	// Parse remaining items.
+	remaining, err := parseTodoList(todoContent)
+	if err != nil {
+		return fmt.Errorf("rebase continue: parse remaining todo: %w", err)
+	}
+
+	if len(remaining) == 0 {
+		return r.finishRebase()
+	}
+
+	// Continue executing the remaining items.
+	if err := r.executeTodoList(remaining); err != nil {
+		return err
+	}
+
+	return r.finishRebase()
+}
+
+// amendHeadWithStaged amends the current HEAD commit with the currently
+// staged files. Used by the edit action's --continue path.
+func (r *Repo) amendHeadWithStaged() error {
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		return fmt.Errorf("resolve HEAD: %w", err)
+	}
+
+	headCommit, err := r.Store.ReadCommit(headHash)
+	if err != nil {
+		return fmt.Errorf("read HEAD commit: %w", err)
+	}
+
+	// Build tree from current staging area.
+	stg, err := r.ReadStaging()
+	if err != nil {
+		return fmt.Errorf("read staging: %w", err)
+	}
+
+	treeHash, err := r.BuildTree(stg)
+	if err != nil {
+		return fmt.Errorf("build tree: %w", err)
+	}
+
+	// If tree hasn't changed, nothing to amend.
+	if treeHash == headCommit.TreeHash {
+		return nil
+	}
+
+	// Create a new commit with the same metadata but the new tree.
+	newCommit := &object.CommitObj{
+		TreeHash:  treeHash,
+		Parents:   headCommit.Parents,
+		Author:    headCommit.Author,
+		Timestamp: time.Now().Unix(),
+		Message:   headCommit.Message,
+	}
+
+	newHash, err := r.Store.WriteCommit(newCommit)
+	if err != nil {
+		return fmt.Errorf("write amended commit: %w", err)
+	}
+
+	// Update HEAD.
+	headPath := filepath.Join(r.GraftDir, "HEAD")
+	if err := os.WriteFile(headPath, []byte(string(newHash)+"\n"), 0o644); err != nil {
+		return fmt.Errorf("update HEAD: %w", err)
+	}
+
+	r.invalidateStatusCache()
+	return nil
+}
+
+// isInteractiveRebase checks if the current in-progress rebase is interactive.
+func (r *Repo) isInteractiveRebase() bool {
+	data, err := r.readSequencerFile("interactive")
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(data) == "true"
 }
 
 // resolveShortHash resolves a potentially abbreviated hash to the full hash
@@ -409,6 +731,9 @@ func (r *Repo) squashCommit(commitHash object.Hash, combineMessages bool) error 
 
 	allPaths := collectAllPaths(baseMap, oursMap, theirsMap)
 
+	hasConflicts := false
+	var conflictDetails []string
+
 	type fileWrite struct {
 		path    string
 		content []byte
@@ -451,11 +776,15 @@ func (r *Repo) squashCommit(commitHash object.Hash, combineMessages bool) error 
 			if err != nil {
 				return err
 			}
-			result, err := mergeFilesForRebase(path, baseData, oursData, theirsData)
+			result, err := merge.MergeFiles(path, baseData, oursData, theirsData)
 			if err != nil {
-				return err
+				return fmt.Errorf("merge %q: %w", path, err)
 			}
-			writes = append(writes, fileWrite{path, result, normalizeFileMode(oursMap[path].Mode)})
+			if result.HasConflicts {
+				hasConflicts = true
+				conflictDetails = append(conflictDetails, path)
+			}
+			writes = append(writes, fileWrite{path, result.Merged, normalizeFileMode(oursMap[path].Mode)})
 
 		case !inBase && !inOurs && inTheirs:
 			content, err := r.readBlobData(theirsMap[path].BlobHash)
@@ -476,26 +805,46 @@ func (r *Repo) squashCommit(commitHash object.Hash, combineMessages bool) error 
 			if err != nil {
 				return err
 			}
-			result, err := mergeFilesForRebase(path, nil, oursData, theirsData)
+			result, err := merge.MergeFiles(path, nil, oursData, theirsData)
 			if err != nil {
-				return err
+				return fmt.Errorf("merge %q: %w", path, err)
 			}
-			writes = append(writes, fileWrite{path, result, normalizeFileMode(oursMap[path].Mode)})
+			if result.HasConflicts {
+				hasConflicts = true
+				conflictDetails = append(conflictDetails, path)
+			}
+			writes = append(writes, fileWrite{path, result.Merged, normalizeFileMode(oursMap[path].Mode)})
 
 		case inBase && inOurs && !inTheirs:
+			// Deleted by theirs (the commit being squashed).
 			if oursMap[path].BlobHash == baseMap[path].BlobHash {
+				// Ours unchanged -- clean delete.
 				deletes = append(deletes, path)
+			} else {
+				// Ours modified, theirs deleted -- conflict.
+				hasConflicts = true
+				conflictDetails = append(conflictDetails, path)
+				oursData, err := r.readBlobData(oursMap[path].BlobHash)
+				if err != nil {
+					return err
+				}
+				content := renderFileConflict(oursData, nil)
+				writes = append(writes, fileWrite{path, content, normalizeFileMode(oursMap[path].Mode)})
 			}
-			// If ours modified, keep ours (conflict scenarios not handled for simplicity in squash).
 
 		case inBase && !inOurs && inTheirs:
+			// Deleted by ours, modified by theirs.
 			if theirsMap[path].BlobHash == baseMap[path].BlobHash {
-				continue
+				continue // theirs unchanged, keep deletion
 			}
-			content, err := r.readBlobData(theirsMap[path].BlobHash)
+			// Theirs modified, ours deleted -- conflict.
+			hasConflicts = true
+			conflictDetails = append(conflictDetails, path)
+			theirsData, err := r.readBlobData(theirsMap[path].BlobHash)
 			if err != nil {
 				return err
 			}
+			content := renderFileConflict(nil, theirsData)
 			writes = append(writes, fileWrite{path, content, normalizeFileMode(theirsMap[path].Mode)})
 
 		case !inBase && inOurs && !inTheirs:
@@ -544,6 +893,14 @@ func (r *Repo) squashCommit(commitHash object.Hash, combineMessages bool) error 
 		}
 		if err := r.WriteStaging(stg); err != nil {
 			return fmt.Errorf("write staging: %w", err)
+		}
+	}
+
+	if hasConflicts {
+		return &ErrRebaseConflict{
+			CommitHash: commitHash,
+			Message:    origCommit.Message,
+			Details:    fmt.Sprintf("conflict in: %s", strings.Join(conflictDetails, ", ")),
 		}
 	}
 
@@ -686,7 +1043,6 @@ func (r *Repo) execCommand(command string) error {
 	return cmd.Run()
 }
 
-
 // mergeFilesForRebase is a helper that performs a three-way merge and returns
 // the merged content. Unlike the full replaySingleCommit, it does not track
 // conflicts separately (used for squash/fixup where conflicts are less expected).
@@ -696,4 +1052,123 @@ func mergeFilesForRebase(path string, base, ours, theirs []byte) ([]byte, error)
 		return nil, fmt.Errorf("merge %q: %w", path, err)
 	}
 	return result.Merged, nil
+}
+
+// buildTodoItems creates TodoItem entries from a list of commit hashes.
+func (r *Repo) buildTodoItems(commits []object.Hash) ([]TodoItem, error) {
+	var items []TodoItem
+	for _, h := range commits {
+		c, err := r.Store.ReadCommit(h)
+		if err != nil {
+			return nil, fmt.Errorf("read commit %s: %w", shortHash(h), err)
+		}
+		hashStr := string(h)
+		if len(hashStr) > 8 {
+			hashStr = hashStr[:8]
+		}
+		items = append(items, TodoItem{
+			Action:  TodoPick,
+			Hash:    object.Hash(hashStr),
+			Message: commitTitle(c.Message),
+		})
+	}
+	return items, nil
+}
+
+// formatTodoItems formats a list of TodoItems into the editor-friendly todo
+// file content (with help comments appended).
+func formatTodoItems(items []TodoItem) string {
+	var b strings.Builder
+	for _, item := range items {
+		if item.Action == TodoExec {
+			fmt.Fprintf(&b, "exec %s\n", item.Message)
+		} else {
+			fmt.Fprintf(&b, "%s %s %s\n", item.Action, item.Hash, item.Message)
+		}
+	}
+	b.WriteString("\n")
+	b.WriteString("# Commands:\n")
+	b.WriteString("# pick = use commit\n")
+	b.WriteString("# reword = use commit but edit message\n")
+	b.WriteString("# edit = use commit, stop for amending\n")
+	b.WriteString("# squash = meld into previous commit, combine messages\n")
+	b.WriteString("# fixup = meld into previous commit, discard this message\n")
+	b.WriteString("# drop = remove commit\n")
+	b.WriteString("# exec = run command\n")
+	return b.String()
+}
+
+// autosquashTodoList reorders a todo list so that commits whose messages start
+// with "fixup! <title>" or "squash! <title>" are placed immediately after
+// their target commit, with their action changed to fixup or squash.
+func autosquashTodoList(items []TodoItem) []TodoItem {
+	// Separate normal items from fixup/squash items.
+	type squashEntry struct {
+		item       TodoItem
+		targetTitle string
+		action     TodoAction
+	}
+
+	var normal []TodoItem
+	var squashes []squashEntry
+
+	for _, item := range items {
+		msg := item.Message
+		if strings.HasPrefix(msg, "fixup! ") {
+			squashes = append(squashes, squashEntry{
+				item:        item,
+				targetTitle: strings.TrimPrefix(msg, "fixup! "),
+				action:      TodoFixup,
+			})
+		} else if strings.HasPrefix(msg, "squash! ") {
+			squashes = append(squashes, squashEntry{
+				item:        item,
+				targetTitle: strings.TrimPrefix(msg, "squash! "),
+				action:      TodoSquash,
+			})
+		} else {
+			normal = append(normal, item)
+		}
+	}
+
+	if len(squashes) == 0 {
+		return items
+	}
+
+	// For each squash entry, find its target in the normal list and insert after.
+	// Process in reverse order so indices stay stable.
+	var result []TodoItem
+	result = append(result, normal...)
+
+	for _, sq := range squashes {
+		inserted := false
+		for i := 0; i < len(result); i++ {
+			if result[i].Message == sq.targetTitle {
+				// Change the action to fixup or squash.
+				entry := sq.item
+				entry.Action = sq.action
+				// Skip past any fixup/squash items already placed after this target
+				// so that multiple fixups for the same target preserve their
+				// original relative order.
+				insertPos := i + 1
+				for insertPos < len(result) && (result[insertPos].Action == TodoFixup || result[insertPos].Action == TodoSquash) {
+					insertPos++
+				}
+				// Insert at insertPos.
+				newResult := make([]TodoItem, 0, len(result)+1)
+				newResult = append(newResult, result[:insertPos]...)
+				newResult = append(newResult, entry)
+				newResult = append(newResult, result[insertPos:]...)
+				result = newResult
+				inserted = true
+				break
+			}
+		}
+		if !inserted {
+			// No target found -- keep the item at the end with its original action.
+			result = append(result, sq.item)
+		}
+	}
+
+	return result
 }

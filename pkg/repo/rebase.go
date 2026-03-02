@@ -164,6 +164,11 @@ func (r *Repo) RebaseContinue() error {
 		return ErrNoRebaseInProgress
 	}
 
+	// Dispatch to the interactive continue path if this is an interactive rebase.
+	if r.isInteractiveRebase() {
+		return r.RebaseInteractiveContinue()
+	}
+
 	stoppedSHA, err := r.readSequencerFile("stopped-sha")
 	if err != nil {
 		return fmt.Errorf("rebase continue: no stopped commit found: %w", err)

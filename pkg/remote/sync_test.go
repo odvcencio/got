@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func TestFetchIntoStoreBatchThenGetFallback(t *testing.T) {
@@ -52,7 +52,7 @@ func TestFetchIntoStoreBatchThenGetFallback(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch":
+		case r.Method == http.MethodPost && r.URL.Path == "/graft/alice/repo/objects/batch":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"objects": []map[string]any{
@@ -62,7 +62,7 @@ func TestFetchIntoStoreBatchThenGetFallback(t *testing.T) {
 				"truncated": true,
 			})
 			return
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/got/alice/repo/objects/"):
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/graft/alice/repo/objects/"):
 			h := object.Hash(path.Base(r.URL.Path))
 			if h != blobHash {
 				http.Error(w, "object not found", http.StatusNotFound)
@@ -77,7 +77,7 @@ func TestFetchIntoStoreBatchThenGetFallback(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestFetchIntoStoreUsesMultipleBatchRounds(t *testing.T) {
 	getCalls := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch":
+		case r.Method == http.MethodPost && r.URL.Path == "/graft/alice/repo/objects/batch":
 			batchCalls++
 			body, readErr := io.ReadAll(r.Body)
 			if readErr != nil {
@@ -183,7 +183,7 @@ func TestFetchIntoStoreUsesMultipleBatchRounds(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(resp)
 			return
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/got/alice/repo/objects/"):
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/graft/alice/repo/objects/"):
 			getCalls++
 			http.Error(w, "unexpected get", http.StatusInternalServerError)
 			return
@@ -193,7 +193,7 @@ func TestFetchIntoStoreUsesMultipleBatchRounds(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestFetchIntoStoreRoundLimitExceeded(t *testing.T) {
 	batchCalls := 0
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch":
+		case r.Method == http.MethodPost && r.URL.Path == "/graft/alice/repo/objects/batch":
 			batchCalls++
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -245,7 +245,7 @@ func TestFetchIntoStoreRoundLimitExceeded(t *testing.T) {
 				"truncated": true,
 			})
 			return
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/got/alice/repo/objects/"):
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/graft/alice/repo/objects/"):
 			http.Error(w, "unexpected get", http.StatusInternalServerError)
 			return
 		default:
@@ -254,7 +254,7 @@ func TestFetchIntoStoreRoundLimitExceeded(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestFetchIntoStoreRejectsHashMismatch(t *testing.T) {
 	}
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch" {
+		if r.Method == http.MethodPost && r.URL.Path == "/graft/alice/repo/objects/batch" {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"objects": []map[string]any{
@@ -327,7 +327,7 @@ func TestFetchIntoStoreRejectsHashMismatch(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,15 +525,15 @@ func TestFetchIntoStoreWithPackTransport(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/got/alice/repo/objects/batch":
+		case r.Method == http.MethodPost && r.URL.Path == "/graft/alice/repo/objects/batch":
 			accept := r.Header.Get("Accept")
-			if !strings.Contains(accept, "application/x-got-pack") {
-				t.Errorf("expected Accept header with application/x-got-pack, got %q", accept)
+			if !strings.Contains(accept, "application/x-graft-pack") {
+				t.Errorf("expected Accept header with application/x-graft-pack, got %q", accept)
 			}
-			w.Header().Set("Content-Type", "application/x-got-pack")
+			w.Header().Set("Content-Type", "application/x-graft-pack")
 			_, _ = w.Write(packBytes)
 			return
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/got/alice/repo/objects/"):
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/graft/alice/repo/objects/"):
 			// Should not need individual object fetches; all objects are in the pack.
 			http.Error(w, "unexpected get", http.StatusInternalServerError)
 			return
@@ -543,7 +543,7 @@ func TestFetchIntoStoreWithPackTransport(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
