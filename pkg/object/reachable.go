@@ -9,7 +9,7 @@ import (
 // ReachableSet returns all object hashes reachable from roots by following
 // object references. Missing roots are ignored.
 func (s *Store) ReachableSet(roots []Hash) (map[Hash]struct{}, error) {
-	roots = uniqueNormalizedHashes(roots)
+	roots = UniqueHashes(roots)
 	out := make(map[Hash]struct{}, len(roots))
 	if len(roots) == 0 {
 		return out, nil
@@ -35,7 +35,7 @@ func (s *Store) ReachableSet(roots []Hash) (map[Hash]struct{}, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reachable set read %s: %w", h, err)
 		}
-		refs, err := referencedHashes(objType, data)
+		refs, err := ReferencedHashes(objType, data)
 		if err != nil {
 			return nil, fmt.Errorf("reachable set parse %s (%s): %w", h, objType, err)
 		}
@@ -45,7 +45,9 @@ func (s *Store) ReachableSet(roots []Hash) (map[Hash]struct{}, error) {
 	return out, nil
 }
 
-func referencedHashes(objType ObjectType, data []byte) ([]Hash, error) {
+// ReferencedHashes returns object hashes directly referenced by the given
+// serialized object of the specified type.
+func ReferencedHashes(objType ObjectType, data []byte) ([]Hash, error) {
 	switch objType {
 	case TypeBlob, TypeEntity:
 		return nil, nil
@@ -94,7 +96,9 @@ func referencedHashes(objType ObjectType, data []byte) ([]Hash, error) {
 	}
 }
 
-func uniqueNormalizedHashes(in []Hash) []Hash {
+// UniqueHashes deduplicates and sorts hashes, trimming whitespace and
+// discarding empty entries.
+func UniqueHashes(in []Hash) []Hash {
 	if len(in) == 0 {
 		return nil
 	}

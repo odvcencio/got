@@ -798,11 +798,6 @@ func (c *Client) doWithLimit(req *http.Request, expectedStatus int, maxBytes int
 	return body, nil
 }
 
-// do is a backward-compatible wrapper using default limits.
-func (c *Client) do(req *http.Request, expectedStatus int) ([]byte, error) {
-	return c.doWithLimit(req, expectedStatus, responseLimitDefault, "")
-}
-
 func (c *Client) applyAuth(req *http.Request) {
 	req.Header.Set(headerProtocol, ProtocolVersion)
 	req.Header.Set(headerCapabilities, ClientCapabilities)

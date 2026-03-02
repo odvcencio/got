@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/odvcencio/graft/pkg/object"
@@ -91,7 +90,7 @@ func FetchIntoStoreShallow(ctx context.Context, c *Client, store *object.Store, 
 		return nil, err
 	}
 
-	roots := uniqueHashes(wants)
+	roots := object.UniqueHashes(wants)
 	if len(roots) == 0 {
 		return nil, fmt.Errorf("at least one want hash is required")
 	}
@@ -234,7 +233,7 @@ func resolveFetchConfig(cfg FetchConfig) (FetchConfig, error) {
 func initKnownHaves(haves []object.Hash) ([]object.Hash, map[object.Hash]struct{}) {
 	haveSet := make(map[object.Hash]struct{}, len(haves))
 	haveList := make([]object.Hash, 0, len(haves))
-	for _, h := range uniqueHashes(haves) {
+	for _, h := range object.UniqueHashes(haves) {
 		haveList = append(haveList, h)
 		haveSet[h] = struct{}{}
 	}
@@ -268,7 +267,7 @@ func selectBatchHaves(haves []object.Hash, max int) []object.Hash {
 // CollectObjectsForPush returns objects reachable from roots excluding objects
 // in stopRoots (and anything reachable from stopRoots).
 func CollectObjectsForPush(store *object.Store, roots, stopRoots []object.Hash) ([]ObjectRecord, error) {
-	roots = uniqueHashes(roots)
+	roots = object.UniqueHashes(roots)
 	if len(roots) == 0 {
 		return nil, fmt.Errorf("at least one root hash is required")
 	}
@@ -303,7 +302,7 @@ func CollectObjectsForPush(store *object.Store, roots, stopRoots []object.Hash) 
 		}
 		objects = append(objects, ObjectRecord{Hash: h, Type: objType, Data: data})
 
-		refs, err := referencedHashes(objType, data)
+		refs, err := object.ReferencedHashes(objType, data)
 		if err != nil {
 			return nil, fmt.Errorf("parse object %s (%s): %w", h, objType, err)
 		}
@@ -316,41 +315,7 @@ func CollectObjectsForPush(store *object.Store, roots, stopRoots []object.Hash) 
 // ReachableSet returns all local object hashes reachable from roots.
 // Missing roots are ignored.
 func ReachableSet(store *object.Store, roots []object.Hash) (map[object.Hash]struct{}, error) {
-	roots = uniqueHashes(roots)
-	out := make(map[object.Hash]struct{}, len(roots))
-	if len(roots) == 0 {
-		return out, nil
-	}
-
-	stack := make([]object.Hash, 0, len(roots))
-	stack = append(stack, roots...)
-
-	for len(stack) > 0 {
-		h := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-		if h == "" {
-			continue
-		}
-		if _, ok := out[h]; ok {
-			continue
-		}
-		if !store.Has(h) {
-			continue
-		}
-		out[h] = struct{}{}
-
-		objType, data, err := store.Read(h)
-		if err != nil {
-			return nil, fmt.Errorf("read object %s: %w", h, err)
-		}
-		refs, err := referencedHashes(objType, data)
-		if err != nil {
-			return nil, fmt.Errorf("parse object %s (%s): %w", h, objType, err)
-		}
-		stack = append(stack, refs...)
-	}
-
-	return out, nil
+	return store.ReachableSet(roots)
 }
 
 // ensureGraphClosureShallow walks the object graph from roots and fetches
@@ -398,7 +363,7 @@ func ensureGraphClosureShallow(ctx context.Context, c *Client, store *object.Sto
 			return written, fmt.Errorf("read object %s: %w", h, err)
 		}
 
-		refs, err := referencedHashes(objType, data)
+		refs, err := object.ReferencedHashes(objType, data)
 		if err != nil {
 			return written, fmt.Errorf("parse object %s (%s): %w", h, objType, err)
 		}
@@ -460,7 +425,7 @@ func ensureGraphClosure(ctx context.Context, c *Client, store *object.Store, roo
 		if err != nil {
 			return written, fmt.Errorf("read object %s: %w", h, err)
 		}
-		refs, err := referencedHashes(objType, data)
+		refs, err := object.ReferencedHashes(objType, data)
 		if err != nil {
 			return written, fmt.Errorf("parse object %s (%s): %w", h, objType, err)
 		}
@@ -493,74 +458,4 @@ func writeVerifiedObject(store *object.Store, obj ObjectRecord) (int, error) {
 		return 0, nil
 	}
 	return 1, nil
-}
-
-func referencedHashes(objType object.ObjectType, data []byte) ([]object.Hash, error) {
-	switch objType {
-	case object.TypeBlob, object.TypeEntity:
-		return nil, nil
-	case object.TypeTag:
-		tag, err := object.UnmarshalTag(data)
-		if err != nil {
-			return nil, err
-		}
-		return []object.Hash{tag.TargetHash}, nil
-	case object.TypeCommit:
-		commit, err := object.UnmarshalCommit(data)
-		if err != nil {
-			return nil, err
-		}
-		refs := make([]object.Hash, 0, 1+len(commit.Parents))
-		refs = append(refs, commit.TreeHash)
-		refs = append(refs, commit.Parents...)
-		return refs, nil
-	case object.TypeTree:
-		tree, err := object.UnmarshalTree(data)
-		if err != nil {
-			return nil, err
-		}
-		refs := make([]object.Hash, 0, len(tree.Entries)*2)
-		for _, e := range tree.Entries {
-			if e.IsDir {
-				refs = append(refs, e.SubtreeHash)
-				continue
-			}
-			refs = append(refs, e.BlobHash)
-			if e.EntityListHash != "" {
-				refs = append(refs, e.EntityListHash)
-			}
-		}
-		return refs, nil
-	case object.TypeEntityList:
-		el, err := object.UnmarshalEntityList(data)
-		if err != nil {
-			return nil, err
-		}
-		refs := make([]object.Hash, 0, len(el.EntityRefs))
-		refs = append(refs, el.EntityRefs...)
-		return refs, nil
-	default:
-		return nil, fmt.Errorf("unsupported object type %q", objType)
-	}
-}
-
-func uniqueHashes(in []object.Hash) []object.Hash {
-	if len(in) == 0 {
-		return nil
-	}
-	seen := make(map[object.Hash]struct{}, len(in))
-	out := make([]object.Hash, 0, len(in))
-	for _, h := range in {
-		h = object.Hash(strings.TrimSpace(string(h)))
-		if h == "" {
-			continue
-		}
-		if _, ok := seen[h]; ok {
-			continue
-		}
-		seen[h] = struct{}{}
-		out = append(out, h)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
-	return out
 }

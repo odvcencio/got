@@ -470,10 +470,10 @@ func TestReachableSetIgnoresMissingRoots(t *testing.T) {
 
 func TestUniqueHashes(t *testing.T) {
 	in := []object.Hash{"", "a", "b", "a", "  c  ", "b"}
-	got := uniqueHashes(in)
+	got := object.UniqueHashes(in)
 	want := []object.Hash{"a", "b", "c"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("uniqueHashes = %v, want %v", got, want)
+		t.Fatalf("UniqueHashes = %v, want %v", got, want)
 	}
 }
 

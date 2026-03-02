@@ -72,8 +72,3 @@ func retryDo(client *http.Client, req *http.Request, maxAttempts int) (*http.Res
 	}
 	return lastResp, nil
 }
-
-// isRetryableStatus returns true for HTTP status codes that should be retried.
-func isRetryableStatus(status int) bool {
-	return status == http.StatusTooManyRequests || status >= 500
-}
