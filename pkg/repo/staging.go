@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/entity"
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/entity"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // StagingEntry records the staged state of a single file.
@@ -34,17 +34,33 @@ type StagingEntry struct {
 	Inode          uint64      `json:"inode,omitempty"`
 }
 
-// Staging holds the full staging area (index) for a Got repository.
+// Staging holds the full staging area (index) for a Graft repository.
 type Staging struct {
 	Entries map[string]*StagingEntry `json:"entries"`
 }
+
+const (
+	AddProgressPhaseScanStart    = "scan_start"
+	AddProgressPhaseScanComplete = "scan_complete"
+	AddProgressPhaseStageFile    = "stage_file"
+	AddProgressPhaseWriteIndex   = "write_index"
+)
+
+type AddProgress struct {
+	Phase   string
+	Path    string
+	Current int
+	Total   int
+}
+
+type AddProgressFunc func(AddProgress)
 
 // indexPath returns the filesystem path to the staging index file.
 func (r *Repo) indexPath() string {
 	return filepath.Join(r.GotDir, "index")
 }
 
-// ReadStaging loads the staging area from .got/index. If the file does not
+// ReadStaging loads the staging area from .graft/index. If the file does not
 // exist, an empty Staging is returned (no error).
 func (r *Repo) ReadStaging() (*Staging, error) {
 	data, err := os.ReadFile(r.indexPath())
@@ -65,7 +81,7 @@ func (r *Repo) ReadStaging() (*Staging, error) {
 	return &stg, nil
 }
 
-// WriteStaging atomically writes the staging area to .got/index.
+// WriteStaging atomically writes the staging area to .graft/index.
 func (r *Repo) WriteStaging(s *Staging) error {
 	return r.writeStaging(s, true)
 }
@@ -113,11 +129,21 @@ func (r *Repo) writeStaging(s *Staging, invalidateStatusCache bool) error {
 //  3. A StagingEntry is created/updated with the resulting hashes and file
 //     metadata, and the staging area is flushed to disk.
 func (r *Repo) Add(paths []string) error {
+	return r.add(paths, nil)
+}
+
+// AddWithProgress stages files while emitting coarse-grained progress events.
+func (r *Repo) AddWithProgress(paths []string, progress AddProgressFunc) error {
+	return r.add(paths, progress)
+}
+
+func (r *Repo) add(paths []string, progress AddProgressFunc) error {
 	stg, err := r.ReadStaging()
 	if err != nil {
 		return fmt.Errorf("add: %w", err)
 	}
 
+	emitAddProgress(progress, AddProgress{Phase: AddProgressPhaseScanStart})
 	toAdd, err := r.expandAddPaths(paths)
 	if err != nil {
 		return fmt.Errorf("add: %w", err)
@@ -125,8 +151,18 @@ func (r *Repo) Add(paths []string) error {
 	if len(toAdd) == 0 {
 		return fmt.Errorf("add: no files matched")
 	}
+	emitAddProgress(progress, AddProgress{
+		Phase: AddProgressPhaseScanComplete,
+		Total: len(toAdd),
+	})
 
-	for _, relPath := range toAdd {
+	for i, relPath := range toAdd {
+		emitAddProgress(progress, AddProgress{
+			Phase:   AddProgressPhaseStageFile,
+			Path:    relPath,
+			Current: i + 1,
+			Total:   len(toAdd),
+		})
 		absPath := filepath.Join(r.RootDir, filepath.FromSlash(relPath))
 		content, err := os.ReadFile(absPath)
 		if err != nil {
@@ -136,6 +172,16 @@ func (r *Repo) Add(paths []string) error {
 		info, err := os.Stat(absPath)
 		if err != nil {
 			return fmt.Errorf("add: stat %q: %w", relPath, err)
+		}
+
+		// LFS: if file is tracked via .graftattributes filter=lfs,
+		// store actual content in LFS and replace with pointer.
+		if r.IsLFSTracked(relPath) {
+			oid, err := r.StoreLFSObject(content)
+			if err != nil {
+				return fmt.Errorf("add: lfs store %q: %w", relPath, err)
+			}
+			content = WriteLFSPointer(oid, int64(len(content)))
 		}
 
 		// Write blob.
@@ -164,10 +210,22 @@ func (r *Repo) Add(paths []string) error {
 		stg.Entries[relPath] = entry
 	}
 
+	emitAddProgress(progress, AddProgress{
+		Phase:   AddProgressPhaseWriteIndex,
+		Current: len(toAdd),
+		Total:   len(toAdd),
+	})
 	if err := r.WriteStaging(stg); err != nil {
 		return fmt.Errorf("add: %w", err)
 	}
 	return nil
+}
+
+func emitAddProgress(progress AddProgressFunc, event AddProgress) {
+	if progress == nil {
+		return
+	}
+	progress(event)
 }
 
 // Remove stages file deletions and optionally removes files from disk.

@@ -97,7 +97,17 @@ func (r *Repo) Checkout(target string) error {
 			return fmt.Errorf("checkout: read blob for %q: %w", f.Path, err)
 		}
 
-		if err := os.WriteFile(absPath, blob.Data, filePermFromMode(f.Mode)); err != nil {
+		blobData := blob.Data
+		// LFS: if blob is a pointer, restore actual content from LFS store.
+		if ptr, ok := ParseLFSPointer(blobData); ok {
+			lfsContent, err := r.ReadLFSObject(ptr.OID)
+			if err == nil {
+				blobData = lfsContent
+			}
+			// If LFS content not available, write pointer file as-is (lazy fetch later).
+		}
+
+		if err := os.WriteFile(absPath, blobData, filePermFromMode(f.Mode)); err != nil {
 			return fmt.Errorf("checkout: write %q: %w", f.Path, err)
 		}
 	}

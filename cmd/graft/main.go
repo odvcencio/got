@@ -44,6 +44,7 @@ func main() {
 	root.AddCommand(newStashCmd())
 	root.AddCommand(newRebaseCmd())
 	root.AddCommand(newSparseCheckoutCmd())
+	root.AddCommand(newLFSCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
