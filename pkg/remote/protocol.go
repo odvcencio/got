@@ -8,19 +8,29 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 const (
-	// ProtocolVersion is the current Got protocol version.
+	// ProtocolVersion is the current Graft protocol version.
 	ProtocolVersion = "1"
 
 	// ClientCapabilities lists all capabilities this client supports.
 	ClientCapabilities = "pack,zstd,sideband"
 
-	headerProtocol     = "Got-Protocol"
-	headerCapabilities = "Got-Capabilities"
-	headerLimits       = "Got-Limits"
+	headerProtocol     = "Graft-Protocol"
+	headerCapabilities = "Graft-Capabilities"
+	headerLimits       = "Graft-Limits"
+)
+
+// Well-known capability names used in the Graft protocol.
+const (
+	CapPack       = "pack"
+	CapZstd       = "zstd"
+	CapSideband   = "sideband"
+	CapShallow    = "shallow"
+	CapFilter     = "filter"
+	CapIncludeTag = "include-tag"
 )
 
 // ValidateHash checks that a hash is a valid 64-character lowercase hex string (SHA-256).
@@ -72,6 +82,12 @@ func (c Capabilities) Intersect(other Capabilities) Capabilities {
 	return result
 }
 
+// Len returns the number of capabilities in the set.
+func (c Capabilities) Len() int { return len(c.set) }
+
+// Add inserts a capability into the set.
+func (c *Capabilities) Add(name string) { c.set[name] = struct{}{} }
+
 // String returns a sorted comma-separated capability string.
 func (c Capabilities) String() string {
 	names := make([]string, 0, len(c.set))
@@ -96,14 +112,14 @@ func (e *RemoteError) Error() string {
 	return fmt.Sprintf("%s (%s)", e.Message, e.Code)
 }
 
-// ServerLimits holds server-advertised protocol limits parsed from the Got-Limits header.
+// ServerLimits holds server-advertised protocol limits parsed from the Graft-Limits header.
 type ServerLimits struct {
 	MaxBatch   int // max objects per batch (0 = use client default)
 	MaxPayload int // max payload bytes (0 = use client default)
 	MaxObject  int // max single object bytes (0 = use client default)
 }
 
-// ParseLimits parses a Got-Limits header value.
+// ParseLimits parses a Graft-Limits header value.
 // Format: "max_batch=50000,max_payload=67108864,max_object=33554432"
 // Unknown keys are ignored. Invalid values are ignored (field stays 0).
 func ParseLimits(raw string) ServerLimits {
