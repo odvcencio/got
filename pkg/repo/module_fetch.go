@@ -23,7 +23,10 @@ type ModuleFetchResult struct {
 //
 // The resolvedURL should be the canonicalized remote URL (e.g. expanded from
 // shorthand). If resolvedURL is empty, the module's configured URL is used.
-func (r *Repo) ModuleFetchAndUpdate(ctx context.Context, name, resolvedURL string) (*ModuleFetchResult, error) {
+//
+// When depth > 0 the fetch is shallow, limiting commit history to the given
+// number of ancestors. depth == 0 performs a full fetch (the default).
+func (r *Repo) ModuleFetchAndUpdate(ctx context.Context, name, resolvedURL string, depth int) (*ModuleFetchResult, error) {
 	m, err := r.GetModule(name)
 	if err != nil {
 		return nil, err
@@ -65,11 +68,12 @@ func (r *Repo) ModuleFetchAndUpdate(ctx context.Context, name, resolvedURL strin
 		haves = append(haves, m.Commit)
 	}
 
-	written, err := remote.FetchIntoStore(ctx, client, r.Store, []object.Hash{targetHash}, haves)
+	cfg := remote.FetchConfig{Depth: depth}
+	fetchResult, err := remote.FetchIntoStoreShallow(ctx, client, r.Store, []object.Hash{targetHash}, haves, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("module %s: fetch objects: %w", name, err)
 	}
-	result.ObjectCount = written
+	result.ObjectCount = fetchResult.Written
 	result.Changed = true
 
 	// Update the lock file to record the new commit.

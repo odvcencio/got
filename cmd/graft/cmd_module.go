@@ -228,7 +228,9 @@ func newModuleSyncCmd() *cobra.Command {
 }
 
 func newModuleUpdateCmd() *cobra.Command {
-	return &cobra.Command{
+	var depth int
+
+	cmd := &cobra.Command{
 		Use:   "update [<name>...]",
 		Short: "Fetch latest objects for modules",
 		Args:  cobra.ArbitraryArgs,
@@ -268,7 +270,7 @@ func newModuleUpdateCmd() *cobra.Command {
 					continue
 				}
 
-				result, err := r.ModuleFetchAndUpdate(ctx, m.Name, resolvedURL)
+				result, err := r.ModuleFetchAndUpdate(ctx, m.Name, resolvedURL, depth)
 				if err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s: %v\n", m.Name, err)
 					continue
@@ -292,6 +294,10 @@ func newModuleUpdateCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().IntVar(&depth, "depth", 0, "limit fetch depth (0 = full)")
+
+	return cmd
 }
 
 // inferModulePath derives a module working tree path from a URL.

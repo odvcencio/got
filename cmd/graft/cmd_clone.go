@@ -18,6 +18,7 @@ func newCloneCmd() *cobra.Command {
 	var branch string
 	var bootstrapGot bool
 	var depth int
+	var moduleDepth int
 	var noModules bool
 
 	cmd := &cobra.Command{
@@ -179,6 +180,7 @@ func newCloneCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&branch, "branch", "b", "", "branch to checkout after clone")
 	cmd.Flags().BoolVar(&bootstrapGot, "bootstrap-graft", true, "initialize .graft repository from cloned git HEAD snapshot")
 	cmd.Flags().IntVar(&depth, "depth", 0, "create a shallow clone with history truncated to the specified number of commits")
+	cmd.Flags().IntVar(&moduleDepth, "module-depth", 0, "depth limit for module fetches (0 = full)")
 	cmd.Flags().BoolVar(&noModules, "no-modules", false, "skip automatic module sync after clone")
 	return cmd
 }
