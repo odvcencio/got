@@ -3,10 +3,16 @@ package repo
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/odvcencio/graft/pkg/remote"
 )
 
 // Test 1: Round-trip pointer format — write then parse.
@@ -349,5 +355,355 @@ func TestLFS_WritePointerZeroSize(t *testing.T) {
 	}
 	if ptr.OID != oid {
 		t.Errorf("OID = %q, want %q", ptr.OID, oid)
+	}
+}
+
+// Test 9: PushLFSObjects uploads LFS objects referenced by a commit.
+func TestLFS_PushLFSObjects(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Store LFS content and create a pointer file.
+	binContent := []byte("binary content for push test")
+	oid, err := r.StoreLFSObject(binContent)
+	if err != nil {
+		t.Fatalf("StoreLFSObject: %v", err)
+	}
+
+	// Write pointer file and a plain file.
+	ptrData := WriteLFSPointer(oid, int64(len(binContent)))
+	if err := os.WriteFile(filepath.Join(dir, "model.bin"), ptrData, 0o644); err != nil {
+		t.Fatalf("write model.bin: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write readme.txt: %v", err)
+	}
+
+	if err := r.Add([]string{"model.bin", "readme.txt"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	commitHash, err := r.Commit("add lfs file", "test")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// Set up a mock LFS server.
+	var uploadedOIDs []string
+	var uploadedContent []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/lfs/objects/batch"):
+			var batchReq remote.LFSBatchRequest
+			body, _ := io.ReadAll(req.Body)
+			_ = json.Unmarshal(body, &batchReq)
+
+			resp := remote.LFSBatchResponse{}
+			for _, obj := range batchReq.Objects {
+				resp.Objects = append(resp.Objects, remote.LFSBatchResponseObject{
+					OID:  obj.OID,
+					Size: obj.Size,
+					Actions: map[string]remote.LFSAction{
+						"upload": {Href: "http://" + req.Host + "/lfs/upload/" + obj.OID},
+					},
+				})
+			}
+			w.Header().Set("Content-Type", "application/vnd.graft-lfs+json")
+			_ = json.NewEncoder(w).Encode(resp)
+
+		case strings.HasPrefix(req.URL.Path, "/lfs/upload/"):
+			uploadedOIDs = append(uploadedOIDs, strings.TrimPrefix(req.URL.Path, "/lfs/upload/"))
+			uploadedContent, _ = io.ReadAll(req.Body)
+			w.WriteHeader(http.StatusOK)
+
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	lfsClient := remote.NewLFSClientFromURL(ts.URL+"/graft/alice/repo", "")
+	count, err := r.PushLFSObjects(t.Context(), lfsClient, commitHash)
+	if err != nil {
+		t.Fatalf("PushLFSObjects: %v", err)
+	}
+
+	if count != 1 {
+		t.Fatalf("uploaded %d objects, want 1", count)
+	}
+	if len(uploadedOIDs) != 1 {
+		t.Fatalf("server received %d uploads, want 1", len(uploadedOIDs))
+	}
+	if uploadedOIDs[0] != oid {
+		t.Fatalf("uploaded OID = %q, want %q", uploadedOIDs[0], oid)
+	}
+	if string(uploadedContent) != string(binContent) {
+		t.Fatalf("uploaded content mismatch")
+	}
+}
+
+// Test 10: PushLFSObjects skips objects the server already has.
+func TestLFS_PushLFSObjects_ServerAlreadyHas(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	binContent := []byte("content server already has")
+	oid, err := r.StoreLFSObject(binContent)
+	if err != nil {
+		t.Fatalf("StoreLFSObject: %v", err)
+	}
+
+	ptrData := WriteLFSPointer(oid, int64(len(binContent)))
+	if err := os.WriteFile(filepath.Join(dir, "existing.bin"), ptrData, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"existing.bin"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	commitHash, err := r.Commit("existing lfs", "test")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	uploadCalls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if strings.HasSuffix(req.URL.Path, "/lfs/objects/batch") {
+			// No upload action = server already has it.
+			var batchReq remote.LFSBatchRequest
+			body, _ := io.ReadAll(req.Body)
+			_ = json.Unmarshal(body, &batchReq)
+
+			resp := remote.LFSBatchResponse{}
+			for _, obj := range batchReq.Objects {
+				resp.Objects = append(resp.Objects, remote.LFSBatchResponseObject{
+					OID:  obj.OID,
+					Size: obj.Size,
+					// No actions = server already has it.
+				})
+			}
+			w.Header().Set("Content-Type", "application/vnd.graft-lfs+json")
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
+		uploadCalls++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	lfsClient := remote.NewLFSClientFromURL(ts.URL+"/graft/alice/repo", "")
+	count, err := r.PushLFSObjects(t.Context(), lfsClient, commitHash)
+	if err != nil {
+		t.Fatalf("PushLFSObjects: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("uploaded %d objects, want 0", count)
+	}
+	if uploadCalls != 0 {
+		t.Fatalf("server received %d upload calls, want 0", uploadCalls)
+	}
+}
+
+// Test 11: PushLFSObjects with no LFS pointers in commit.
+func TestLFS_PushLFSObjects_NoPointers(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "readme.txt"), []byte("no lfs"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"readme.txt"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	commitHash, err := r.Commit("no lfs", "test")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	lfsClient := remote.NewLFSClientFromURL("https://example.com/graft/alice/repo", "")
+	count, err := r.PushLFSObjects(t.Context(), lfsClient, commitHash)
+	if err != nil {
+		t.Fatalf("PushLFSObjects: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("uploaded %d objects, want 0 (no LFS pointers)", count)
+	}
+}
+
+// Test 12: FetchLFSObjects downloads missing LFS content.
+func TestLFS_FetchLFSObjects(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Create content and compute its OID without storing in LFS.
+	binContent := []byte("binary content for fetch test")
+	hash := sha256.Sum256(binContent)
+	oid := hex.EncodeToString(hash[:])
+
+	// Write a pointer file for missing content.
+	ptrData := WriteLFSPointer(oid, int64(len(binContent)))
+	if err := os.WriteFile(filepath.Join(dir, "asset.bin"), ptrData, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"asset.bin"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Verify content is missing.
+	statuses, _ := r.LFSStatus()
+	if len(statuses) != 1 || statuses[0].HasContent {
+		t.Fatal("expected 1 LFS file with missing content")
+	}
+
+	// Mock LFS server that serves the content.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/lfs/objects/batch"):
+			var batchReq remote.LFSBatchRequest
+			body, _ := io.ReadAll(req.Body)
+			_ = json.Unmarshal(body, &batchReq)
+
+			resp := remote.LFSBatchResponse{}
+			for _, obj := range batchReq.Objects {
+				resp.Objects = append(resp.Objects, remote.LFSBatchResponseObject{
+					OID:  obj.OID,
+					Size: obj.Size,
+					Actions: map[string]remote.LFSAction{
+						"download": {Href: "http://" + req.Host + "/lfs/download/" + obj.OID},
+					},
+				})
+			}
+			w.Header().Set("Content-Type", "application/vnd.graft-lfs+json")
+			_ = json.NewEncoder(w).Encode(resp)
+
+		case strings.HasPrefix(req.URL.Path, "/lfs/download/"):
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(binContent)
+
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	lfsClient := remote.NewLFSClientFromURL(ts.URL+"/graft/alice/repo", "")
+	count, err := r.FetchLFSObjects(t.Context(), lfsClient)
+	if err != nil {
+		t.Fatalf("FetchLFSObjects: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("downloaded %d objects, want 1", count)
+	}
+
+	// Verify content is now present.
+	got, err := r.ReadLFSObject(oid)
+	if err != nil {
+		t.Fatalf("ReadLFSObject: %v", err)
+	}
+	if string(got) != string(binContent) {
+		t.Fatalf("fetched content mismatch")
+	}
+}
+
+// Test 13: FetchLFSObjects skips objects already present locally.
+func TestLFS_FetchLFSObjects_AlreadyPresent(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	binContent := []byte("content already local")
+	oid, err := r.StoreLFSObject(binContent)
+	if err != nil {
+		t.Fatalf("StoreLFSObject: %v", err)
+	}
+
+	ptrData := WriteLFSPointer(oid, int64(len(binContent)))
+	if err := os.WriteFile(filepath.Join(dir, "local.bin"), ptrData, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"local.bin"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// No server needed since nothing should be downloaded.
+	lfsClient := remote.NewLFSClientFromURL("https://example.com/graft/alice/repo", "")
+	count, err := r.FetchLFSObjects(t.Context(), lfsClient)
+	if err != nil {
+		t.Fatalf("FetchLFSObjects: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("downloaded %d objects, want 0 (all present)", count)
+	}
+}
+
+// Test 14: FetchLFSObjects verifies hash of downloaded content.
+func TestLFS_FetchLFSObjects_HashMismatch(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Write a pointer that expects specific content.
+	oid := strings.Repeat("a", 64)
+	ptrData := WriteLFSPointer(oid, 100)
+	if err := os.WriteFile(filepath.Join(dir, "bad.bin"), ptrData, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"bad.bin"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Server returns wrong content.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch {
+		case strings.HasSuffix(req.URL.Path, "/lfs/objects/batch"):
+			var batchReq remote.LFSBatchRequest
+			body, _ := io.ReadAll(req.Body)
+			_ = json.Unmarshal(body, &batchReq)
+
+			resp := remote.LFSBatchResponse{}
+			for _, obj := range batchReq.Objects {
+				resp.Objects = append(resp.Objects, remote.LFSBatchResponseObject{
+					OID:  obj.OID,
+					Size: obj.Size,
+					Actions: map[string]remote.LFSAction{
+						"download": {Href: "http://" + req.Host + "/lfs/download/" + obj.OID},
+					},
+				})
+			}
+			w.Header().Set("Content-Type", "application/vnd.graft-lfs+json")
+			_ = json.NewEncoder(w).Encode(resp)
+
+		case strings.HasPrefix(req.URL.Path, "/lfs/download/"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("this content does not match the expected OID"))
+
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	lfsClient := remote.NewLFSClientFromURL(ts.URL+"/graft/alice/repo", "")
+	_, err = r.FetchLFSObjects(t.Context(), lfsClient)
+	if err == nil {
+		t.Fatal("expected hash mismatch error")
+	}
+	if !strings.Contains(err.Error(), "hash mismatch") {
+		t.Fatalf("error = %v, expected hash mismatch", err)
 	}
 }

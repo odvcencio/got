@@ -17,6 +17,7 @@ func newCloneCmd() *cobra.Command {
 	var remoteName string
 	var branch string
 	var bootstrapGot bool
+	var depth int
 
 	cmd := &cobra.Command{
 		Use:   "clone <remote-url> [directory]",
@@ -62,6 +63,10 @@ func newCloneCmd() *cobra.Command {
 				return err
 			}
 
+			if depth > 0 && isLocalSource {
+				return fmt.Errorf("--depth is not supported for local clone sources")
+			}
+
 			if isLocalSource {
 				return cloneFromLocalSource(cmd, localSourceRoot, source, absDest, remoteName, branch)
 			}
@@ -94,8 +99,18 @@ func newCloneCmd() *cobra.Command {
 				}
 			}
 			if len(wants) > 0 {
-				if _, err := remote.FetchIntoStore(cmd.Context(), client, r.Store, wants, nil); err != nil {
+				cfg := remote.FetchConfig{
+					Depth: depth,
+				}
+				result, err := remote.FetchIntoStoreShallow(cmd.Context(), client, r.Store, wants, nil, cfg)
+				if err != nil {
 					return err
+				}
+				// Write shallow boundaries if this is a shallow clone.
+				if depth > 0 && result.ShallowState != nil && result.ShallowState.Len() > 0 {
+					if err := remote.WriteShallowFile(r.GraftDir, result.ShallowState); err != nil {
+						return fmt.Errorf("write shallow file: %w", err)
+					}
 				}
 			}
 
@@ -139,6 +154,15 @@ func newCloneCmd() *cobra.Command {
 				return err
 			}
 
+			// Fetch any LFS objects referenced by the checked-out tree.
+			lfsClient := remote.NewLFSClient(client)
+			lfsCount, lfsErr := r.FetchLFSObjects(cmd.Context(), lfsClient)
+			if lfsErr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: LFS fetch failed: %v\n", lfsErr)
+			} else if lfsCount > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "fetched %d LFS objects\n", lfsCount)
+			}
+
 			fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", remoteSource, absDest)
 			return nil
 		},
@@ -147,6 +171,7 @@ func newCloneCmd() *cobra.Command {
 	cmd.Flags().StringVar(&remoteName, "remote-name", "origin", "name to assign to the cloned remote")
 	cmd.Flags().StringVarP(&branch, "branch", "b", "", "branch to checkout after clone")
 	cmd.Flags().BoolVar(&bootstrapGot, "bootstrap-graft", true, "initialize .graft repository from cloned git HEAD snapshot")
+	cmd.Flags().IntVar(&depth, "depth", 0, "create a shallow clone with history truncated to the specified number of commits")
 	return cmd
 }
 

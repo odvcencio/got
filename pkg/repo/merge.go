@@ -3,6 +3,7 @@ package repo
 import (
 	"bytes"
 	"container/heap"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/odvcencio/got/pkg/merge"
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/merge"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // FileMergeReport records the merge outcome for a single file.
@@ -186,6 +187,9 @@ func (r *Repo) isAncestorWithGeneration(state *mergeBaseTraversalState, ancestor
 
 		curGeneration, err := state.generation(r, cur)
 		if err != nil {
+			if errors.Is(err, ErrShallowBoundary) {
+				continue
+			}
 			return false, err
 		}
 		if curGeneration <= ancestorGeneration {
@@ -194,6 +198,9 @@ func (r *Repo) isAncestorWithGeneration(state *mergeBaseTraversalState, ancestor
 
 		commit, err := state.readCommit(r, cur)
 		if err != nil {
+			if errors.Is(err, ErrShallowBoundary) {
+				continue
+			}
 			return false, err
 		}
 		for _, p := range commit.Parents {
@@ -205,6 +212,9 @@ func (r *Repo) isAncestorWithGeneration(state *mergeBaseTraversalState, ancestor
 			}
 			parentGeneration, err := state.generation(r, p)
 			if err != nil {
+				if errors.Is(err, ErrShallowBoundary) {
+					continue
+				}
 				return false, err
 			}
 			if parentGeneration < ancestorGeneration {
@@ -303,6 +313,9 @@ func (r *Repo) findMergeBaseWithPruning(state *mergeBaseTraversalState, a, b obj
 
 		commit, err := state.readCommit(r, item.hash)
 		if err != nil {
+			if errors.Is(err, ErrShallowBoundary) {
+				continue
+			}
 			return "", false, err
 		}
 
@@ -313,6 +326,9 @@ func (r *Repo) findMergeBaseWithPruning(state *mergeBaseTraversalState, a, b obj
 
 			parentGeneration, err := state.generation(r, p)
 			if err != nil {
+				if errors.Is(err, ErrShallowBoundary) {
+					continue
+				}
 				return "", false, err
 			}
 			if best != "" && parentGeneration < bestGeneration {
@@ -698,7 +714,7 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 		// Create merge commit with two parents.
 		mergeHash, err := r.commitMerge(
 			fmt.Sprintf("Merge branch '%s'", branchName),
-			"got-merge",
+			"graft-merge",
 			headHash,
 			branchHash,
 		)

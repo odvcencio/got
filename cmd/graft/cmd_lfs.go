@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/odvcencio/graft/pkg/remote"
 	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
 )
@@ -22,6 +23,8 @@ func newLFSCmd() *cobra.Command {
 	cmd.AddCommand(newLFSUntrackCmd())
 	cmd.AddCommand(newLFSLsFilesCmd())
 	cmd.AddCommand(newLFSStatusCmd())
+	cmd.AddCommand(newLFSPushCmd())
+	cmd.AddCommand(newLFSFetchCmd())
 
 	return cmd
 }
@@ -205,6 +208,99 @@ func newLFSStatusCmd() *cobra.Command {
 				}
 				fmt.Fprintf(out, "  %s  %s (oid: %s, size: %d, content: %s)\n",
 					s.Path, shortOID, s.OID, s.Size, contentStatus)
+			}
+			return nil
+		},
+	}
+}
+
+func newLFSPushCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "push [remote]",
+		Short: "Push LFS objects to a remote",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := repo.Open(".")
+			if err != nil {
+				return err
+			}
+
+			remoteArg := ""
+			if len(args) == 1 {
+				remoteArg = args[0]
+			}
+			_, remoteURL, transport, err := resolveRemoteNameAndSpec(r, remoteArg)
+			if err != nil {
+				return err
+			}
+			if transport == remoteTransportGit {
+				return fmt.Errorf("lfs push: git transport remotes are not supported; use a graft protocol endpoint")
+			}
+
+			client, err := remote.NewClient(remoteURL)
+			if err != nil {
+				return err
+			}
+
+			headHash, err := r.ResolveRef("HEAD")
+			if err != nil {
+				return fmt.Errorf("lfs push: resolve HEAD: %w", err)
+			}
+
+			lfsClient := remote.NewLFSClient(client)
+			count, err := r.PushLFSObjects(cmd.Context(), lfsClient, headHash)
+			if err != nil {
+				return fmt.Errorf("lfs push: %w", err)
+			}
+
+			if count == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "no LFS objects to push")
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "pushed %d LFS objects\n", count)
+			}
+			return nil
+		},
+	}
+}
+
+func newLFSFetchCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "fetch [remote]",
+		Short: "Fetch missing LFS objects from a remote",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := repo.Open(".")
+			if err != nil {
+				return err
+			}
+
+			remoteArg := ""
+			if len(args) == 1 {
+				remoteArg = args[0]
+			}
+			_, remoteURL, transport, err := resolveRemoteNameAndSpec(r, remoteArg)
+			if err != nil {
+				return err
+			}
+			if transport == remoteTransportGit {
+				return fmt.Errorf("lfs fetch: git transport remotes are not supported; use a graft protocol endpoint")
+			}
+
+			client, err := remote.NewClient(remoteURL)
+			if err != nil {
+				return err
+			}
+
+			lfsClient := remote.NewLFSClient(client)
+			count, err := r.FetchLFSObjects(cmd.Context(), lfsClient)
+			if err != nil {
+				return fmt.Errorf("lfs fetch: %w", err)
+			}
+
+			if count == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "no LFS objects to fetch")
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "fetched %d LFS objects\n", count)
 			}
 			return nil
 		},

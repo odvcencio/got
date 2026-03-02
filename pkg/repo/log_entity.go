@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/odvcencio/got/pkg/entity"
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/entity"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // LogEntry carries commit metadata with its hash for log output.
@@ -19,7 +19,8 @@ type LogEntry struct {
 
 // LogByEntity walks first-parent history from start and returns up to limit
 // commits that touched entityKey. If pathFilter is non-empty, matching is
-// restricted to that path.
+// restricted to that path. In a shallow repository, walking stops at shallow
+// boundaries.
 func (r *Repo) LogByEntity(start object.Hash, limit int, pathFilter, entityKey string) ([]LogEntry, error) {
 	if limit <= 0 || start == "" || entityKey == "" {
 		return nil, nil
@@ -29,6 +30,8 @@ func (r *Repo) LogByEntity(start object.Hash, limit int, pathFilter, entityKey s
 	if normalizedPath != "" {
 		return r.logByEntityTrackedPath(start, limit, normalizedPath, entityKey)
 	}
+
+	shallow, _ := r.ShallowState()
 
 	results := make([]LogEntry, 0, limit)
 	current := start
@@ -53,13 +56,19 @@ func (r *Repo) LogByEntity(start object.Hash, limit int, pathFilter, entityKey s
 		if len(c.Parents) == 0 {
 			break
 		}
-		current = c.Parents[0]
+		next := c.Parents[0]
+		if shallow != nil && shallow.IsShallow(next) {
+			break
+		}
+		current = next
 	}
 
 	return results, nil
 }
 
 func (r *Repo) logByEntityTrackedPath(start object.Hash, limit int, relPath, entityKey string) ([]LogEntry, error) {
+	shallowState, _ := r.ShallowState()
+
 	results := make([]LogEntry, 0, limit)
 	currentHash := start
 	locator := entityLocator{Path: relPath, Key: entityKey}
@@ -96,52 +105,61 @@ func (r *Repo) logByEntityTrackedPath(start object.Hash, limit int, relPath, ent
 		touched := false
 		nextLocator := locator
 
-		if parentHash == "" {
+		// Treat a shallow boundary parent the same as no parent.
+		parentIsShallow := parentHash != "" && shallowState != nil && shallowState.IsShallow(parentHash)
+
+		if parentHash == "" || parentIsShallow {
 			touched = inCurrent
 		} else {
 			parentCommit, err := r.Store.ReadCommit(parentHash)
 			if err != nil {
-				return nil, fmt.Errorf("log by entity: read parent commit %s: %w", parentHash, err)
+				if errors.Is(err, os.ErrNotExist) && shallowState != nil {
+					// Parent missing in a shallow repo — treat as boundary.
+					touched = inCurrent
+				} else {
+					return nil, fmt.Errorf("log by entity: read parent commit %s: %w", parentHash, err)
+				}
 			}
-
-			beforeEntries, err := r.treeEntriesByPath(parentCommit.TreeHash)
-			if err != nil {
-				return nil, err
-			}
-			beforeCache := newCommitEntityCache(beforeEntries)
-
-			if inCurrent {
-				parentEntity, inParent, err := r.resolveParentEntity(
-					currentEntity,
-					parentHash,
-					beforeCache,
-					changedCandidatePaths(beforeEntries, afterEntries, ""),
-				)
+			if err == nil {
+				beforeEntries, err := r.treeEntriesByPath(parentCommit.TreeHash)
 				if err != nil {
-					if isEntityExtractionError(err) {
-						currentHash = parentHash
-						continue
+					return nil, err
+				}
+				beforeCache := newCommitEntityCache(beforeEntries)
+
+				if inCurrent {
+					parentEntity, inParent, err := r.resolveParentEntity(
+						currentEntity,
+						parentHash,
+						beforeCache,
+						changedCandidatePaths(beforeEntries, afterEntries, ""),
+					)
+					if err != nil {
+						if isEntityExtractionError(err) {
+							currentHash = parentHash
+							continue
+						}
+						return nil, fmt.Errorf("log by entity: %w", err)
 					}
-					return nil, fmt.Errorf("log by entity: %w", err)
-				}
-				if !inParent || parentEntity.BodyHash != currentEntity.BodyHash {
-					touched = true
-				}
-				if inParent {
-					nextLocator = parentEntity.Locator
-				}
-			} else {
-				parentEntity, inParent, err := r.findEntityByLocator(beforeCache, parentHash, locator)
-				if err != nil {
-					if isEntityExtractionError(err) {
-						currentHash = parentHash
-						continue
+					if !inParent || parentEntity.BodyHash != currentEntity.BodyHash {
+						touched = true
 					}
-					return nil, fmt.Errorf("log by entity: %w", err)
-				}
-				if inParent {
-					touched = true
-					nextLocator = parentEntity.Locator
+					if inParent {
+						nextLocator = parentEntity.Locator
+					}
+				} else {
+					parentEntity, inParent, err := r.findEntityByLocator(beforeCache, parentHash, locator)
+					if err != nil {
+						if isEntityExtractionError(err) {
+							currentHash = parentHash
+							continue
+						}
+						return nil, fmt.Errorf("log by entity: %w", err)
+					}
+					if inParent {
+						touched = true
+						nextLocator = parentEntity.Locator
+					}
 				}
 			}
 		}
@@ -151,7 +169,7 @@ func (r *Repo) logByEntityTrackedPath(start object.Hash, limit int, relPath, ent
 		}
 		locator = nextLocator
 
-		if parentHash == "" {
+		if parentHash == "" || parentIsShallow {
 			break
 		}
 		currentHash = parentHash
@@ -177,15 +195,25 @@ func (r *Repo) commitTouchesEntity(commit *object.CommitObj, pathFilter, entityK
 		return false, err
 	}
 
+	shallow, _ := r.ShallowState()
 	beforeEntries := map[string]TreeFileEntry{}
 	if len(commit.Parents) > 0 {
-		parent, err := r.Store.ReadCommit(commit.Parents[0])
-		if err != nil {
-			return false, fmt.Errorf("log by entity: read parent commit %s: %w", commit.Parents[0], err)
-		}
-		beforeEntries, err = r.treeEntriesByPath(parent.TreeHash)
-		if err != nil {
-			return false, err
+		parentHash := commit.Parents[0]
+		isShallowParent := shallow != nil && shallow.IsShallow(parentHash)
+		if !isShallowParent {
+			parent, err := r.Store.ReadCommit(parentHash)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) && shallow != nil {
+					// Missing parent in shallow repo — treat as root.
+				} else {
+					return false, fmt.Errorf("log by entity: read parent commit %s: %w", parentHash, err)
+				}
+			} else {
+				beforeEntries, err = r.treeEntriesByPath(parent.TreeHash)
+				if err != nil {
+					return false, err
+				}
+			}
 		}
 	}
 

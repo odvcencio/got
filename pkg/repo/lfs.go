@@ -2,13 +2,18 @@ package repo
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/odvcencio/graft/pkg/object"
+	"github.com/odvcencio/graft/pkg/remote"
 )
 
 const lfsPointerVersion = "graft-lfs/1"
@@ -198,4 +203,182 @@ func (r *Repo) LFSStatus() ([]LFSFileStatus, error) {
 	}
 
 	return result, nil
+}
+
+// CollectLFSPointersFromCommit walks the tree for a given commit hash and
+// returns all LFS pointers found in the blobs. Each pointer's OID, size, and
+// the file path are returned.
+func (r *Repo) CollectLFSPointersFromCommit(commitHash object.Hash) ([]LFSFileStatus, error) {
+	commit, err := r.Store.ReadCommit(commitHash)
+	if err != nil {
+		return nil, fmt.Errorf("collect lfs pointers: read commit %s: %w", commitHash, err)
+	}
+
+	files, err := r.FlattenTree(commit.TreeHash)
+	if err != nil {
+		return nil, fmt.Errorf("collect lfs pointers: flatten tree: %w", err)
+	}
+
+	var result []LFSFileStatus
+	for _, f := range files {
+		blob, err := r.Store.ReadBlob(f.BlobHash)
+		if err != nil {
+			continue
+		}
+		ptr, ok := ParseLFSPointer(blob.Data)
+		if !ok {
+			continue
+		}
+		hasContent := false
+		if _, statErr := os.Stat(r.LFSObjectPath(ptr.OID)); statErr == nil {
+			hasContent = true
+		}
+		result = append(result, LFSFileStatus{
+			Path:       f.Path,
+			OID:        ptr.OID,
+			Size:       ptr.Size,
+			HasContent: hasContent,
+		})
+	}
+	return result, nil
+}
+
+// PushLFSObjects uploads locally-stored LFS objects that are referenced by the
+// given commit to the remote via the LFS batch transfer protocol. It returns
+// the number of objects uploaded.
+func (r *Repo) PushLFSObjects(ctx context.Context, lfsClient *remote.LFSClient, commitHash object.Hash) (int, error) {
+	pointers, err := r.CollectLFSPointersFromCommit(commitHash)
+	if err != nil {
+		return 0, err
+	}
+	if len(pointers) == 0 {
+		return 0, nil
+	}
+
+	// Deduplicate OIDs and filter to objects we have locally.
+	seen := make(map[string]struct{})
+	var batchObjects []remote.LFSBatchObject
+	for _, p := range pointers {
+		if _, dup := seen[p.OID]; dup {
+			continue
+		}
+		seen[p.OID] = struct{}{}
+		if !p.HasContent {
+			continue // cannot upload what we do not have
+		}
+		batchObjects = append(batchObjects, remote.LFSBatchObject{
+			OID:  p.OID,
+			Size: p.Size,
+		})
+	}
+
+	if len(batchObjects) == 0 {
+		return 0, nil
+	}
+
+	batchResp, err := lfsClient.BatchRequest(ctx, remote.LFSBatchRequest{
+		Operation: "upload",
+		Objects:   batchObjects,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("push lfs objects: batch request: %w", err)
+	}
+
+	uploaded := 0
+	for _, obj := range batchResp.Objects {
+		if obj.Error != nil {
+			continue // server rejected this object; skip
+		}
+		uploadAction, ok := obj.Actions["upload"]
+		if !ok {
+			continue // server already has it
+		}
+
+		content, err := r.ReadLFSObject(obj.OID)
+		if err != nil {
+			return uploaded, fmt.Errorf("push lfs objects: read %s: %w", obj.OID, err)
+		}
+
+		if err := lfsClient.Upload(ctx, uploadAction, bytes.NewReader(content), int64(len(content))); err != nil {
+			return uploaded, fmt.Errorf("push lfs objects: upload %s: %w", obj.OID, err)
+		}
+		uploaded++
+	}
+
+	return uploaded, nil
+}
+
+// FetchLFSObjects downloads missing LFS objects referenced by the staging
+// index from the remote via the LFS batch transfer protocol. It returns the
+// number of objects downloaded.
+func (r *Repo) FetchLFSObjects(ctx context.Context, lfsClient *remote.LFSClient) (int, error) {
+	statuses, err := r.LFSStatus()
+	if err != nil {
+		return 0, fmt.Errorf("fetch lfs objects: %w", err)
+	}
+
+	// Collect OIDs that are missing locally.
+	seen := make(map[string]struct{})
+	var batchObjects []remote.LFSBatchObject
+	for _, s := range statuses {
+		if s.HasContent {
+			continue
+		}
+		if _, dup := seen[s.OID]; dup {
+			continue
+		}
+		seen[s.OID] = struct{}{}
+		batchObjects = append(batchObjects, remote.LFSBatchObject{
+			OID:  s.OID,
+			Size: s.Size,
+		})
+	}
+
+	if len(batchObjects) == 0 {
+		return 0, nil
+	}
+
+	batchResp, err := lfsClient.BatchRequest(ctx, remote.LFSBatchRequest{
+		Operation: "download",
+		Objects:   batchObjects,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("fetch lfs objects: batch request: %w", err)
+	}
+
+	downloaded := 0
+	for _, obj := range batchResp.Objects {
+		if obj.Error != nil {
+			continue
+		}
+		dlAction, ok := obj.Actions["download"]
+		if !ok {
+			continue
+		}
+
+		rc, err := lfsClient.Download(ctx, dlAction)
+		if err != nil {
+			return downloaded, fmt.Errorf("fetch lfs objects: download %s: %w", obj.OID, err)
+		}
+
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			return downloaded, fmt.Errorf("fetch lfs objects: read download %s: %w", obj.OID, err)
+		}
+
+		// Verify the downloaded content matches the expected OID.
+		hash := sha256.Sum256(data)
+		gotOID := hex.EncodeToString(hash[:])
+		if gotOID != obj.OID {
+			return downloaded, fmt.Errorf("fetch lfs objects: hash mismatch for %s: got %s", obj.OID, gotOID)
+		}
+
+		if _, err := r.StoreLFSObject(data); err != nil {
+			return downloaded, fmt.Errorf("fetch lfs objects: store %s: %w", obj.OID, err)
+		}
+		downloaded++
+	}
+
+	return downloaded, nil
 }
