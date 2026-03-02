@@ -62,6 +62,22 @@ func NewIgnoreChecker(repoRoot string) *IgnoreChecker {
 		}
 	}
 
+	// Auto-ignore module working tree paths from .graftmodules.
+	if mf, err := os.Open(filepath.Join(repoRoot, ".graftmodules")); err == nil {
+		defer mf.Close()
+		if modules, err := ParseGraftModules(mf); err == nil {
+			for _, m := range modules {
+				if m.Path != "" {
+					ic.patterns = append(ic.patterns, ignorePattern{
+						pattern:  m.Path,
+						dirOnly:  true,
+						hasSlash: strings.Contains(m.Path, "/"),
+					})
+				}
+			}
+		}
+	}
+
 	ic.compile()
 	return ic
 }
