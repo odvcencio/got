@@ -1,9 +1,13 @@
 package object
 
 import (
+	"bytes"
+	"compress/zlib"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -163,6 +167,10 @@ func (s *Store) gcWithReachableSet(reachable map[Hash]struct{}) (*GCSummary, err
 	}
 	idxTmpRemoved = true
 
+	// Invalidate the in-memory pack index cache so subsequent reads pick up
+	// the newly written index.
+	s.InvalidatePackIndexCache()
+
 	pruned := 0
 	for _, h := range toPack {
 		if err := os.Remove(s.objectPath(h)); err != nil {
@@ -295,19 +303,198 @@ func (s *Store) Verify() (*VerifySummary, error) {
 	return report, nil
 }
 
+// cachedPackIndex returns the parsed PackIndex for the given idx file path,
+// using an in-memory cache keyed by file path and validated by mod-time.
+func (s *Store) cachedPackIndex(idxPath string) (*PackIndex, error) {
+	info, err := os.Stat(idxPath)
+	if err != nil {
+		return nil, err
+	}
+	modNano := info.ModTime().UnixNano()
+
+	s.packIdxMu.Lock()
+	if s.packIdxCache != nil {
+		if cached, ok := s.packIdxCache[idxPath]; ok && cached.modTime == modNano {
+			s.packIdxMu.Unlock()
+			return cached.idx, nil
+		}
+	}
+	s.packIdxMu.Unlock()
+
+	idxData, err := os.ReadFile(idxPath)
+	if err != nil {
+		return nil, err
+	}
+	idx, err := ReadPackIndex(idxData)
+	if err != nil {
+		return nil, err
+	}
+
+	s.packIdxMu.Lock()
+	if s.packIdxCache == nil {
+		s.packIdxCache = make(map[string]packIndexCacheEntry)
+	}
+	s.packIdxCache[idxPath] = packIndexCacheEntry{idx: idx, modTime: modNano}
+	s.packIdxMu.Unlock()
+
+	return idx, nil
+}
+
+// InvalidatePackIndexCache drops all cached pack indices, forcing a re-read on
+// the next access. This is useful after GC or external pack modifications.
+func (s *Store) InvalidatePackIndexCache() {
+	s.packIdxMu.Lock()
+	s.packIdxCache = nil
+	s.packIdxMu.Unlock()
+}
+
+// readPackEntryAt reads and decompresses a single pack entry at the given byte
+// offset from a pack file. It validates the pack header checksum on first read
+// but only decompresses the targeted entry, avoiding the cost of parsing every
+// entry in the pack.
+func readPackEntryAt(packPath string, offset uint64, packChecksum Hash) (PackEntry, error) {
+	f, err := os.Open(packPath)
+	if err != nil {
+		return PackEntry{}, fmt.Errorf("open pack %s: %w", filepath.Base(packPath), err)
+	}
+	defer f.Close()
+
+	// Validate pack header.
+	headerBuf := make([]byte, packHeaderSize)
+	if _, err := io.ReadFull(f, headerBuf); err != nil {
+		return PackEntry{}, fmt.Errorf("read pack header %s: %w", filepath.Base(packPath), err)
+	}
+	if _, err := UnmarshalPackHeader(headerBuf); err != nil {
+		return PackEntry{}, err
+	}
+
+	// Seek to the entry offset.
+	if _, err := f.Seek(int64(offset), io.SeekStart); err != nil {
+		return PackEntry{}, fmt.Errorf("seek to offset %d in %s: %w", offset, filepath.Base(packPath), err)
+	}
+
+	// Read enough data from offset for the entry header + compressed payload.
+	// We read a generous buffer; the zlib reader will stop at the stream boundary.
+	// For very large objects this could be suboptimal, but it avoids needing to
+	// know the compressed size up front.
+	stat, err := f.Stat()
+	if err != nil {
+		return PackEntry{}, fmt.Errorf("stat pack %s: %w", filepath.Base(packPath), err)
+	}
+	// The entry data extends from offset to (at most) before the 32-byte
+	// trailing checksum. Entity trailers may exist after the checksum, but
+	// entries live before it.
+	maxEntryEnd := stat.Size() - sha256.Size
+	if int64(offset) >= maxEntryEnd {
+		return PackEntry{}, fmt.Errorf("offset %d past pack data boundary in %s", offset, filepath.Base(packPath))
+	}
+	entryBufLen := maxEntryEnd - int64(offset)
+	entryBuf := make([]byte, entryBufLen)
+	if _, err := io.ReadFull(f, entryBuf); err != nil {
+		return PackEntry{}, fmt.Errorf("read entry data at offset %d in %s: %w", offset, filepath.Base(packPath), err)
+	}
+
+	// Decode entry header.
+	objType, size, headerLen, err := decodePackEntryHeaderStrict(entryBuf)
+	if err != nil {
+		return PackEntry{}, fmt.Errorf("decode entry header at offset %d: %w", offset, err)
+	}
+	pos := headerLen
+
+	// Handle delta base references.
+	baseDistance := uint64(0)
+	baseRef := Hash("")
+	if objType == PackOfsDelta {
+		dist, dn, err := decodeOfsDeltaDistance(entryBuf[pos:])
+		if err != nil {
+			return PackEntry{}, fmt.Errorf("decode ofs-delta at offset %d: %w", offset, err)
+		}
+		baseDistance = dist
+		pos += dn
+	}
+	if objType == PackRefDelta {
+		if pos+32 > len(entryBuf) {
+			return PackEntry{}, fmt.Errorf("truncated ref-delta base hash at offset %d", offset)
+		}
+		baseRef = Hash(hex.EncodeToString(entryBuf[pos : pos+32]))
+		pos += 32
+	}
+
+	// Decompress the zlib payload.
+	sub := bytes.NewReader(entryBuf[pos:])
+	zr, err := zlib.NewReader(sub)
+	if err != nil {
+		return PackEntry{}, fmt.Errorf("zlib reader at offset %d: %w", offset, err)
+	}
+	raw, err := io.ReadAll(zr)
+	if err != nil {
+		_ = zr.Close()
+		return PackEntry{}, fmt.Errorf("decompress at offset %d: %w", offset, err)
+	}
+	if err := zr.Close(); err != nil {
+		return PackEntry{}, fmt.Errorf("close zlib at offset %d: %w", offset, err)
+	}
+	if uint64(len(raw)) != size {
+		return PackEntry{}, fmt.Errorf("size mismatch at offset %d: header=%d decoded=%d", offset, size, len(raw))
+	}
+
+	return PackEntry{
+		Type:         objType,
+		OriginalType: objType,
+		Size:         size,
+		Data:         raw,
+		Offset:       offset,
+		BaseDistance:  baseDistance,
+		BaseRef:      baseRef,
+	}, nil
+}
+
+// readResolvedPackEntryAt reads a single pack entry at the given offset,
+// resolving delta chains by recursively reading base entries.
+func readResolvedPackEntryAt(packPath string, offset uint64, packChecksum Hash) (PackEntry, error) {
+	entry, err := readPackEntryAt(packPath, offset, packChecksum)
+	if err != nil {
+		return PackEntry{}, err
+	}
+
+	switch entry.Type {
+	case PackCommit, PackTree, PackBlob, PackTag:
+		return entry, nil
+
+	case PackOfsDelta:
+		if entry.BaseDistance == 0 || entry.BaseDistance > entry.Offset {
+			return PackEntry{}, fmt.Errorf("invalid ofs-delta base distance %d at offset %d", entry.BaseDistance, entry.Offset)
+		}
+		baseOffset := entry.Offset - entry.BaseDistance
+		base, err := readResolvedPackEntryAt(packPath, baseOffset, packChecksum)
+		if err != nil {
+			return PackEntry{}, fmt.Errorf("resolve ofs-delta base at offset %d: %w", baseOffset, err)
+		}
+		out, err := applyDelta(base.Data, entry.Data)
+		if err != nil {
+			return PackEntry{}, fmt.Errorf("apply ofs-delta at offset %d: %w", offset, err)
+		}
+		entry.Type = base.Type
+		entry.Data = out
+		return entry, nil
+
+	case PackRefDelta:
+		return PackEntry{}, fmt.Errorf("ref-delta resolution not supported in seek-based reader at offset %d", offset)
+
+	default:
+		return PackEntry{}, fmt.Errorf("unsupported pack type %d at offset %d", entry.Type, offset)
+	}
+}
+
 func (s *Store) readFromPacks(h Hash) (ObjectType, []byte, error) {
 	idxPaths, err := s.listPackIndexPaths()
 	if err != nil {
 		return "", nil, err
 	}
 	for _, idxPath := range idxPaths {
-		idxData, err := os.ReadFile(idxPath)
+		idx, err := s.cachedPackIndex(idxPath)
 		if err != nil {
-			return "", nil, fmt.Errorf("object read %s: read pack index %s: %w", h, filepath.Base(idxPath), err)
-		}
-		idx, err := ReadPackIndex(idxData)
-		if err != nil {
-			return "", nil, fmt.Errorf("object read %s: parse pack index %s: %w", h, filepath.Base(idxPath), err)
+			return "", nil, fmt.Errorf("object read %s: pack index %s: %w", h, filepath.Base(idxPath), err)
 		}
 		indexEntry, ok := idx.Find(h)
 		if !ok {
@@ -315,32 +502,9 @@ func (s *Store) readFromPacks(h Hash) (ObjectType, []byte, error) {
 		}
 
 		packPath := packPathForIndex(idxPath)
-		packData, err := os.ReadFile(packPath)
+		packEntry, err := readResolvedPackEntryAt(packPath, indexEntry.Offset, idx.PackChecksum)
 		if err != nil {
-			return "", nil, fmt.Errorf("object read %s: read pack %s: %w", h, filepath.Base(packPath), err)
-		}
-
-		pf, err := ReadPackResolved(packData)
-		if err != nil {
-			return "", nil, fmt.Errorf("object read %s: parse pack %s: %w", h, filepath.Base(packPath), err)
-		}
-		if pf.Checksum != idx.PackChecksum {
-			return "", nil, fmt.Errorf(
-				"object read %s: checksum mismatch between idx %s and pack %s",
-				h,
-				filepath.Base(idxPath),
-				filepath.Base(packPath),
-			)
-		}
-
-		packEntry, ok := findPackEntryByOffset(pf.Entries, indexEntry.Offset)
-		if !ok {
-			return "", nil, fmt.Errorf(
-				"object read %s: pack %s missing entry at offset %d",
-				h,
-				filepath.Base(packPath),
-				indexEntry.Offset,
-			)
+			return "", nil, fmt.Errorf("object read %s: pack %s: %w", h, filepath.Base(packPath), err)
 		}
 		return decodeIndexedPackEntry(h, packEntry)
 	}
@@ -354,11 +518,7 @@ func (s *Store) hasInPacks(h Hash) bool {
 		return false
 	}
 	for _, idxPath := range idxPaths {
-		idxData, err := os.ReadFile(idxPath)
-		if err != nil {
-			continue
-		}
-		idx, err := ReadPackIndex(idxData)
+		idx, err := s.cachedPackIndex(idxPath)
 		if err != nil {
 			continue
 		}
@@ -425,13 +585,9 @@ func (s *Store) packedHashSet() (map[Hash]struct{}, error) {
 			return nil, fmt.Errorf("read pack for index %s: %w", filepath.Base(idxPath), err)
 		}
 
-		idxData, err := os.ReadFile(idxPath)
+		idx, err := s.cachedPackIndex(idxPath)
 		if err != nil {
-			return nil, fmt.Errorf("read pack index %s: %w", filepath.Base(idxPath), err)
-		}
-		idx, err := ReadPackIndex(idxData)
-		if err != nil {
-			return nil, fmt.Errorf("parse pack index %s: %w", filepath.Base(idxPath), err)
+			return nil, fmt.Errorf("pack index %s: %w", filepath.Base(idxPath), err)
 		}
 		for _, entry := range idx.Entries() {
 			out[entry.Hash] = struct{}{}

@@ -10,12 +10,26 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+// packIndexCacheEntry holds a cached parsed pack index along with the
+// filesystem mod-time at the time it was loaded, so stale entries can be
+// detected and re-read after a new GC cycle writes a replacement idx file.
+type packIndexCacheEntry struct {
+	idx     *PackIndex
+	modTime int64 // UnixNano of the idx file when cached
+}
 
 // Store is a content-addressed object store with a 2-character fan-out
 // directory layout: objects/ab/cdef0123...
 type Store struct {
 	root string
+
+	// packIdxMu guards packIdxCache.
+	packIdxMu sync.Mutex
+	// packIdxCache maps absolute idx file path → cached parsed index.
+	packIdxCache map[string]packIndexCacheEntry
 }
 
 // NewStore creates a Store rooted at the given directory. The objects/
