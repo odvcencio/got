@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
-
-	"github.com/odvcencio/graft/pkg/object"
 )
 
 // ShortlogEntry summarises commits made by a single author.
@@ -96,35 +93,3 @@ func (r *Repo) Shortlog(opts ShortlogOptions) ([]ShortlogEntry, error) {
 	return entries, nil
 }
 
-// commitTitle returns the first line of s (up to the first newline, or all of
-// s if there is no newline).
-func commitTitle(s string) string {
-	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
-		return s[:idx]
-	}
-	return s
-}
-
-// ResolveTreeish resolves a treeish string to a commit hash. It tries, in
-// order: refs/tags/<treeish>, refs/heads/<treeish>, HEAD (if treeish is
-// "HEAD"), and finally treats the value as a raw hash.
-func (r *Repo) ResolveTreeish(treeish string) (object.Hash, error) {
-	// Try tag ref first.
-	if h, err := r.ResolveRef("refs/tags/" + treeish); err == nil {
-		return h, nil
-	}
-	// Try branch ref.
-	if h, err := r.ResolveRef("refs/heads/" + treeish); err == nil {
-		return h, nil
-	}
-	// Try as-is (covers HEAD and full ref paths).
-	if h, err := r.ResolveRef(treeish); err == nil {
-		return h, nil
-	}
-	// Treat as raw hash: verify the commit exists.
-	h := object.Hash(treeish)
-	if _, err := r.Store.ReadCommit(h); err == nil {
-		return h, nil
-	}
-	return "", fmt.Errorf("cannot resolve treeish %q", treeish)
-}

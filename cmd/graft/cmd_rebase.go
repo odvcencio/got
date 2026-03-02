@@ -116,7 +116,7 @@ func rebaseInteractiveStart(r *repo.Repo, out io.Writer, upstream string) error 
 		return err
 	}
 
-	fmt.Fprintf(out, "Interactive rebase onto %s... %d commit(s)\n", shortHashStr(ontoHash), count)
+	fmt.Fprintf(out, "Interactive rebase onto %s... %d commit(s)\n", shortHash(ontoHash), count)
 
 	err = r.RebaseInteractive(upstream)
 	return handleRebaseResult(r, out, ontoHash, err)
@@ -144,7 +144,7 @@ func rebaseStart(r *repo.Repo, out io.Writer, upstream string) error {
 		return err
 	}
 
-	fmt.Fprintf(out, "Rebasing onto %s... Replaying %d commit(s)\n", shortHashStr(ontoHash), count)
+	fmt.Fprintf(out, "Rebasing onto %s... Replaying %d commit(s)\n", shortHash(ontoHash), count)
 
 	err = r.Rebase(upstream)
 	return handleRebaseResult(r, out, ontoHash, err)
@@ -171,7 +171,7 @@ func rebaseOnto(r *repo.Repo, out io.Writer, newbase, upstream string) error {
 		return err
 	}
 
-	fmt.Fprintf(out, "Rebasing onto %s... Replaying %d commit(s)\n", shortHashStr(ontoHash), count)
+	fmt.Fprintf(out, "Rebasing onto %s... Replaying %d commit(s)\n", shortHash(ontoHash), count)
 
 	err = r.RebaseOnto(newbase, upstream)
 	return handleRebaseResult(r, out, ontoHash, err)
@@ -196,7 +196,7 @@ func rebaseAbort(r *repo.Repo, out io.Writer) error {
 		return err
 	}
 
-	fmt.Fprintf(out, "Rebase aborted. Restored to %s\n", shortHashStr(origHead))
+	fmt.Fprintf(out, "Rebase aborted. Restored to %s\n", shortHash(origHead))
 	return nil
 }
 
@@ -206,7 +206,7 @@ func rebaseSkip(r *repo.Repo, out io.Writer) error {
 	stoppedHash := readSequencerStopped(r)
 	ontoHash := readSequencerOnto(r)
 
-	fmt.Fprintf(out, "Skipped %s\n", shortHashStr(stoppedHash))
+	fmt.Fprintf(out, "Skipped %s\n", shortHash(stoppedHash))
 
 	err := r.RebaseSkip()
 	return handleRebaseResult(r, out, ontoHash, err)
@@ -216,7 +216,7 @@ func rebaseSkip(r *repo.Repo, out io.Writer) error {
 // appropriate messages for conflicts or success.
 func handleRebaseResult(r *repo.Repo, out io.Writer, ontoHash object.Hash, err error) error {
 	if err == nil {
-		fmt.Fprintf(out, "Successfully rebased onto %s\n", shortHashStr(ontoHash))
+		fmt.Fprintf(out, "Successfully rebased onto %s\n", shortHash(ontoHash))
 		return nil
 	}
 
@@ -278,15 +278,6 @@ func countCommits(r *repo.Repo, stop, tip object.Hash) (int, error) {
 		current = c.Parents[0]
 	}
 	return count, nil
-}
-
-// shortHashStr returns the first 8 characters of a hash for display.
-func shortHashStr(h object.Hash) string {
-	s := string(h)
-	if len(s) > 8 {
-		return s[:8]
-	}
-	return s
 }
 
 // readSequencerOnto reads the "onto" hash from the rebase sequencer state.

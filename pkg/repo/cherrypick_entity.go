@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/entity"
-	"github.com/odvcencio/got/pkg/merge"
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/entity"
+	"github.com/odvcencio/graft/pkg/merge"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // CherryPickEntityResult captures the outcome of an entity-scoped cherry-pick.
@@ -128,7 +128,7 @@ func (r *Repo) CherryPickEntity(selector string, targetHash object.Hash) (*Cherr
 
 	author := strings.TrimSpace(targetCommit.Author)
 	if author == "" {
-		author = "got-cherry-pick"
+		author = "graft-cherry-pick"
 	}
 
 	message := fmt.Sprintf("cherry-pick %s --entity %s", shortHash(targetHash), selectorLabel)
@@ -244,10 +244,3 @@ func extractEntityListAndMap(path string, state cherryPickFileState) (*entity.En
 	return el, entity.BuildEntityMap(el), nil
 }
 
-func shortHash(h object.Hash) string {
-	s := string(h)
-	if len(s) > 8 {
-		return s[:8]
-	}
-	return s
-}

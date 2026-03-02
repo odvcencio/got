@@ -121,7 +121,7 @@ func newBisectSkipCmd() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Skipping %s...\n", shortHashStr(head))
+			fmt.Fprintf(out, "Skipping %s...\n", shortHash(head))
 
 			result, err := r.BisectSkip()
 			if err != nil {
@@ -238,7 +238,7 @@ func printBisectResult(out io.Writer, result *repo.BisectResult) {
 		return
 	}
 	fmt.Fprintf(out, "Bisecting: %d revisions left to test (roughly %d steps)\n", result.Remaining, result.Steps)
-	fmt.Fprintf(out, "[%s] %s\n", shortHashStr(result.Current), result.Message)
+	fmt.Fprintf(out, "[%s] %s\n", shortHash(result.Current), result.Message)
 }
 
 // readBisectStartRef reads the original HEAD ref from bisect state, before

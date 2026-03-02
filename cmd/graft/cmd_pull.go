@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/odvcencio/graft/pkg/object"
 	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
 )
@@ -156,14 +155,6 @@ func newPullCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&allowMerge, "merge", false, "allow a merge commit when fast-forward is not possible")
 	return cmd
-}
-
-func shortHash(h object.Hash) string {
-	s := string(h)
-	if len(s) <= 8 {
-		return s
-	}
-	return s[:8]
 }
 
 func temporaryPullBranch(branch string) string {

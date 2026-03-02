@@ -76,7 +76,7 @@ func newWorktreeListCmd() *cobra.Command {
 
 			out := cmd.OutOrStdout()
 			for _, wt := range worktrees {
-				hash := shortHashStr(wt.Head)
+				hash := shortHash(wt.Head)
 				if wt.Branch != "" {
 					fmt.Fprintf(out, "%s\t%s\t[%s]\n", wt.Path, hash, wt.Branch)
 				} else {

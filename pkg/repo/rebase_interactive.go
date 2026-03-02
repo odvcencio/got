@@ -188,7 +188,7 @@ func (r *Repo) generateTodoList(commits []object.Hash) (string, error) {
 			return "", fmt.Errorf("read commit %s: %w", shortHash(h), err)
 		}
 		// Use first line of commit message as summary.
-		summary := firstLine(c.Message)
+		summary := commitTitle(c.Message)
 		hashStr := string(h)
 		if len(hashStr) > 8 {
 			hashStr = hashStr[:8]
@@ -686,13 +686,6 @@ func (r *Repo) execCommand(command string) error {
 	return cmd.Run()
 }
 
-// firstLine returns the first line of a string.
-func firstLine(s string) string {
-	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
-		return s[:idx]
-	}
-	return s
-}
 
 // mergeFilesForRebase is a helper that performs a three-way merge and returns
 // the merged content. Unlike the full replaySingleCommit, it does not track
