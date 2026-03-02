@@ -72,6 +72,11 @@ func (r *Repo) WriteModuleLock(lock *ModuleLock) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("write modules lock: write: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("write modules lock: sync: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
 		return fmt.Errorf("write modules lock: close: %w", err)

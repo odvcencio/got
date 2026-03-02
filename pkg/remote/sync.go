@@ -456,6 +456,11 @@ func ensureGraphClosure(ctx context.Context, c *Client, store *object.Store, roo
 			written += n
 		}
 
+		// NOTE: The store.Read here re-reads data we may have just
+		// fetched above. This is intentional for correctness — the
+		// object may have already been present locally (skipping the
+		// fetch branch), and reading from the store is the uniform
+		// path that works for both cases.
 		objType, data, err := store.Read(h)
 		if err != nil {
 			return written, fmt.Errorf("read object %s: %w", h, err)

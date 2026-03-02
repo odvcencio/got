@@ -176,7 +176,7 @@ func (r *Repo) RevertContinue() (*RevertResult, error) {
 	// Read saved head-name and verify HEAD hasn't moved to a different branch.
 	headName, _ := seq.ReadFile("head-name")
 	currentHead, err := r.Head()
-	if err == nil && strings.TrimSpace(currentHead) != headName {
+	if err == nil && currentHead != headName {
 		return nil, fmt.Errorf("revert continue: HEAD has moved since revert started (expected %s, got %s); abort and retry", headName, currentHead)
 	}
 

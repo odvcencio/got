@@ -10,6 +10,8 @@ import (
 	"github.com/odvcencio/graft/pkg/object"
 )
 
+const maxBisectWalkDepth = 100000 // safety bound for BFS during bisect
+
 // BisectResult holds the outcome of a bisect step (start, good, bad, skip).
 type BisectResult struct {
 	Done      bool        // true if bisect is complete (found first bad commit)
@@ -260,6 +262,35 @@ func (r *Repo) bisectDir() string {
 	return filepath.Join(r.GraftDir, "bisect")
 }
 
+// bisectWriteFileAtomic atomically writes content to a file in the bisect
+// directory using temp+fsync+rename.
+func (r *Repo) bisectWriteFileAtomic(name, content string) error {
+	target := filepath.Join(r.bisectDir(), name)
+	dir := filepath.Dir(target)
+
+	tmp, err := os.CreateTemp(dir, name+".tmp.*")
+	if err != nil {
+		return fmt.Errorf("write bisect %s: create temp: %w", name, err)
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write bisect %s: write: %w", name, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write bisect %s: sync: %w", name, err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("write bisect %s: close: %w", name, err)
+	}
+	return os.Rename(tmpPath, target)
+}
+
 // bisectWriteState writes all bisect state files to .graft/bisect/.
 func (r *Repo) bisectWriteState(bad object.Hash, goods []object.Hash, startRef string) error {
 	dir := r.bisectDir()
@@ -268,7 +299,7 @@ func (r *Repo) bisectWriteState(bad object.Hash, goods []object.Hash, startRef s
 	}
 
 	// Write bad hash.
-	if err := os.WriteFile(filepath.Join(dir, "bad"), []byte(string(bad)+"\n"), 0o644); err != nil {
+	if err := r.bisectWriteFileAtomic("bad", string(bad)+"\n"); err != nil {
 		return fmt.Errorf("write bisect state: bad: %w", err)
 	}
 
@@ -278,7 +309,7 @@ func (r *Repo) bisectWriteState(bad object.Hash, goods []object.Hash, startRef s
 	}
 
 	// Write start-ref.
-	if err := os.WriteFile(filepath.Join(dir, "start-ref"), []byte(startRef+"\n"), 0o644); err != nil {
+	if err := r.bisectWriteFileAtomic("start-ref", startRef+"\n"); err != nil {
 		return fmt.Errorf("write bisect state: start-ref: %w", err)
 	}
 
@@ -287,7 +318,7 @@ func (r *Repo) bisectWriteState(bad object.Hash, goods []object.Hash, startRef s
 
 // bisectWriteBad writes the bad hash to the state file.
 func (r *Repo) bisectWriteBad(bad object.Hash) error {
-	return os.WriteFile(filepath.Join(r.bisectDir(), "bad"), []byte(string(bad)+"\n"), 0o644)
+	return r.bisectWriteFileAtomic("bad", string(bad)+"\n")
 }
 
 // bisectWriteGoods writes the list of good hashes to the state file.
@@ -297,7 +328,7 @@ func (r *Repo) bisectWriteGoods(goods []object.Hash) error {
 		lines = append(lines, string(g))
 	}
 	data := strings.Join(lines, "\n") + "\n"
-	return os.WriteFile(filepath.Join(r.bisectDir(), "good"), []byte(data), 0o644)
+	return r.bisectWriteFileAtomic("good", data)
 }
 
 // bisectReadBad reads the bad commit hash from state.
@@ -357,7 +388,7 @@ func (r *Repo) bisectAppendLog(line string) error {
 // bisectWriteExpectedSteps writes the estimated remaining steps to state.
 func (r *Repo) bisectWriteExpectedSteps(steps int) error {
 	data := fmt.Sprintf("%d\n", steps)
-	return os.WriteFile(filepath.Join(r.bisectDir(), "expected-steps"), []byte(data), 0o644)
+	return r.bisectWriteFileAtomic("expected-steps", data)
 }
 
 // bisectAdvance finds the midpoint between bad and goods, checks it out, and
@@ -475,6 +506,9 @@ func (r *Repo) bisectWalkAncestors(start object.Hash, visited map[object.Hash]in
 	queue := []item{{start, startDist}}
 
 	for len(queue) > 0 {
+		if len(visited) >= maxBisectWalkDepth {
+			break // safety bound to prevent unbounded memory usage
+		}
 		cur := queue[0]
 		queue = queue[1:]
 
@@ -503,6 +537,9 @@ func (r *Repo) bisectMarkGoodAncestors(start object.Hash, visited map[object.Has
 	queue := []object.Hash{start}
 
 	for len(queue) > 0 {
+		if len(visited) >= maxBisectWalkDepth {
+			break // safety bound to prevent unbounded memory usage
+		}
 		cur := queue[0]
 		queue = queue[1:]
 

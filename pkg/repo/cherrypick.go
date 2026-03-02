@@ -222,7 +222,7 @@ func (r *Repo) CherryPickContinue() (*CherryPickResult, error) {
 	// Read saved head-name and verify HEAD hasn't moved to a different branch.
 	headName, _ := seq.ReadFile("head-name")
 	currentHead, err := r.Head()
-	if err == nil && strings.TrimSpace(currentHead) != headName {
+	if err == nil && currentHead != headName {
 		return nil, fmt.Errorf("cherry-pick continue: HEAD has moved since cherry-pick started (expected %s, got %s); abort and retry", headName, currentHead)
 	}
 
@@ -309,7 +309,8 @@ func (r *Repo) CherryPickAbort() error {
 
 	// Restore the branch ref to original HEAD.
 	if strings.HasPrefix(headName, "refs/heads/") {
-		if err := r.UpdateRef(headName, origHead); err != nil {
+		currentRef, _ := r.ResolveRef(headName)
+		if err := r.UpdateRefCAS(headName, origHead, currentRef); err != nil {
 			return fmt.Errorf("cherry-pick abort: restore branch ref: %w", err)
 		}
 	}

@@ -393,8 +393,9 @@ func (r *Repo) resolveToHash(target string) (object.Hash, error) {
 	return "", fmt.Errorf("cannot resolve %q to a commit", target)
 }
 
-// collectCommits walks from tip backwards (following first parents) until it
-// reaches stop (exclusive). Returns the commits in oldest-first order.
+// collectCommits walks first-parent links from tip backward to stop (exclusive),
+// returning commits in oldest-first order. This follows first-parent only,
+// matching Git's rebase behavior of linearizing history.
 func (r *Repo) collectCommits(stop, tip object.Hash) ([]object.Hash, error) {
 	var commits []object.Hash
 	current := tip

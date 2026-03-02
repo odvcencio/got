@@ -101,38 +101,69 @@ func (r *Repo) WriteCommitGraph() error {
 		}
 	}
 
-	// Compute generation numbers. Root commits (no parents) have
-	// generation 1. A commit's generation is max(parent generations) + 1.
-	// Process in reverse BFS order (parents tend to appear later in BFS
-	// from tips, so reverse gives us parents-first).
+	// Compute generation numbers iteratively using an explicit stack to
+	// avoid stack overflow on deep histories. Root commits (no parents)
+	// have generation 1. A commit's generation is max(parent gens) + 1.
 	generations := make(map[object.Hash]uint32, len(entries))
 
-	// Use recursive computation with memoization since BFS order from
-	// tips is children-first, not parents-first.
-	var computeGen func(h object.Hash) uint32
-	computeGen = func(h object.Hash) uint32 {
-		if g, ok := generations[h]; ok {
+	var computeGen func(start object.Hash) uint32
+	computeGen = func(start object.Hash) uint32 {
+		if g, ok := generations[start]; ok {
 			return g
 		}
-		entry, ok := entries[h]
-		if !ok {
-			return 0
+		type frame struct {
+			hash  object.Hash
+			phase int // 0 = descend into parents, 1 = compute
 		}
-		var maxParentGen uint32
-		for _, p := range entry.Parents {
-			pg := computeGen(p)
-			if pg > maxParentGen {
-				maxParentGen = pg
+		stack := []frame{{hash: start, phase: 0}}
+		for len(stack) > 0 {
+			top := &stack[len(stack)-1]
+			entry, ok := entries[top.hash]
+			if !ok {
+				generations[top.hash] = 0
+				stack = stack[:len(stack)-1]
+				continue
+			}
+			if top.phase == 0 {
+				if _, ok := generations[top.hash]; ok {
+					stack = stack[:len(stack)-1]
+					continue
+				}
+				top.phase = 1
+				allReady := true
+				for _, p := range entry.Parents {
+					if _, ok := generations[p]; !ok {
+						allReady = false
+						stack = append(stack, frame{hash: p, phase: 0})
+					}
+				}
+				if allReady {
+					var maxParentGen uint32
+					for _, p := range entry.Parents {
+						if pg := generations[p]; pg > maxParentGen {
+							maxParentGen = pg
+						}
+					}
+					generations[top.hash] = maxParentGen + 1
+					stack = stack[:len(stack)-1]
+				}
+			} else {
+				var maxParentGen uint32
+				for _, p := range entry.Parents {
+					if pg := generations[p]; pg > maxParentGen {
+						maxParentGen = pg
+					}
+				}
+				generations[top.hash] = maxParentGen + 1
+				stack = stack[:len(stack)-1]
 			}
 		}
-		g := maxParentGen + 1
-		generations[h] = g
-		return g
+		return generations[start]
 	}
 
 	for h := range entries {
-		g := computeGen(h)
-		entries[h].Generation = g
+		computeGen(h)
+		entries[h].Generation = generations[h]
 	}
 
 	// Write the graph file.
@@ -152,8 +183,28 @@ func (r *Repo) WriteCommitGraph() error {
 		return fmt.Errorf("write commit graph: mkdir: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return fmt.Errorf("write commit graph: write file: %w", err)
+	tmp, err := os.CreateTemp(dir, "commit-graph.tmp.*")
+	if err != nil {
+		return fmt.Errorf("write commit graph: create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write commit graph: write: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write commit graph: sync: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("write commit graph: close: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("write commit graph: rename: %w", err)
 	}
 
 	return nil

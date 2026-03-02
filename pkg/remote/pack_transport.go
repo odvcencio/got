@@ -115,8 +115,20 @@ func DecodePackTransport(data []byte) ([]ObjectRecord, error) {
 
 		hash := object.HashObject(objType, entry.Data)
 
-		// Check for entity type overrides.
-		if override, ok := typeOverrides[hash]; ok {
+		// Check for entity type overrides. The trailer records the correct
+		// hash (computed with the real entity type by the sender), but
+		// packTypeToObjectType maps all entity types to TypeBlob. We must
+		// probe candidate entity types to find a matching override.
+		if _, ok := typeOverrides[hash]; !ok && len(typeOverrides) > 0 {
+			for _, candidateType := range []object.ObjectType{object.TypeEntity, object.TypeEntityList} {
+				candidateHash := object.HashObject(candidateType, entry.Data)
+				if override, ok := typeOverrides[candidateHash]; ok {
+					objType = override
+					hash = candidateHash
+					break
+				}
+			}
+		} else if override, ok := typeOverrides[hash]; ok {
 			objType = override
 			hash = object.HashObject(objType, entry.Data)
 		}

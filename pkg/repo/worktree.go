@@ -10,6 +10,31 @@ import (
 	"github.com/odvcencio/graft/pkg/object"
 )
 
+// writeWorktreeFileAtomic atomically writes a file in the given directory.
+func writeWorktreeFileAtomic(dir, name, content string) error {
+	target := filepath.Join(dir, name)
+	tmp, err := os.CreateTemp(dir, name+".tmp.*")
+	if err != nil {
+		return fmt.Errorf("write %s: create temp: %w", name, err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write %s: write: %w", name, err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write %s: sync: %w", name, err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("write %s: close: %w", name, err)
+	}
+	return os.Rename(tmpPath, target)
+}
+
 // WorktreeInfo describes a single worktree (main or linked).
 type WorktreeInfo struct {
 	Name   string      // worktree name (directory name under .graft/worktrees/)
@@ -66,7 +91,7 @@ func (r *Repo) WorktreeAdd(path, branch string) (*Repo, error) {
 
 	// Write HEAD for the worktree (symbolic ref to the branch).
 	headContent := "ref: refs/heads/" + branch + "\n"
-	if err := os.WriteFile(filepath.Join(wtMetaDir, "HEAD"), []byte(headContent), 0o644); err != nil {
+	if err := writeWorktreeFileAtomic(wtMetaDir, "HEAD", headContent); err != nil {
 		return nil, fmt.Errorf("worktree add: write HEAD: %w", err)
 	}
 
@@ -75,12 +100,12 @@ func (r *Repo) WorktreeAdd(path, branch string) (*Repo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("worktree add: compute commondir: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(wtMetaDir, "commondir"), []byte(commonRel+"\n"), 0o644); err != nil {
+	if err := writeWorktreeFileAtomic(wtMetaDir, "commondir", commonRel+"\n"); err != nil {
 		return nil, fmt.Errorf("worktree add: write commondir: %w", err)
 	}
 
 	// Write path file: absolute path to the worktree working directory (for listing/removal).
-	if err := os.WriteFile(filepath.Join(wtMetaDir, "path"), []byte(absPath+"\n"), 0o644); err != nil {
+	if err := writeWorktreeFileAtomic(wtMetaDir, "path", absPath+"\n"); err != nil {
 		return nil, fmt.Errorf("worktree add: write path: %w", err)
 	}
 

@@ -90,7 +90,10 @@ func (s *sequencer) WriteFile(name, content string) error {
 	return os.Rename(tmpPath, target)
 }
 
-// WriteFiles atomically writes multiple named files.
+// WriteFiles writes multiple named files to the state directory.
+// Note: writes are not transactional — if a later write fails, earlier files
+// persist. This is acceptable because sequencer state is designed to be
+// recoverable from partial writes (each file is independently atomic).
 func (s *sequencer) WriteFiles(files map[string]string) error {
 	for name, content := range files {
 		if err := s.WriteFile(name, content); err != nil {

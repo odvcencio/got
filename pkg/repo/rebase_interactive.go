@@ -625,8 +625,7 @@ func (r *Repo) amendHeadWithStaged() error {
 	}
 
 	// Update HEAD.
-	headPath := filepath.Join(r.GraftDir, "HEAD")
-	if err := os.WriteFile(headPath, []byte(string(newHash)+"\n"), 0o644); err != nil {
+	if err := r.setHeadDetached(newHash); err != nil {
 		return fmt.Errorf("update HEAD: %w", err)
 	}
 
@@ -645,6 +644,8 @@ func (r *Repo) isInteractiveRebase() bool {
 
 // resolveShortHash resolves a potentially abbreviated hash to the full hash
 // by looking it up as a commit. If the hash is already full, it returns it directly.
+// Falls back to a linear walk from sequencer orig-head, bounded to prevent
+// excessive traversal on deep histories.
 func (r *Repo) resolveShortHash(h object.Hash) (object.Hash, error) {
 	// Try reading directly first.
 	if _, err := r.Store.ReadCommit(h); err == nil {
@@ -658,10 +659,17 @@ func (r *Repo) resolveShortHash(h object.Hash) (object.Hash, error) {
 		return "", fmt.Errorf("cannot resolve short hash %s: no sequencer state", h)
 	}
 
+	const maxShortHashWalk = 10000 // safety bound for short hash resolution walk
+
 	// Walk from orig-head backward.
 	current := origHead
 	prefix := string(h)
+	walked := 0
 	for current != "" {
+		if walked >= maxShortHashWalk {
+			break
+		}
+		walked++
 		if strings.HasPrefix(string(current), prefix) {
 			return current, nil
 		}
@@ -813,8 +821,7 @@ func (r *Repo) squashCommit(commitHash object.Hash, combineMessages bool) error 
 	}
 
 	// Update detached HEAD to the amended commit.
-	headPath := filepath.Join(r.GraftDir, "HEAD")
-	if err := os.WriteFile(headPath, []byte(string(newHash)+"\n"), 0o644); err != nil {
+	if err := r.setHeadDetached(newHash); err != nil {
 		return fmt.Errorf("update HEAD: %w", err)
 	}
 
@@ -890,8 +897,7 @@ func (r *Repo) rewordLastCommit() error {
 	}
 
 	// Update HEAD.
-	headPath := filepath.Join(r.GraftDir, "HEAD")
-	if err := os.WriteFile(headPath, []byte(string(newHash)+"\n"), 0o644); err != nil {
+	if err := r.setHeadDetached(newHash); err != nil {
 		return fmt.Errorf("update HEAD: %w", err)
 	}
 
@@ -953,9 +959,10 @@ func formatTodoItems(items []TodoItem) string {
 	return b.String()
 }
 
-// autosquashTodoList reorders a todo list so that commits whose messages start
+// autosquashTodoList reorders todo items so that commits whose messages start
 // with "fixup! <title>" or "squash! <title>" are placed immediately after
-// their target commit, with their action changed to fixup or squash.
+// the commit whose message matches <title>. Matching is by message text only
+// (Git also supports matching by commit hash prefix, which we omit for simplicity).
 func autosquashTodoList(items []TodoItem) []TodoItem {
 	// Separate normal items from fixup/squash items.
 	type squashEntry struct {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/odvcencio/graft/pkg/diff3"
 	"github.com/odvcencio/graft/pkg/object"
 )
 
@@ -606,7 +607,8 @@ func (r *Repo) StashShowDiff(index int) ([]byte, error) {
 	return buf, nil
 }
 
-// formatUnifiedDiff produces a simple unified-diff header for a single file.
+// formatUnifiedDiff produces a unified-diff output for a single file
+// using the Myers line-level diff algorithm.
 func formatUnifiedDiff(path string, oldData, newData []byte) []byte {
 	var buf []byte
 
@@ -624,18 +626,25 @@ func formatUnifiedDiff(path string, oldData, newData []byte) []byte {
 	oldLines := splitLines(oldData)
 	newLines := splitLines(newData)
 
-	// Simple diff: show removed and added lines.
 	if len(oldLines) > 0 || len(newLines) > 0 {
 		buf = append(buf, []byte(fmt.Sprintf("@@ -1,%d +1,%d @@\n", len(oldLines), len(newLines)))...)
-		for _, l := range oldLines {
-			buf = append(buf, '-')
-			buf = append(buf, l...)
-			buf = append(buf, '\n')
-		}
-		for _, l := range newLines {
-			buf = append(buf, '+')
-			buf = append(buf, l...)
-			buf = append(buf, '\n')
+
+		diffs := diff3.LineDiff(oldData, newData)
+		for _, d := range diffs {
+			switch d.Type {
+			case diff3.Delete:
+				buf = append(buf, '-')
+				buf = append(buf, []byte(d.Content)...)
+				buf = append(buf, '\n')
+			case diff3.Insert:
+				buf = append(buf, '+')
+				buf = append(buf, []byte(d.Content)...)
+				buf = append(buf, '\n')
+			case diff3.Equal:
+				buf = append(buf, ' ')
+				buf = append(buf, []byte(d.Content)...)
+				buf = append(buf, '\n')
+			}
 		}
 	}
 
