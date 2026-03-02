@@ -4,10 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // CommitSigner signs canonical commit payload bytes and returns an encoded
@@ -29,6 +30,28 @@ func (r *Repo) Commit(message, author string) (object.Hash, error) {
 
 // CommitWithSigner creates a new commit and signs it when signer is provided.
 func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (object.Hash, error) {
+	// 0a. Run pre-commit hook. If it fails, abort.
+	if err := r.RunHook(HookPreCommit); err != nil {
+		return "", fmt.Errorf("commit: %w", err)
+	}
+
+	// 0b. Run commit-msg hook. Write message to temp file, let hook modify it,
+	// then read back the (possibly modified) message.
+	msgFile := filepath.Join(r.GotDir, "COMMIT_EDITMSG")
+	if err := os.WriteFile(msgFile, []byte(message), 0o644); err != nil {
+		return "", fmt.Errorf("commit: write message file: %w", err)
+	}
+	if err := r.RunHook(HookCommitMsg, msgFile); err != nil {
+		os.Remove(msgFile)
+		return "", fmt.Errorf("commit: %w", err)
+	}
+	modifiedMsg, err := os.ReadFile(msgFile)
+	if err != nil {
+		return "", fmt.Errorf("commit: read message file: %w", err)
+	}
+	os.Remove(msgFile)
+	message = string(modifiedMsg)
+
 	// 1. Read staging.
 	stg, err := r.ReadStaging()
 	if err != nil {
