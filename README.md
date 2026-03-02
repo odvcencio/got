@@ -99,9 +99,11 @@ graft show [commit-ish]               Show commit metadata and changed files
 ```
 graft branch [name] [-d name]        List, create, or delete branches
 graft checkout <target> [-b]          Switch branches
+graft switch <branch> [-c <new>]      Switch branches (modern alternative to checkout)
 graft merge <branch>                  Three-way structural merge
-graft rebase [--onto] [-i] <upstream> Reapply commits on a new base (--continue/--abort/--skip)
-graft cherry-pick [--entity <sel>] <commit>  Cherry-pick a commit or a single entity
+graft rebase [--onto] [-i] <upstream> Reapply commits on a new base (--continue/--abort/--skip/--autostash)
+graft cherry-pick [--entity <sel>] <commit>  Cherry-pick a commit or entity (--continue/--abort/--skip)
+graft revert <commit>                 Revert a commit by creating an inverse commit (--continue/--abort)
 ```
 
 **Remote**
@@ -133,6 +135,16 @@ graft reset [paths...]                Unstage paths (restore index from HEAD)
 graft rm [--cached] <paths...>        Remove paths from index and/or working tree
 graft sparse-checkout set|add|list|disable  Manage sparse checkout patterns
 graft worktree add|list|remove|prune  Manage multiple linked working trees
+```
+
+**Modules**
+```
+graft module add <url> [path]         Add a module (--track <branch> or --pin <tag>)
+graft module rm <name>                Remove a module and its working tree
+graft module update [name...]         Fetch latest objects for modules (--depth N)
+graft module sync                     Sync module working trees from lock file
+graft module status                   Show module state vs lock vs upstream
+graft module list                     List configured modules with paths and versions
 ```
 
 **Large Files**
@@ -259,7 +271,7 @@ Any language with a tree-sitter grammar can be parsed. Declaration classificatio
 
 ## Status
 
-Active development. 300+ tests passing across core packages. Structural merge is production-grade for supported scenarios, with pack files, object verification, remote sync, and entity-aware history workflows.
+Active development. 800+ tests passing across core packages. Structural merge is production-grade for supported scenarios, with pack files, object verification, remote sync, and entity-aware history workflows.
 
 What exists:
 - Content-addressed object store (SHA-256)
@@ -268,19 +280,18 @@ What exists:
 - Set-union import merging
 - Entity-level and line-level diff
 - Pack files with delta support (`graft gc`) and repository verification (`graft verify`)
-- Full CLI: 36 commands covering core workflows, branching, remotes, history, working tree, LFS, and maintenance
+- Full CLI: 39 commands covering core workflows, branching, remotes, history, working tree, modules, LFS, and maintenance
 - Stash workflow (push, pop, apply, list, drop, show)
-- Rebase (standard, `--onto`, interactive, conflict resolution with `--continue`/`--abort`/`--skip`)
-- Cherry-pick at commit level and entity level (`--entity`)
+- Rebase (standard, `--onto`, interactive, `--autostash`, conflict resolution with `--continue`/`--abort`/`--skip`)
+- Cherry-pick at commit level and entity level (`--entity`), with `--continue`/`--abort`/`--skip`
+- Revert with conflict resolution (`--continue`/`--abort`)
 - Bisect with automated script runner (`bisect run`)
+- Modules (`.graftmodules` + `.graftmodules.lock`) with branch tracking, shared object store, bidirectional development, merge-aware version resolution, and recursive fetch
 - Multiple worktrees, sparse checkout, grep, clean, shortlog, archive
 - SSH challenge/response auth for Orchard remotes
 - Git forge clone support (GitHub, GitLab, Bitbucket shorthand)
 - Large file storage (LFS) with pattern-based tracking
 - `.graftignore` support
-
-What doesn't exist yet:
-- Submodules
 
 ## Dependencies
 
