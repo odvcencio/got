@@ -119,51 +119,118 @@ func (s *mergeBaseTraversalState) generationCacheSize() int {
 	return n
 }
 
-func (s *mergeBaseTraversalState) generation(r *Repo, h object.Hash) (uint64, error) {
-	return s.generationRecursive(r, h, make(map[object.Hash]bool))
+// generationFrame represents one stack frame in the iterative generation
+// number computation. It mirrors what the old recursive approach stored
+// implicitly on the call stack: the commit hash, its loaded parents, the
+// index of the next parent to process, and the running maximum parent
+// generation seen so far.
+type generationFrame struct {
+	hash              object.Hash
+	parents           []object.Hash
+	nextParent        int
+	maxParentGeneration uint64
 }
 
-func (s *mergeBaseTraversalState) generationRecursive(r *Repo, h object.Hash, visiting map[object.Hash]bool) (uint64, error) {
+func (s *mergeBaseTraversalState) generation(r *Repo, h object.Hash) (uint64, error) {
 	if h == "" {
 		return 0, nil
 	}
 	if g, ok := s.loadGeneration(h); ok {
 		return g, nil
 	}
-	if visiting[h] {
-		return 0, fmt.Errorf("find merge base: commit graph cycle detected at %s", h)
-	}
 
-	visiting[h] = true
-	commit, err := s.readCommit(r, h)
-	if err != nil {
-		delete(visiting, h)
-		// Shallow boundary: treat as generation 0 (root commit).
-		if errors.Is(err, ErrShallowBoundary) {
-			s.storeGeneration(h, 0)
-			return 0, nil
+	// visiting tracks commits currently on the stack to detect cycles.
+	visiting := make(map[object.Hash]bool)
+	stack := []generationFrame{}
+
+	// pushCommit loads a commit and pushes a new frame onto the stack.
+	// It returns (generation, true, nil) if the result is already known
+	// (cached or shallow boundary), meaning no frame was pushed.
+	// It returns (0, false, nil) if a frame was pushed and processing
+	// should continue. It returns (0, false, err) on hard errors.
+	pushCommit := func(ch object.Hash) (uint64, bool, error) {
+		if ch == "" {
+			return 0, true, nil
 		}
-		return 0, err
+		if g, ok := s.loadGeneration(ch); ok {
+			return g, true, nil
+		}
+		if visiting[ch] {
+			return 0, false, fmt.Errorf("find merge base: commit graph cycle detected at %s", ch)
+		}
+
+		commit, err := s.readCommit(r, ch)
+		if err != nil {
+			if errors.Is(err, ErrShallowBoundary) {
+				s.storeGeneration(ch, 0)
+				return 0, true, nil
+			}
+			return 0, false, err
+		}
+
+		visiting[ch] = true
+		stack = append(stack, generationFrame{
+			hash:    ch,
+			parents: commit.Parents,
+		})
+		return 0, false, nil
 	}
 
-	var maxParentGeneration uint64
-	for _, p := range commit.Parents {
-		pg, err := s.generationRecursive(r, p, visiting)
-		if err != nil {
-			// Shallow boundary on a parent: just skip this parent.
-			if errors.Is(err, ErrShallowBoundary) {
+	// Push the initial commit.
+	if g, done, err := pushCommit(h); err != nil {
+		return 0, err
+	} else if done {
+		return g, nil
+	}
+
+	for len(stack) > 0 {
+		frame := &stack[len(stack)-1]
+
+		// Process the next unvisited parent.
+		if frame.nextParent < len(frame.parents) {
+			p := frame.parents[frame.nextParent]
+			frame.nextParent++
+
+			pg, done, err := pushCommit(p)
+			if err != nil {
+				// Shallow boundary on a parent: skip this parent.
+				if errors.Is(err, ErrShallowBoundary) {
+					continue
+				}
+				return 0, err
+			}
+			if done {
+				// Parent generation already known; incorporate it.
+				if pg > frame.maxParentGeneration {
+					frame.maxParentGeneration = pg
+				}
 				continue
 			}
-			delete(visiting, h)
-			return 0, err
+			// A new frame was pushed for this parent; loop back to
+			// process it before continuing with remaining parents.
+			continue
 		}
-		if pg > maxParentGeneration {
-			maxParentGeneration = pg
+
+		// All parents have been processed. Compute and cache the
+		// generation number for this commit, then pop the frame.
+		gen := frame.maxParentGeneration + 1
+		s.storeGeneration(frame.hash, gen)
+		delete(visiting, frame.hash)
+		stack = stack[:len(stack)-1]
+
+		// Propagate the computed generation to the parent frame.
+		if len(stack) > 0 {
+			parent := &stack[len(stack)-1]
+			if gen > parent.maxParentGeneration {
+				parent.maxParentGeneration = gen
+			}
 		}
 	}
 
-	generation := maxParentGeneration + 1
-	s.storeGeneration(h, generation)
-	delete(visiting, h)
-	return generation, nil
+	// The generation for h was stored during processing.
+	if g, ok := s.loadGeneration(h); ok {
+		return g, nil
+	}
+	// Should not happen: h was pushed and processed.
+	return 0, fmt.Errorf("find merge base: generation not computed for %s", h)
 }

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // Test 1: Add a Go file — blob + entity list stored, both hashes non-empty.
@@ -457,8 +457,8 @@ func TestAdd_DotStagesRecursivelyAndHonorsIgnore(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, ".gotignore"), []byte("ignored.txt\nbuild/\n"), 0o644); err != nil {
-		t.Fatalf("write .gotignore: %v", err)
+	if err := os.WriteFile(filepath.Join(dir, ".graftignore"), []byte("ignored.txt\nbuild/\n"), 0o644); err != nil {
+		t.Fatalf("write .graftignore: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
 		t.Fatalf("mkdir pkg: %v", err)
@@ -689,6 +689,130 @@ func TestRemove_DirectoryPathRemovesTrackedPrefix(t *testing.T) {
 	}
 	if _, ok := stg.Entries["pkg/b.go"]; ok {
 		t.Fatalf("expected pkg/b.go to be removed from staging")
+	}
+}
+
+func TestAddWithProgress_ReportsPhasesAndCounts(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
+		t.Fatalf("mkdir pkg: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pkg", "util.go"), []byte("package pkg\n"), 0o644); err != nil {
+		t.Fatalf("write pkg/util.go: %v", err)
+	}
+
+	var events []AddProgress
+	if err := r.AddWithProgress([]string{"."}, func(event AddProgress) {
+		events = append(events, event)
+	}); err != nil {
+		t.Fatalf("AddWithProgress: %v", err)
+	}
+
+	if len(events) == 0 {
+		t.Fatalf("expected progress events, got none")
+	}
+	if events[0].Phase != AddProgressPhaseScanStart {
+		t.Fatalf("first phase = %q, want %q", events[0].Phase, AddProgressPhaseScanStart)
+	}
+
+	var scanComplete *AddProgress
+	stageCount := 0
+	for i := range events {
+		ev := events[i]
+		switch ev.Phase {
+		case AddProgressPhaseScanComplete:
+			copy := ev
+			scanComplete = &copy
+		case AddProgressPhaseStageFile:
+			stageCount++
+			if ev.Total <= 0 {
+				t.Fatalf("stage event total = %d, want > 0", ev.Total)
+			}
+			if ev.Current <= 0 || ev.Current > ev.Total {
+				t.Fatalf("stage event current/total = %d/%d invalid", ev.Current, ev.Total)
+			}
+			if ev.Path == "" {
+				t.Fatalf("stage event missing path")
+			}
+		}
+	}
+
+	if scanComplete == nil {
+		t.Fatalf("missing %q event", AddProgressPhaseScanComplete)
+	}
+	if scanComplete.Total != 2 {
+		t.Fatalf("scan complete total = %d, want 2", scanComplete.Total)
+	}
+	if stageCount != 2 {
+		t.Fatalf("stage event count = %d, want 2", stageCount)
+	}
+
+	last := events[len(events)-1]
+	if last.Phase != AddProgressPhaseWriteIndex {
+		t.Fatalf("last phase = %q, want %q", last.Phase, AddProgressPhaseWriteIndex)
+	}
+	if last.Total != 2 {
+		t.Fatalf("write index total = %d, want 2", last.Total)
+	}
+}
+
+// Test: WriteStaging persists data atomically (Sync + rename). Verify the
+// written file is fully readable immediately after write returns, which
+// exercises the Sync-before-rename path.
+func TestStaging_WriteSyncPersistence(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	stg := &Staging{
+		Entries: map[string]*StagingEntry{
+			"sync_test.go": {
+				Path:     "sync_test.go",
+				BlobHash: object.Hash("deadbeef"),
+				Mode:     object.TreeModeFile,
+				ModTime:  1111111111,
+				Size:     99,
+			},
+		},
+	}
+
+	if err := r.WriteStaging(stg); err != nil {
+		t.Fatalf("WriteStaging: %v", err)
+	}
+
+	// Read the index file directly to confirm it was fully flushed.
+	data, err := os.ReadFile(r.indexPath())
+	if err != nil {
+		t.Fatalf("ReadFile(index): %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("index file is empty after WriteStaging")
+	}
+
+	// Round-trip to confirm integrity.
+	got, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	entry, ok := got.Entries["sync_test.go"]
+	if !ok {
+		t.Fatalf("missing sync_test.go entry after round-trip")
+	}
+	if entry.BlobHash != object.Hash("deadbeef") {
+		t.Errorf("BlobHash = %q, want %q", entry.BlobHash, "deadbeef")
+	}
+	if entry.Size != 99 {
+		t.Errorf("Size = %d, want 99", entry.Size)
 	}
 }
 
