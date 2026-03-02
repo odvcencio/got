@@ -35,14 +35,14 @@ type RebaseOptions struct {
 }
 
 // rebaseMergeDir returns the path to the sequencer state directory.
+// Used by rebase_interactive.go; delegates to rebaseSeq().
 func (r *Repo) rebaseMergeDir() string {
-	return filepath.Join(r.GraftDir, "rebase-merge")
+	return r.rebaseSeq().Dir()
 }
 
 // isRebaseInProgress checks if a rebase is currently active.
 func (r *Repo) isRebaseInProgress() bool {
-	_, err := os.Stat(r.rebaseMergeDir())
-	return err == nil
+	return r.rebaseSeq().IsActive()
 }
 
 // Rebase replays commits from the current branch onto the given upstream.
@@ -185,7 +185,7 @@ func (r *Repo) doRebase(branchName string, origHead, onto object.Hash, commits [
 	// 7. Detach HEAD to onto.
 	if err := r.detachHead(onto); err != nil {
 		// Clean up on failure.
-		os.RemoveAll(r.rebaseMergeDir())
+		r.rebaseSeq().Clean() //nolint:errcheck
 		return fmt.Errorf("rebase: detach HEAD: %w", err)
 	}
 
@@ -205,11 +205,12 @@ func (r *Repo) RebaseContinue() error {
 		return r.RebaseInteractiveContinue()
 	}
 
-	stoppedSHA, err := r.readSequencerFile("stopped-sha")
+	seq := r.rebaseSeq()
+
+	stoppedSHA, err := seq.ReadFile("stopped-sha")
 	if err != nil {
 		return fmt.Errorf("rebase continue: no stopped commit found: %w", err)
 	}
-	stoppedSHA = strings.TrimSpace(stoppedSHA)
 
 	// Read the original commit to preserve its message and author.
 	origCommit, err := r.Store.ReadCommit(object.Hash(stoppedSHA))
@@ -225,18 +226,17 @@ func (r *Repo) RebaseContinue() error {
 	_ = commitHash
 
 	// Move stopped-sha to done.
-	done, _ := r.readSequencerFile("done")
-	done = strings.TrimRight(done, "\n")
+	done, _ := seq.ReadFile("done")
 	if done != "" {
 		done += "\n"
 	}
 	done += stoppedSHA + "\n"
-	if err := r.writeSequencerFileAtomic("done", done); err != nil {
+	if err := seq.WriteFile("done", done); err != nil {
 		return fmt.Errorf("rebase continue: update done: %w", err)
 	}
 
 	// Remove stopped-sha.
-	os.Remove(filepath.Join(r.rebaseMergeDir(), "stopped-sha"))
+	seq.RemoveFile("stopped-sha")
 
 	// Continue replaying remaining commits.
 	return r.replayCommits()
@@ -248,21 +248,21 @@ func (r *Repo) RebaseAbort() error {
 		return ErrNoRebaseInProgress
 	}
 
+	seq := r.rebaseSeq()
+
 	// Check for autostash before reading other state, since we need to
 	// restore it after aborting.
 	hadAutostash := r.hasAutostash()
 
-	origHead, err := r.readSequencerFile("orig-head")
+	origHead, err := seq.ReadFile("orig-head")
 	if err != nil {
 		return fmt.Errorf("rebase abort: read orig-head: %w", err)
 	}
-	origHead = strings.TrimSpace(origHead)
 
-	headName, err := r.readSequencerFile("head-name")
+	headName, err := seq.ReadFile("head-name")
 	if err != nil {
 		return fmt.Errorf("rebase abort: read head-name: %w", err)
 	}
-	headName = strings.TrimSpace(headName)
 
 	// Update the branch ref back to orig-head.
 	if strings.HasPrefix(headName, "refs/heads/") {
@@ -298,7 +298,7 @@ func (r *Repo) RebaseAbort() error {
 	}
 
 	// Clean up sequencer state.
-	if err := os.RemoveAll(r.rebaseMergeDir()); err != nil {
+	if err := seq.Clean(); err != nil {
 		return fmt.Errorf("rebase abort: cleanup: %w", err)
 	}
 
@@ -311,25 +311,25 @@ func (r *Repo) RebaseSkip() error {
 		return ErrNoRebaseInProgress
 	}
 
-	stoppedSHA, err := r.readSequencerFile("stopped-sha")
+	seq := r.rebaseSeq()
+
+	stoppedSHA, err := seq.ReadFile("stopped-sha")
 	if err != nil {
 		return fmt.Errorf("rebase skip: no stopped commit found: %w", err)
 	}
-	stoppedSHA = strings.TrimSpace(stoppedSHA)
 
 	// Move stopped-sha to done (skipped).
-	done, _ := r.readSequencerFile("done")
-	done = strings.TrimRight(done, "\n")
+	done, _ := seq.ReadFile("done")
 	if done != "" {
 		done += "\n"
 	}
 	done += stoppedSHA + "\n"
-	if err := r.writeSequencerFileAtomic("done", done); err != nil {
+	if err := seq.WriteFile("done", done); err != nil {
 		return fmt.Errorf("rebase skip: update done: %w", err)
 	}
 
 	// Remove stopped-sha.
-	os.Remove(filepath.Join(r.rebaseMergeDir(), "stopped-sha"))
+	seq.RemoveFile("stopped-sha")
 
 	// Reset working tree to current HEAD so we have a clean state.
 	headHash, err := r.ResolveRef("HEAD")
@@ -393,12 +393,13 @@ func (r *Repo) collectCommits(stop, tip object.Hash) ([]object.Hash, error) {
 
 // replayCommits reads the todo list and replays each remaining commit.
 func (r *Repo) replayCommits() error {
-	todoStr, err := r.readSequencerFile("todo")
+	seq := r.rebaseSeq()
+
+	todoStr, err := seq.ReadFile("todo")
 	if err != nil {
 		// No todo means nothing left — finish up.
 		return r.finishRebase()
 	}
-	todoStr = strings.TrimSpace(todoStr)
 	if todoStr == "" {
 		return r.finishRebase()
 	}
@@ -407,8 +408,7 @@ func (r *Repo) replayCommits() error {
 	var done []string
 
 	// Read existing done list.
-	doneStr, _ := r.readSequencerFile("done")
-	doneStr = strings.TrimRight(doneStr, "\n")
+	doneStr, _ := seq.ReadFile("done")
 	if doneStr != "" {
 		done = strings.Split(doneStr, "\n")
 	}
@@ -424,10 +424,10 @@ func (r *Repo) replayCommits() error {
 			if todoContent != "" {
 				todoContent += "\n"
 			}
-			if err2 := r.writeSequencerFileAtomic("todo", todoContent); err2 != nil {
+			if err2 := seq.WriteFile("todo", todoContent); err2 != nil {
 				return fmt.Errorf("rebase: save todo: %w", err2)
 			}
-			if err2 := r.writeSequencerFileAtomic("stopped-sha", string(commitHash)+"\n"); err2 != nil {
+			if err2 := seq.WriteFile("stopped-sha", string(commitHash)+"\n"); err2 != nil {
 				return fmt.Errorf("rebase: save stopped-sha: %w", err2)
 			}
 			// Write done.
@@ -435,7 +435,7 @@ func (r *Repo) replayCommits() error {
 			if doneContent != "" {
 				doneContent += "\n"
 			}
-			if err2 := r.writeSequencerFileAtomic("done", doneContent); err2 != nil {
+			if err2 := seq.WriteFile("done", doneContent); err2 != nil {
 				return fmt.Errorf("rebase: save done: %w", err2)
 			}
 			return err
@@ -449,10 +449,10 @@ func (r *Repo) replayCommits() error {
 	if doneContent != "" {
 		doneContent += "\n"
 	}
-	if err := r.writeSequencerFileAtomic("done", doneContent); err != nil {
+	if err := seq.WriteFile("done", doneContent); err != nil {
 		return fmt.Errorf("rebase: save done: %w", err)
 	}
-	if err := r.writeSequencerFileAtomic("todo", ""); err != nil {
+	if err := seq.WriteFile("todo", ""); err != nil {
 		return fmt.Errorf("rebase: clear todo: %w", err)
 	}
 
@@ -605,11 +605,12 @@ func (r *Repo) replaySingleCommit(commitHash object.Hash) error {
 
 // finishRebase updates the original branch ref and reattaches HEAD.
 func (r *Repo) finishRebase() error {
-	headName, err := r.readSequencerFile("head-name")
+	seq := r.rebaseSeq()
+
+	headName, err := seq.ReadFile("head-name")
 	if err != nil {
 		return fmt.Errorf("rebase finish: read head-name: %w", err)
 	}
-	headName = strings.TrimSpace(headName)
 
 	// Get the current detached HEAD hash (the new tip).
 	newTip, err := r.ResolveRef("HEAD")
@@ -637,7 +638,7 @@ func (r *Repo) finishRebase() error {
 	r.autostashPop()
 
 	// Clean up sequencer state.
-	if err := os.RemoveAll(r.rebaseMergeDir()); err != nil {
+	if err := seq.Clean(); err != nil {
 		return fmt.Errorf("rebase finish: cleanup: %w", err)
 	}
 
@@ -721,9 +722,9 @@ func (r *Repo) checkoutTree(commit *object.CommitObj) error {
 
 // writeSequencerState creates the rebase-merge directory and writes all state files.
 func (r *Repo) writeSequencerState(headName string, origHead, onto object.Hash, todo []object.Hash, done []object.Hash) error {
-	dir := r.rebaseMergeDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("mkdir %q: %w", dir, err)
+	seq := r.rebaseSeq()
+	if err := seq.Init(); err != nil {
+		return fmt.Errorf("mkdir %q: %w", seq.Dir(), err)
 	}
 
 	files := map[string]string{
@@ -754,32 +755,18 @@ func (r *Repo) writeSequencerState(headName string, origHead, onto object.Hash, 
 	}
 	files["done"] = doneContent
 
-	for name, content := range files {
-		if err := r.writeSequencerFileAtomic(name, content); err != nil {
-			return fmt.Errorf("write %q: %w", name, err)
-		}
-	}
-
-	return nil
+	return seq.WriteFiles(files)
 }
 
 // readSequencerFile reads a file from the rebase-merge directory.
+// Returns trimmed content. Used by rebase_interactive.go.
 func (r *Repo) readSequencerFile(name string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(r.rebaseMergeDir(), name))
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-// autostashPath returns the path to the autostash file inside the sequencer directory.
-func (r *Repo) autostashPath() string {
-	return filepath.Join(r.rebaseMergeDir(), "autostash")
+	return r.rebaseSeq().ReadFile(name)
 }
 
 // hasAutostash returns true if an autostash file exists in the sequencer directory.
 func (r *Repo) hasAutostash() bool {
-	_, err := os.Stat(r.autostashPath())
+	_, err := r.rebaseSeq().ReadFile("autostash")
 	return err == nil
 }
 
@@ -810,13 +797,13 @@ func (r *Repo) autostashSave() error {
 	}
 
 	// Ensure the rebase-merge directory exists for storing the autostash marker.
-	dir := r.rebaseMergeDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	seq := r.rebaseSeq()
+	if err := seq.Init(); err != nil {
 		return fmt.Errorf("rebase: autostash: mkdir: %w", err)
 	}
 
 	// Write the stash commit hash to the autostash file.
-	if err := os.WriteFile(r.autostashPath(), []byte(string(entry.CommitHash)+"\n"), 0o644); err != nil {
+	if err := seq.WriteFile("autostash", string(entry.CommitHash)+"\n"); err != nil {
 		return fmt.Errorf("rebase: autostash: write marker: %w", err)
 	}
 
@@ -843,30 +830,7 @@ func (r *Repo) autostashPop() {
 }
 
 // writeSequencerFileAtomic writes a file to the rebase-merge directory using
-// temp file + rename for atomicity.
+// temp file + rename for atomicity. Used by rebase_interactive.go.
 func (r *Repo) writeSequencerFileAtomic(name, content string) error {
-	dir := r.rebaseMergeDir()
-	target := filepath.Join(dir, name)
-
-	tmp, err := os.CreateTemp(dir, name+".tmp.*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-
-	if _, err := tmp.WriteString(content); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return err
-	}
-	return os.Rename(tmpPath, target)
+	return r.rebaseSeq().WriteFile(name, content)
 }
