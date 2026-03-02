@@ -41,6 +41,7 @@ func main() {
 	root.AddCommand(newReflogCmd())
 	root.AddCommand(newGcCmd())
 	root.AddCommand(newVerifyCmd())
+	root.AddCommand(newStashCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
