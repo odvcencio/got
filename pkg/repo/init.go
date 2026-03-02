@@ -289,7 +289,7 @@ func (r *Repo) UpdateRefCAS(name string, h object.Hash, expectedOld ...object.Ha
 	}
 	cleanupLock = false
 
-	if err := r.appendReflog(name, oldHash, h, "update"); err != nil {
+	if err := r.appendReflogAutoEntities(name, oldHash, h, "update"); err != nil {
 		return &RefUpdateReflogError{
 			Ref:     name,
 			OldHash: oldHash,
