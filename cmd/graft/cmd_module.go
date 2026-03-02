@@ -253,12 +253,41 @@ func newModuleUpdateCmd() *cobra.Command {
 				nameFilter[a] = true
 			}
 
+			ctx := cmd.Context()
+			anyUpdated := false
+
 			for _, m := range modules {
 				if len(nameFilter) > 0 && !nameFilter[m.Name] {
 					continue
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "updating %s...\n", m.Name)
-				fmt.Fprintln(cmd.OutOrStdout(), "remote fetch not yet implemented")
+
+				// Canonicalize the module URL.
+				resolvedURL, err := canonicalizeRemoteSpec(m.URL)
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s: invalid URL %q: %v\n", m.Name, m.URL, err)
+					continue
+				}
+
+				result, err := r.ModuleFetchAndUpdate(ctx, m.Name, resolvedURL)
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s: %v\n", m.Name, err)
+					continue
+				}
+
+				if !result.Changed {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: already up to date\n", result.Name)
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s (%d objects fetched)\n",
+						result.Name,
+						shortHashOrNone(result.OldCommit),
+						shortHash(result.NewCommit),
+						result.ObjectCount)
+					anyUpdated = true
+				}
+			}
+
+			if anyUpdated {
+				fmt.Fprintln(cmd.OutOrStdout(), "run 'graft module sync' to checkout updated versions")
 			}
 			return nil
 		},
