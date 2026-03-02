@@ -33,6 +33,7 @@ func main() {
 	root.AddCommand(newMergeCmd())
 	root.AddCommand(newCherryPickCmd())
 	root.AddCommand(newRemoteCmd())
+	root.AddCommand(newConfigCmd())
 	root.AddCommand(newAuthCmd())
 	root.AddCommand(newPublishCmd())
 	root.AddCommand(newCloneCmd())

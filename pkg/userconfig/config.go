@@ -20,6 +20,8 @@ const (
 // Environment variables still take precedence over these values.
 type Config struct {
 	Version        int    `json:"version"`
+	Name           string `json:"name,omitempty"`
+	Email          string `json:"email,omitempty"`
 	OrchardURL     string `json:"orchard_url,omitempty"`
 	Token          string `json:"token,omitempty"`
 	Username       string `json:"username,omitempty"`
@@ -122,6 +124,8 @@ func (c *Config) normalize() {
 	if c.Version <= 0 {
 		c.Version = currentConfigVersion
 	}
+	c.Name = strings.TrimSpace(c.Name)
+	c.Email = strings.TrimSpace(c.Email)
 	c.OrchardURL = strings.TrimSpace(c.OrchardURL)
 	c.Token = strings.TrimSpace(c.Token)
 	c.Username = strings.TrimSpace(c.Username)

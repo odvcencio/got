@@ -30,10 +30,7 @@ func newCommitCmd() *cobra.Command {
 			}
 
 			if author == "" {
-				author = os.Getenv("USER")
-				if author == "" {
-					author = "unknown"
-				}
+				author = r.ResolveAuthor()
 			}
 
 			// Determine whether to sign. Explicit --sign/--sign-key flags
@@ -103,7 +100,7 @@ func newCommitCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&message, "message", "m", "", "commit message")
-	cmd.Flags().StringVar(&author, "author", "", "override author (default: $USER)")
+	cmd.Flags().StringVar(&author, "author", "", "override author (default: from config)")
 	cmd.Flags().BoolVar(&sign, "sign", false, "sign commit with SSH private key")
 	cmd.Flags().StringVar(&signKey, "sign-key", "", "path to SSH private key (defaults to ~/.ssh/id_ed25519, id_ecdsa, id_rsa)")
 	cmd.Flags().BoolVar(&noSign, "no-sign", false, "disable auto-signing even if configured")

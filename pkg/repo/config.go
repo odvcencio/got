@@ -8,9 +8,16 @@ import (
 	"strings"
 )
 
+// UserConfig stores user identity for commits.
+type UserConfig struct {
+	Name  string `json:"name,omitempty"`
+	Email string `json:"email,omitempty"`
+}
+
 // Config stores repository-local settings such as named remotes.
 type Config struct {
 	Remotes map[string]string `json:"remotes,omitempty"`
+	User    *UserConfig       `json:"user,omitempty"`
 }
 
 func (r *Repo) configPath() string {

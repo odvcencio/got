@@ -9,7 +9,51 @@ import (
 	"time"
 
 	"github.com/odvcencio/graft/pkg/object"
+	"github.com/odvcencio/graft/pkg/userconfig"
 )
+
+// formatAuthor returns "Name <email>" if both are set, just name if only
+// name is set, or empty string if name is empty.
+func formatAuthor(name, email string) string {
+	name = strings.TrimSpace(name)
+	email = strings.TrimSpace(email)
+	if name == "" {
+		return ""
+	}
+	if email != "" {
+		return name + " <" + email + ">"
+	}
+	return name
+}
+
+// ResolveAuthor determines the commit author by checking, in priority order:
+//  1. Repo config user.name + user.email
+//  2. User config (~/.graftconfig) name + email
+//  3. $USER environment variable
+//  4. "unknown"
+func (r *Repo) ResolveAuthor() string {
+	// 1. Repo-level config.
+	if cfg, err := r.ReadConfig(); err == nil && cfg.User != nil {
+		if author := formatAuthor(cfg.User.Name, cfg.User.Email); author != "" {
+			return author
+		}
+	}
+
+	// 2. User-level config (~/.graftconfig).
+	if ucfg, err := userconfig.Load(); err == nil && ucfg != nil {
+		if author := formatAuthor(ucfg.Name, ucfg.Email); author != "" {
+			return author
+		}
+	}
+
+	// 3. $USER env var.
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+
+	// 4. Fallback.
+	return "unknown"
+}
 
 // CommitSigner signs canonical commit payload bytes and returns an encoded
 // signature string to be persisted in CommitObj.Signature.
@@ -130,16 +174,22 @@ func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (ob
 
 // Log walks the commit history starting from the given hash, following
 // first-parent links, returning up to limit commits in reverse-chronological
-// order (newest first).
+// order (newest first). In a shallow repository, walking stops at shallow
+// boundaries instead of erroring on missing parent commits.
 func (r *Repo) Log(start object.Hash, limit int) ([]*object.CommitObj, error) {
+	shallow, _ := r.ShallowState()
+
 	var commits []*object.CommitObj
 	current := start
 
 	for len(commits) < limit {
 		c, err := r.Store.ReadCommit(current)
 		if err != nil {
-			// If we can't read the commit (e.g., doesn't exist), stop.
 			if errors.Is(err, os.ErrNotExist) {
+				// In a shallow repo, a missing commit at a boundary is expected.
+				if shallow != nil && shallow.IsShallow(current) {
+					break
+				}
 				break
 			}
 			return nil, fmt.Errorf("log: read commit %s: %w", current, err)
@@ -150,7 +200,12 @@ func (r *Repo) Log(start object.Hash, limit int) ([]*object.CommitObj, error) {
 		if len(c.Parents) == 0 {
 			break
 		}
-		current = c.Parents[0]
+		next := c.Parents[0]
+		// Stop at shallow boundaries.
+		if shallow != nil && shallow.IsShallow(next) {
+			break
+		}
+		current = next
 	}
 
 	return commits, nil
