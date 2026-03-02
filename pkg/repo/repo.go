@@ -1,3 +1,6 @@
+// Package repo implements core graft repository operations including
+// initialization, staging, commits, branching, merging, checkout, status,
+// and history traversal.
 package repo
 
 import (

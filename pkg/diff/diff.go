@@ -1,6 +1,8 @@
+// Package diff implements the Myers line-level diff algorithm for computing
+// minimal edit sequences between text files.
 package diff
 
-import "github.com/odvcencio/got/pkg/entity"
+import "github.com/odvcencio/graft/pkg/entity"
 
 // ChangeType classifies what happened to an entity between two file revisions.
 type ChangeType int

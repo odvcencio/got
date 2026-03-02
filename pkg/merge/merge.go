@@ -1,3 +1,6 @@
+// Package merge implements graft's structural merge engine, which operates at
+// the entity level (functions, types, imports) using tree-sitter parsing for
+// language-aware merging across 205 languages.
 package merge
 
 import (
@@ -5,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/diff3"
-	"github.com/odvcencio/got/pkg/entity"
+	"github.com/odvcencio/graft/pkg/diff3"
+	"github.com/odvcencio/graft/pkg/entity"
 )
 
 // MergeStats tracks counts of entity dispositions during a structural merge.

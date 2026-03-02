@@ -1,3 +1,6 @@
+// Package remote implements the graft remote protocol for synchronizing
+// repositories, including pack transport, object fetching, ref advertisement,
+// and push/pull operations.
 package remote
 
 import (

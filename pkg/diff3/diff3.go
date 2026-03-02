@@ -1,3 +1,5 @@
+// Package diff3 implements three-way diff and merge for resolving concurrent
+// edits against a common ancestor.
 package diff3
 
 import (
@@ -33,7 +35,7 @@ type DiffLine struct {
 }
 
 // LineDiff computes a line-level diff between byte slices a and b.
-// It is intended for use by the `got diff` command.
+// It is intended for use by the `graft diff` command.
 func LineDiff(a, b []byte) []DiffLine {
 	aLines := splitLines(string(a))
 	bLines := splitLines(string(b))

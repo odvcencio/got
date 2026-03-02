@@ -1,3 +1,5 @@
+// Package userconfig manages user-level graft configuration stored in
+// ~/.config/graft/.
 package userconfig
 
 import (

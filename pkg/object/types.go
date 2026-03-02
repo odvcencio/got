@@ -1,3 +1,6 @@
+// Package object implements the content-addressed object store for graft,
+// supporting SHA-256 hashed blobs, entities, entity lists, trees, commits,
+// and tags with zlib compression and pack file delta encoding.
 package object
 
 // Hash is a 64-character hex-encoded SHA-256 digest.
@@ -29,7 +32,7 @@ type Blob struct {
 
 // TagObj preserves annotated tag payload while tracking the referenced object.
 // Data stores the canonical tag bytes, where the "object" header points at the
-// got hash (not git hash) so graph traversal can stay in got object space.
+// graft hash (not git hash) so graph traversal can stay in graft object space.
 type TagObj struct {
 	TargetHash Hash
 	Data       []byte

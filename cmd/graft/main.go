@@ -1,3 +1,4 @@
+// Package main implements the graft CLI, a structural version control system.
 package main
 
 import (
