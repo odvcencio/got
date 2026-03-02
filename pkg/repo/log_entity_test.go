@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/entity"
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/entity"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func TestLogByEntity_SkipsCommitWhenExtractionFails(t *testing.T) {
@@ -289,5 +289,186 @@ func writeRepoSource(t *testing.T, root, relPath, content string) {
 	}
 	if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q): %v", relPath, err)
+	}
+}
+
+// TestLogAll_ShowsCommitsFromMultipleBranches verifies that LogAll returns
+// commits from all branches, not just HEAD.
+func TestLogAll_ShowsCommitsFromMultipleBranches(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Create initial commit on main.
+	writeRepoSource(t, dir, "main.go", "package main\n\nfunc Main() {}\n")
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add(main.go): %v", err)
+	}
+	h1, err := r.Commit("commit on main", "alice")
+	if err != nil {
+		t.Fatalf("Commit(main): %v", err)
+	}
+
+	// Create a feature branch from head.
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD): %v", err)
+	}
+	if err := r.CreateBranch("feature", headHash); err != nil {
+		t.Fatalf("CreateBranch(feature): %v", err)
+	}
+
+	// Switch to feature branch and add a commit.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+	writeRepoSource(t, dir, "feature.go", "package main\n\nfunc Feature() {}\n")
+	if err := r.Add([]string{"feature.go"}); err != nil {
+		t.Fatalf("Add(feature.go): %v", err)
+	}
+	h2, err := r.Commit("commit on feature", "bob")
+	if err != nil {
+		t.Fatalf("Commit(feature): %v", err)
+	}
+
+	// Switch back to main and add another commit.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+	writeRepoSource(t, dir, "main2.go", "package main\n\nfunc Main2() {}\n")
+	if err := r.Add([]string{"main2.go"}); err != nil {
+		t.Fatalf("Add(main2.go): %v", err)
+	}
+	h3, err := r.Commit("second commit on main", "alice")
+	if err != nil {
+		t.Fatalf("Commit(main2): %v", err)
+	}
+
+	entries, err := r.LogAll(100)
+	if err != nil {
+		t.Fatalf("LogAll: %v", err)
+	}
+
+	// Should have 3 commits total: h1 (shared), h2 (feature), h3 (main).
+	if len(entries) != 3 {
+		t.Fatalf("LogAll returned %d entries, want 3", len(entries))
+	}
+
+	// Check all three hashes are present.
+	foundHashes := make(map[object.Hash]bool)
+	for _, e := range entries {
+		foundHashes[e.Hash] = true
+	}
+	for _, h := range []object.Hash{h1, h2, h3} {
+		if !foundHashes[h] {
+			t.Errorf("LogAll missing commit %s", h)
+		}
+	}
+}
+
+// TestLogAll_DeduplicatesSharedCommits verifies that commits reachable from
+// multiple branches are only returned once.
+func TestLogAll_DeduplicatesSharedCommits(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Create initial commit on main.
+	writeRepoSource(t, dir, "main.go", "package main\n\nfunc Main() {}\n")
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add(main.go): %v", err)
+	}
+	sharedHash, err := r.Commit("shared commit", "alice")
+	if err != nil {
+		t.Fatalf("Commit(shared): %v", err)
+	}
+
+	// Create a feature branch from the same commit.
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD): %v", err)
+	}
+	if err := r.CreateBranch("feature", headHash); err != nil {
+		t.Fatalf("CreateBranch(feature): %v", err)
+	}
+
+	entries, err := r.LogAll(100)
+	if err != nil {
+		t.Fatalf("LogAll: %v", err)
+	}
+
+	// The shared commit should appear exactly once.
+	if len(entries) != 1 {
+		t.Fatalf("LogAll returned %d entries, want 1 (dedup)", len(entries))
+	}
+	if entries[0].Hash != sharedHash {
+		t.Fatalf("entry hash = %q, want %q", entries[0].Hash, sharedHash)
+	}
+}
+
+// TestLogAll_SortsByTimestamp verifies LogAll sorts commits newest first
+// and returns all commits from the branch.
+func TestLogAll_SortsByTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Create commits sequentially on a single branch.
+	writeRepoSource(t, dir, "a.go", "package main\n\nfunc A() {}\n")
+	if err := r.Add([]string{"a.go"}); err != nil {
+		t.Fatalf("Add(a.go): %v", err)
+	}
+	if _, err := r.Commit("first", "alice"); err != nil {
+		t.Fatalf("Commit(first): %v", err)
+	}
+
+	writeRepoSource(t, dir, "b.go", "package main\n\nfunc B() {}\n")
+	if err := r.Add([]string{"b.go"}); err != nil {
+		t.Fatalf("Add(b.go): %v", err)
+	}
+	if _, err := r.Commit("second", "alice"); err != nil {
+		t.Fatalf("Commit(second): %v", err)
+	}
+
+	writeRepoSource(t, dir, "c.go", "package main\n\nfunc C() {}\n")
+	if err := r.Add([]string{"c.go"}); err != nil {
+		t.Fatalf("Add(c.go): %v", err)
+	}
+	if _, err := r.Commit("third", "alice"); err != nil {
+		t.Fatalf("Commit(third): %v", err)
+	}
+
+	entries, err := r.LogAll(100)
+	if err != nil {
+		t.Fatalf("LogAll: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Fatalf("LogAll returned %d entries, want 3", len(entries))
+	}
+
+	// Verify ordering: timestamps should be non-ascending (descending or equal).
+	for i := 0; i < len(entries)-1; i++ {
+		if entries[i].Commit.Timestamp < entries[i+1].Commit.Timestamp {
+			t.Fatalf("entries[%d].Timestamp (%d) < entries[%d].Timestamp (%d); want non-ascending",
+				i, entries[i].Commit.Timestamp, i+1, entries[i+1].Commit.Timestamp)
+		}
+	}
+
+	// Verify all three messages are present (order may vary when timestamps match).
+	messages := make(map[string]bool)
+	for _, e := range entries {
+		messages[e.Commit.Message] = true
+	}
+	for _, msg := range []string{"first", "second", "third"} {
+		if !messages[msg] {
+			t.Errorf("LogAll missing commit message %q", msg)
+		}
 	}
 }

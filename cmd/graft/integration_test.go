@@ -161,7 +161,7 @@ func TestIntegration_BranchCheckoutMerge(t *testing.T) {
 
 	// Merge feature into main.
 	mergeOut := mustRunGraft(t, dir, "merge", "feature")
-	if !strings.Contains(mergeOut, "merge completed") {
+	if !strings.Contains(mergeOut, "merge completed") && !strings.Contains(mergeOut, "fast-forward") {
 		t.Errorf("merge output unexpected: %s", mergeOut)
 	}
 

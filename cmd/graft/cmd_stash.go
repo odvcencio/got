@@ -64,7 +64,7 @@ func stashPushRun(cmd *cobra.Command, args []string) error {
 func newStashPopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "pop [index]",
-		Short: "Apply stash and remove it",
+		Short: "Apply stash and remove it (uses 3-way merge)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			index, err := parseStashIndex(args)
@@ -77,11 +77,25 @@ func newStashPopCmd() *cobra.Command {
 				return err
 			}
 
-			if err := r.StashPop(index); err != nil {
+			result, err := r.StashApplyMerge(index)
+			if err != nil {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Dropped stash@{%d}.\n", index)
+			out := cmd.OutOrStdout()
+			if result.Clean {
+				// Drop the stash only on clean apply.
+				if err := r.StashDrop(index); err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "Dropped stash@{%d}.\n", index)
+			} else {
+				for _, p := range result.ConflictPaths {
+					fmt.Fprintf(out, "CONFLICT in %s\n", p)
+				}
+				fmt.Fprintf(out, "Applied stash@{%d} with %d conflict(s). Stash not dropped. Resolve and commit.\n",
+					index, len(result.ConflictPaths))
+			}
 			return nil
 		},
 	}
@@ -90,7 +104,7 @@ func newStashPopCmd() *cobra.Command {
 func newStashApplyCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "apply [index]",
-		Short: "Apply stash without removing",
+		Short: "Apply stash without removing (uses 3-way merge)",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			index, err := parseStashIndex(args)
@@ -103,11 +117,21 @@ func newStashApplyCmd() *cobra.Command {
 				return err
 			}
 
-			if err := r.StashApply(index); err != nil {
+			result, err := r.StashApplyMerge(index)
+			if err != nil {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Applied stash@{%d}.\n", index)
+			out := cmd.OutOrStdout()
+			if result.Clean {
+				fmt.Fprintf(out, "Applied stash@{%d}.\n", index)
+			} else {
+				for _, p := range result.ConflictPaths {
+					fmt.Fprintf(out, "CONFLICT in %s\n", p)
+				}
+				fmt.Fprintf(out, "Applied stash@{%d} with %d conflict(s). Resolve and commit.\n",
+					index, len(result.ConflictPaths))
+			}
 			return nil
 		},
 	}
@@ -166,9 +190,11 @@ func newStashDropCmd() *cobra.Command {
 }
 
 func newStashShowCmd() *cobra.Command {
-	return &cobra.Command{
+	var patchFlag bool
+
+	cmd := &cobra.Command{
 		Use:   "show [index]",
-		Short: "Show stash details",
+		Short: "Show files changed in a stash entry",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			index, err := parseStashIndex(args)
@@ -181,26 +207,36 @@ func newStashShowCmd() *cobra.Command {
 				return err
 			}
 
-			entries, err := r.StashList()
+			out := cmd.OutOrStdout()
+
+			if patchFlag {
+				// Show full diff.
+				diff, err := r.StashShowDiff(index)
+				if err != nil {
+					return err
+				}
+				_, _ = out.Write(diff)
+				return nil
+			}
+
+			// Show summary of changed files.
+			entries, err := r.StashShow(index)
 			if err != nil {
 				return err
 			}
 
-			if index < 0 || index >= len(entries) {
-				return fmt.Errorf("stash: index %d out of range (stack has %d entries)", index, len(entries))
+			for _, e := range entries {
+				fmt.Fprintf(out, " %s | %s\n", e.Path, e.ChangeType)
 			}
-
-			e := entries[index]
-			short := string(e.CommitHash)
-			if len(short) > 8 {
-				short = short[:8]
+			if len(entries) > 0 {
+				fmt.Fprintf(out, " %d file(s) changed\n", len(entries))
 			}
-
-			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "stash@{%d}: %s\ncommit: %s\n", index, e.Message, short)
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVarP(&patchFlag, "patch", "p", false, "show full diff (patch)")
+	return cmd
 }
 
 // parseStashIndex extracts the stash index from the optional positional arg,

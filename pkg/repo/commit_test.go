@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // helper: initRepoWithFile creates a temp repo, writes a Go file, and stages it.
@@ -250,6 +250,105 @@ func TestBuildTree_FlattenTree_RoundTrip(t *testing.T) {
 		if fe.EntityListHash != se.EntityListHash {
 			t.Errorf("%s: EntityListHash = %q, want %q", path, fe.EntityListHash, se.EntityListHash)
 		}
+	}
+}
+
+// Test: CommitAmend replaces HEAD and inherits its parents.
+func TestCommitAmend_ReplacesHEADAndKeepsParents(t *testing.T) {
+	r := initRepoWithFile(t, "main.go", []byte("package main\n\nfunc main() {}\n"))
+
+	// First commit (root).
+	h1, err := r.Commit("first commit", "test-author")
+	if err != nil {
+		t.Fatalf("first Commit: %v", err)
+	}
+
+	// Modify and make a second commit.
+	if err := os.WriteFile(filepath.Join(r.RootDir, "main.go"),
+		[]byte("package main\n\nfunc main() { println(\"v2\") }\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	h2, err := r.Commit("second commit", "test-author")
+	if err != nil {
+		t.Fatalf("second Commit: %v", err)
+	}
+
+	// Now amend the second commit with a new message and updated content.
+	if err := os.WriteFile(filepath.Join(r.RootDir, "main.go"),
+		[]byte("package main\n\nfunc main() { println(\"v3\") }\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	h3, err := r.CommitAmend("amended second commit", "test-author")
+	if err != nil {
+		t.Fatalf("CommitAmend: %v", err)
+	}
+
+	// The amended hash should differ from the original.
+	if h3 == h2 {
+		t.Error("amended hash should differ from original")
+	}
+
+	// HEAD should point to the amended commit.
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD): %v", err)
+	}
+	if headHash != h3 {
+		t.Errorf("HEAD = %q, want %q", headHash, h3)
+	}
+
+	// The amended commit should have h1 as its parent (not h2).
+	c3, err := r.Store.ReadCommit(h3)
+	if err != nil {
+		t.Fatalf("ReadCommit(%s): %v", h3, err)
+	}
+	if len(c3.Parents) != 1 {
+		t.Fatalf("amended commit parents = %d, want 1", len(c3.Parents))
+	}
+	if c3.Parents[0] != h1 {
+		t.Errorf("amended commit parent = %q, want %q (h1)", c3.Parents[0], h1)
+	}
+	if c3.Message != "amended second commit" {
+		t.Errorf("Message = %q, want %q", c3.Message, "amended second commit")
+	}
+}
+
+// Test: CommitAmend with empty message reuses the original commit's message.
+func TestCommitAmend_EmptyMessageReusesOriginal(t *testing.T) {
+	r := initRepoWithFile(t, "main.go", []byte("package main\n\nfunc main() {}\n"))
+
+	_, err := r.Commit("original message", "test-author")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// Modify file so the tree changes (otherwise amend with same tree is fine too).
+	if err := os.WriteFile(filepath.Join(r.RootDir, "main.go"),
+		[]byte("package main\n\nfunc main() { println(\"amended\") }\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Amend with empty message — should reuse "original message".
+	h, err := r.CommitAmend("", "test-author")
+	if err != nil {
+		t.Fatalf("CommitAmend: %v", err)
+	}
+
+	c, err := r.Store.ReadCommit(h)
+	if err != nil {
+		t.Fatalf("ReadCommit: %v", err)
+	}
+	if c.Message != "original message" {
+		t.Errorf("Message = %q, want %q", c.Message, "original message")
 	}
 }
 

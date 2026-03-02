@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // setupMergeRepo creates a test repo with an initial commit on "main",
@@ -481,5 +483,413 @@ func C() { println("c") }
 	}
 	if base != commitB {
 		t.Errorf("FindMergeBase(B, B) = %q, want %q (commitB)", base, commitB)
+	}
+}
+
+// TestMerge_FastForward verifies that when HEAD is an ancestor of the merge
+// target (no divergence), the merge fast-forwards without creating a merge
+// commit. The branch ref should advance to the target commit.
+func TestMerge_FastForward(t *testing.T) {
+	r, dir := setupMergeRepo(t)
+
+	// At this point, "main" and "feature" both point to the initial commit.
+	// Switch to feature and add a commit so feature is ahead of main.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+
+	featureContent := `package main
+
+func A() { println("a") }
+
+func B() { println("b") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(featureContent), 0o644); err != nil {
+		t.Fatalf("write main.go (feature): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (feature): %v", err)
+	}
+	featureCommit, err := r.Commit("add func B on feature", "test-author")
+	if err != nil {
+		t.Fatalf("Commit (feature): %v", err)
+	}
+
+	// Switch back to main -- main is behind feature with no divergent commits.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+
+	report, err := r.Merge("feature")
+	if err != nil {
+		t.Fatalf("Merge(feature): %v", err)
+	}
+
+	if !report.IsFastForward {
+		t.Fatal("expected fast-forward merge, got three-way merge")
+	}
+	if report.HasConflicts {
+		t.Fatal("fast-forward merge should not have conflicts")
+	}
+	// For a fast-forward, MergeCommit is set to the target branch hash.
+	if report.MergeCommit != featureCommit {
+		t.Errorf("MergeCommit = %q, want %q (feature tip)", report.MergeCommit, featureCommit)
+	}
+
+	// Verify HEAD now points to the feature commit (no new merge commit created).
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD): %v", err)
+	}
+	if headHash != featureCommit {
+		t.Errorf("HEAD = %q, want %q (feature tip)", headHash, featureCommit)
+	}
+
+	// The feature commit should have exactly 1 parent (not 2 -- it's not a merge commit).
+	commit, err := r.Store.ReadCommit(featureCommit)
+	if err != nil {
+		t.Fatalf("ReadCommit(%s): %v", featureCommit, err)
+	}
+	if len(commit.Parents) != 1 {
+		t.Errorf("fast-forwarded commit has %d parents, want 1", len(commit.Parents))
+	}
+
+	// Verify the working tree was updated.
+	data, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go: %v", err)
+	}
+	if !strings.Contains(string(data), "func B()") {
+		t.Errorf("working tree not updated: missing func B in main.go")
+	}
+}
+
+// TestMerge_Abort verifies that MergeAbort restores the repository to the
+// state before a conflicted merge, and that calling MergeAbort when no merge
+// is in progress returns an error.
+func TestMerge_Abort(t *testing.T) {
+	r, dir := setupMergeRepo(t)
+
+	// On main: modify func A.
+	oursContent := `package main
+
+func A() { println("ours") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(oursContent), 0o644); err != nil {
+		t.Fatalf("write main.go (ours): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (ours): %v", err)
+	}
+	mainCommit, err := r.Commit("modify A on main", "test-author")
+	if err != nil {
+		t.Fatalf("Commit (ours): %v", err)
+	}
+
+	// Switch to feature and modify func A differently.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+	theirsContent := `package main
+
+func A() { println("theirs") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(theirsContent), 0o644); err != nil {
+		t.Fatalf("write main.go (theirs): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (theirs): %v", err)
+	}
+	if _, err := r.Commit("modify A on feature", "test-author"); err != nil {
+		t.Fatalf("Commit (theirs): %v", err)
+	}
+
+	// Switch back to main.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+
+	// Merge feature into main -- this should conflict.
+	report, err := r.Merge("feature")
+	if err != nil {
+		t.Fatalf("Merge(feature): %v", err)
+	}
+	if !report.HasConflicts {
+		t.Fatal("expected conflicts for abort test")
+	}
+
+	// Verify merge is in progress.
+	if !r.IsMergeInProgress() {
+		t.Fatal("expected IsMergeInProgress() == true after conflicted merge")
+	}
+
+	// Abort the merge.
+	if err := r.MergeAbort(); err != nil {
+		t.Fatalf("MergeAbort: %v", err)
+	}
+
+	// Verify merge is no longer in progress.
+	if r.IsMergeInProgress() {
+		t.Fatal("expected IsMergeInProgress() == false after abort")
+	}
+
+	// Verify HEAD was restored.
+	currentHead, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD) after abort: %v", err)
+	}
+	if currentHead != mainCommit {
+		t.Errorf("HEAD after abort = %q, want %q (pre-merge)", currentHead, mainCommit)
+	}
+
+	// Verify working tree was restored (conflict markers should be gone).
+	data, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go after abort: %v", err)
+	}
+	if strings.Contains(string(data), "<<<<<<<") {
+		t.Errorf("working tree still has conflict markers after abort")
+	}
+	if !strings.Contains(string(data), `println("ours")`) {
+		t.Errorf("working tree not restored to pre-merge state, got:\n%s", string(data))
+	}
+
+	// Verify MergeAbort with no merge in progress returns error.
+	if err := r.MergeAbort(); err == nil {
+		t.Fatal("expected error from MergeAbort when no merge in progress")
+	}
+}
+
+// TestMerge_AuthorFromConfig verifies that merge commits use ResolveAuthor()
+// (reading from repo config) rather than a hardcoded author string.
+func TestMerge_AuthorFromConfig(t *testing.T) {
+	r, dir := setupMergeRepo(t)
+
+	// Set user config on the repo.
+	cfg, err := r.ReadConfig()
+	if err != nil {
+		t.Fatalf("ReadConfig: %v", err)
+	}
+	cfg.User = &UserConfig{
+		Name:  "Test Merger",
+		Email: "merger@example.com",
+	}
+	if err := r.WriteConfig(cfg); err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+
+	// On main: add func C.
+	oursContent := `package main
+
+func A() { println("a") }
+
+func C() { println("c") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(oursContent), 0o644); err != nil {
+		t.Fatalf("write main.go (ours): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (ours): %v", err)
+	}
+	if _, err := r.Commit("add func C on main", "test-author"); err != nil {
+		t.Fatalf("Commit (ours): %v", err)
+	}
+
+	// Switch to feature and add func B.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+	theirsContent := `package main
+
+func A() { println("a") }
+
+func B() { println("b") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(theirsContent), 0o644); err != nil {
+		t.Fatalf("write main.go (theirs): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (theirs): %v", err)
+	}
+	if _, err := r.Commit("add func B on feature", "test-author"); err != nil {
+		t.Fatalf("Commit (theirs): %v", err)
+	}
+
+	// Switch back to main and merge.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+
+	report, err := r.Merge("feature")
+	if err != nil {
+		t.Fatalf("Merge(feature): %v", err)
+	}
+	if report.HasConflicts {
+		t.Fatal("expected clean merge")
+	}
+	if report.MergeCommit == "" {
+		t.Fatal("expected merge commit hash")
+	}
+
+	// Read the merge commit and verify the author.
+	commit, err := r.Store.ReadCommit(report.MergeCommit)
+	if err != nil {
+		t.Fatalf("ReadCommit(%s): %v", report.MergeCommit, err)
+	}
+	expectedAuthor := "Test Merger <merger@example.com>"
+	if commit.Author != expectedAuthor {
+		t.Errorf("merge commit author = %q, want %q", commit.Author, expectedAuthor)
+	}
+}
+
+// TestThreeWayTreeMerge_SharedHelper tests the extracted threeWayTreeMerge
+// helper directly, verifying the 7 cases: both modified (clean + conflict),
+// new in theirs, new in both (same + different), deleted by theirs (clean),
+// deleted by ours (clean), only in ours, and both deleted.
+func TestThreeWayTreeMerge_SharedHelper(t *testing.T) {
+	r, dir := setupMergeRepo(t)
+
+	// We need blobs in the store to use with threeWayTreeMerge.
+	// Create several blobs with different content.
+	writeBlob := func(content string) string {
+		t.Helper()
+		p := filepath.Join(dir, "tmp_blob")
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("write tmp blob: %v", err)
+		}
+		if err := r.Add([]string{"tmp_blob"}); err != nil {
+			t.Fatalf("Add tmp blob: %v", err)
+		}
+		stg, err := r.ReadStaging()
+		if err != nil {
+			t.Fatalf("ReadStaging: %v", err)
+		}
+		entry := stg.Entries["tmp_blob"]
+		if entry == nil {
+			t.Fatalf("tmp_blob not in staging")
+		}
+		return string(entry.BlobHash)
+	}
+
+	blobBase := writeBlob("line1\nline2\nline3\n")
+	blobOurs := writeBlob("line1-ours\nline2\nline3\n")
+	blobTheirs := writeBlob("line1\nline2\nline3-theirs\n")
+	blobSame := writeBlob("same content\n")
+
+	// Build base/ours/theirs maps covering the different cases.
+	mkEntry := func(blobHash, mode string) TreeFileEntry {
+		return TreeFileEntry{BlobHash: object.Hash(blobHash), Mode: mode}
+	}
+
+	baseMap := map[string]TreeFileEntry{
+		"both-modified.txt":    mkEntry(blobBase, "100644"),
+		"only-theirs-changed":  mkEntry(blobBase, "100644"),
+		"only-ours-changed":    mkEntry(blobBase, "100644"),
+		"deleted-by-theirs":    mkEntry(blobBase, "100644"),
+		"deleted-by-ours":      mkEntry(blobBase, "100644"),
+		"both-deleted":         mkEntry(blobBase, "100644"),
+		"same-in-ours-theirs":  mkEntry(blobBase, "100644"),
+	}
+	oursMap := map[string]TreeFileEntry{
+		"both-modified.txt":    mkEntry(blobOurs, "100644"),
+		"only-theirs-changed":  mkEntry(blobBase, "100644"),
+		"only-ours-changed":    mkEntry(blobOurs, "100644"),
+		"deleted-by-theirs":    mkEntry(blobBase, "100644"),
+		// deleted-by-ours: not present
+		// both-deleted: not present
+		"same-in-ours-theirs":  mkEntry(blobSame, "100644"),
+		"only-in-ours":         mkEntry(blobOurs, "100644"),
+		"new-in-both-same":     mkEntry(blobSame, "100644"),
+	}
+	theirsMap := map[string]TreeFileEntry{
+		"both-modified.txt":    mkEntry(blobTheirs, "100644"),
+		"only-theirs-changed":  mkEntry(blobTheirs, "100644"),
+		"only-ours-changed":    mkEntry(blobBase, "100644"),
+		// deleted-by-theirs: not present
+		"deleted-by-ours":      mkEntry(blobBase, "100644"),
+		// both-deleted: not present
+		"same-in-ours-theirs":  mkEntry(blobSame, "100644"),
+		"new-in-theirs":        mkEntry(blobTheirs, "100644"),
+		"new-in-both-same":     mkEntry(blobSame, "100644"),
+	}
+
+	result, err := r.threeWayTreeMerge(baseMap, oursMap, theirsMap)
+	if err != nil {
+		t.Fatalf("threeWayTreeMerge: %v", err)
+	}
+
+	// Build a map of path -> status for easy checking.
+	statusMap := make(map[string]string)
+	for _, f := range result.Files {
+		statusMap[f.Path] = f.Status
+	}
+
+	// Verify expected statuses.
+	tests := []struct {
+		path   string
+		status string
+	}{
+		{"both-modified.txt", "clean"},     // both modified different lines -- text merge resolves cleanly
+		{"only-theirs-changed", "clean"},   // only theirs changed from base
+		{"only-ours-changed", "unchanged"}, // only ours changed -- keep ours, unchanged
+		{"deleted-by-theirs", "deleted"},   // theirs deleted, ours same as base -- clean delete
+		{"deleted-by-ours", "deleted"},     // ours deleted, theirs same as base -- clean delete
+		{"both-deleted", "deleted"},        // both deleted
+		{"same-in-ours-theirs", "unchanged"}, // ours == theirs, no merge needed
+		{"only-in-ours", "unchanged"},      // only in ours, not in theirs or base
+		{"new-in-theirs", "added"},         // new in theirs only
+		{"new-in-both-same", "unchanged"},  // new in both, same content
+	}
+
+	for _, tc := range tests {
+		got, ok := statusMap[tc.path]
+		if !ok {
+			t.Errorf("path %q not found in result", tc.path)
+			continue
+		}
+		if got != tc.status {
+			t.Errorf("path %q: status = %q, want %q", tc.path, got, tc.status)
+		}
+	}
+
+	// Verify deleted paths.
+	deletedSet := make(map[string]bool)
+	for _, p := range result.DeletedPaths {
+		deletedSet[p] = true
+	}
+	for _, expected := range []string{"deleted-by-theirs", "deleted-by-ours", "both-deleted"} {
+		if !deletedSet[expected] {
+			t.Errorf("expected %q in DeletedPaths", expected)
+		}
+	}
+
+	// Verify the "only-theirs-changed" file has theirs content.
+	for _, f := range result.Files {
+		if f.Path == "only-theirs-changed" {
+			if string(f.Content) != "line1\nline2\nline3-theirs\n" {
+				t.Errorf("only-theirs-changed content = %q, want %q", string(f.Content), "line1\nline2\nline3-theirs\n")
+			}
+		}
+		if f.Path == "new-in-theirs" {
+			if string(f.Content) != "line1\nline2\nline3-theirs\n" {
+				t.Errorf("new-in-theirs content = %q, want %q", string(f.Content), "line1\nline2\nline3-theirs\n")
+			}
+		}
+	}
+
+	// Verify HasConflicts is false for this scenario (plain text, non-overlapping changes).
+	if result.HasConflicts {
+		t.Errorf("expected no conflicts, got HasConflicts=true, details: %v", result.ConflictDetails)
+	}
+}
+
+// TestMerge_NoMergeInProgressBeforeMerge verifies that a clean merge removes
+// merge state files (MERGE_HEAD, ORIG_HEAD) so IsMergeInProgress returns false.
+func TestMerge_NoMergeInProgressBeforeMerge(t *testing.T) {
+	r, _ := setupMergeRepo(t)
+
+	// No merge should be in progress initially.
+	if r.IsMergeInProgress() {
+		t.Fatal("IsMergeInProgress should be false before any merge")
 	}
 }

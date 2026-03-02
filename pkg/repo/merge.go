@@ -29,6 +29,7 @@ type MergeReport struct {
 	HasConflicts   bool
 	TotalConflicts int
 	MergeCommit    object.Hash // set if auto-committed (clean merge)
+	IsFastForward  bool        // true if fast-forward (no merge commit created)
 }
 
 type mergeConflictState struct {
@@ -386,16 +387,100 @@ func chooseBetterMergeBase(best object.Hash, bestGeneration uint64, candidate ob
 	return best, bestGeneration
 }
 
+// isFastForward returns true if headHash is an ancestor of targetHash,
+// meaning the merge can be done by simply moving HEAD forward.
+func (r *Repo) isFastForward(headHash, targetHash object.Hash) bool {
+	base, err := r.FindMergeBase(headHash, targetHash)
+	if err != nil {
+		return false
+	}
+	return base == headHash
+}
+
+// saveMergeState writes pre-merge state files so that MergeAbort can restore
+// the original state. It writes MERGE_HEAD (the branch being merged) and
+// ORIG_HEAD (the HEAD hash before the merge).
+func (r *Repo) saveMergeState(origHead, mergeHead object.Hash) error {
+	origHeadPath := filepath.Join(r.GraftDir, "ORIG_HEAD")
+	if err := os.WriteFile(origHeadPath, []byte(string(origHead)+"\n"), 0o644); err != nil {
+		return fmt.Errorf("write ORIG_HEAD: %w", err)
+	}
+	mergeHeadPath := filepath.Join(r.GraftDir, "MERGE_HEAD")
+	if err := os.WriteFile(mergeHeadPath, []byte(string(mergeHead)+"\n"), 0o644); err != nil {
+		return fmt.Errorf("write MERGE_HEAD: %w", err)
+	}
+	return nil
+}
+
+// cleanMergeState removes the merge state files (MERGE_HEAD, ORIG_HEAD).
+func (r *Repo) cleanMergeState() {
+	os.Remove(filepath.Join(r.GraftDir, "MERGE_HEAD"))
+	os.Remove(filepath.Join(r.GraftDir, "ORIG_HEAD"))
+}
+
+// IsMergeInProgress returns true if a merge is currently in progress
+// (MERGE_HEAD exists).
+func (r *Repo) IsMergeInProgress() bool {
+	_, err := os.Stat(filepath.Join(r.GraftDir, "MERGE_HEAD"))
+	return err == nil
+}
+
+// MergeAbort cancels an in-progress merge and restores the working tree
+// to the pre-merge state.
+func (r *Repo) MergeAbort() error {
+	if !r.IsMergeInProgress() {
+		return fmt.Errorf("merge abort: no merge in progress")
+	}
+
+	// Read original HEAD.
+	origHeadData, err := os.ReadFile(filepath.Join(r.GraftDir, "ORIG_HEAD"))
+	if err != nil {
+		return fmt.Errorf("merge abort: read ORIG_HEAD: %w", err)
+	}
+	origHead := object.Hash(strings.TrimSpace(string(origHeadData)))
+
+	// Restore HEAD to orig-head by checking out the original commit's tree.
+	origCommit, err := r.Store.ReadCommit(origHead)
+	if err != nil {
+		return fmt.Errorf("merge abort: read orig commit: %w", err)
+	}
+	if err := r.checkoutTree(origCommit); err != nil {
+		return fmt.Errorf("merge abort: checkout: %w", err)
+	}
+
+	// Restore branch ref to original HEAD.
+	head, err := r.Head()
+	if err != nil {
+		return fmt.Errorf("merge abort: read HEAD: %w", err)
+	}
+	if strings.HasPrefix(head, "refs/") {
+		if err := r.UpdateRef(head, origHead); err != nil {
+			return fmt.Errorf("merge abort: restore ref: %w", err)
+		}
+	} else {
+		headPath := filepath.Join(r.GraftDir, "HEAD")
+		if err := os.WriteFile(headPath, []byte(string(origHead)+"\n"), 0o644); err != nil {
+			return fmt.Errorf("merge abort: set HEAD: %w", err)
+		}
+	}
+
+	// Clean up merge state files.
+	r.cleanMergeState()
+	r.invalidateStatusCache()
+
+	return nil
+}
+
 // Merge merges the named branch into the current HEAD.
 //
 // Algorithm:
 //  1. Resolve current HEAD and branch name to commit hashes
 //  2. FindMergeBase(headHash, branchHash)
-//  3. Flatten all three trees (base, ours=HEAD, theirs=branch)
-//  4. Collect all file paths across all three trees
-//  5. For each file, perform the appropriate merge action
+//  3. Fast-forward detection: if HEAD is ancestor of target, just advance HEAD
+//  4. Flatten all three trees (base, ours=HEAD, theirs=branch)
+//  5. For each file, perform the appropriate merge action via threeWayTreeMerge
 //  6. If clean: write files, stage, auto-commit with two parents
-//  7. If conflicts: write conflict-marker files, do NOT commit
+//  7. If conflicts: write conflict-marker files, save merge state, do NOT commit
 func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 	// 1. Resolve HEAD and branch.
 	headHash, err := r.ResolveRef("HEAD")
@@ -413,7 +498,17 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 		return nil, fmt.Errorf("merge: %w", err)
 	}
 
-	// 3. Flatten all three trees.
+	// 3. Fast-forward detection: if merge base == HEAD, we can fast-forward.
+	if baseHash == headHash {
+		return r.mergeFastForward(branchName, headHash, branchHash)
+	}
+
+	// Save pre-merge state for possible --abort.
+	if err := r.saveMergeState(headHash, branchHash); err != nil {
+		return nil, fmt.Errorf("merge: save state: %w", err)
+	}
+
+	// 4. Flatten all three trees.
 	headCommit, err := r.Store.ReadCommit(headHash)
 	if err != nil {
 		return nil, fmt.Errorf("merge: read head commit: %w", err)
@@ -450,12 +545,18 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 	oursMap := indexByPath(oursFiles)
 	theirsMap := indexByPath(theirsFiles)
 
-	// 4. Collect all file paths.
-	allPaths := collectAllPaths(baseMap, oursMap, theirsMap)
+	// 5. Process each file via the shared three-way merge helper.
+	mergeResult, err := r.threeWayTreeMerge(baseMap, oursMap, theirsMap)
+	if err != nil {
+		return nil, fmt.Errorf("merge: %w", err)
+	}
 
-	// 5. Process each file.
-	report := &MergeReport{}
-	// Track merged file contents to write and stage.
+	// Build the MergeReport and collect data for writing files.
+	report := &MergeReport{
+		HasConflicts:   mergeResult.HasConflicts,
+		TotalConflicts: mergeResult.TotalConflicts,
+	}
+
 	type mergedFile struct {
 		path    string
 		content []byte
@@ -465,202 +566,57 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 	var conflictedFiles []mergeConflictState
 	var deletedPaths []string
 
-	for _, path := range allPaths {
-		_, inBase := baseMap[path]
-		_, inOurs := oursMap[path]
-		_, inTheirs := theirsMap[path]
-
-		switch {
-		case inBase && inOurs && inTheirs:
-			// In all three: three-way merge.
-			fr, content, err := r.mergeThreeWay(path, baseMap[path], oursMap[path], theirsMap[path])
-			if err != nil {
-				return nil, fmt.Errorf("merge file %q: %w", path, err)
-			}
-			report.Files = append(report.Files, fr)
-			if fr.Status == "conflict" {
-				report.HasConflicts = true
-				report.TotalConflicts += fr.ConflictCount
-				conflictedFiles = append(conflictedFiles, mergeConflictState{
-					path:       path,
-					baseHash:   baseMap[path].BlobHash,
-					oursHash:   oursMap[path].BlobHash,
-					theirsHash: theirsMap[path].BlobHash,
-					mode:       normalizeFileMode(oursMap[path].Mode),
-				})
-			}
-			mergedFiles = append(mergedFiles, mergedFile{
-				path:    path,
-				content: content,
-				mode:    normalizeFileMode(oursMap[path].Mode),
-			})
-
-		case !inBase && inOurs && inTheirs:
-			// New in both branches (not in base).
-			if oursMap[path].BlobHash == theirsMap[path].BlobHash {
-				// Same content: take either.
-				content, err := r.readBlobData(oursMap[path].BlobHash)
-				if err != nil {
-					return nil, fmt.Errorf("merge read %q: %w", path, err)
-				}
-				report.Files = append(report.Files, FileMergeReport{
-					Path:   path,
-					Status: "clean",
-				})
-				mergedFiles = append(mergedFiles, mergedFile{
-					path:    path,
-					content: content,
-					mode:    normalizeFileMode(oursMap[path].Mode),
-				})
-			} else {
-				// Different content: conflict.
-				oursData, err := r.readBlobData(oursMap[path].BlobHash)
-				if err != nil {
-					return nil, fmt.Errorf("merge read ours %q: %w", path, err)
-				}
-				theirsData, err := r.readBlobData(theirsMap[path].BlobHash)
-				if err != nil {
-					return nil, fmt.Errorf("merge read theirs %q: %w", path, err)
-				}
-				// Try structural merge with empty base.
-				fr, content, err := r.mergeFileContents(path, nil, oursData, theirsData)
-				if err != nil {
-					return nil, fmt.Errorf("merge file %q: %w", path, err)
-				}
-				report.Files = append(report.Files, fr)
-				if fr.Status == "conflict" {
-					report.HasConflicts = true
-					report.TotalConflicts += fr.ConflictCount
-					conflictedFiles = append(conflictedFiles, mergeConflictState{
-						path:       path,
-						baseHash:   "",
-						oursHash:   oursMap[path].BlobHash,
-						theirsHash: theirsMap[path].BlobHash,
-						mode:       normalizeFileMode(oursMap[path].Mode),
-					})
-				}
-				mergedFiles = append(mergedFiles, mergedFile{
-					path:    path,
-					content: content,
-					mode:    normalizeFileMode(oursMap[path].Mode),
-				})
-			}
-
-		case inBase && inOurs && !inTheirs:
-			// Deleted by theirs.
-			if oursMap[path].BlobHash == baseMap[path].BlobHash {
-				// Ours unchanged: clean delete.
-				report.Files = append(report.Files, FileMergeReport{
-					Path:   path,
-					Status: "deleted",
-				})
-				deletedPaths = append(deletedPaths, path)
-				continue
-			}
-
-			// Delete-vs-modify must be a conflict (avoid silent data loss).
-			oursData, err := r.readBlobData(oursMap[path].BlobHash)
-			if err != nil {
-				return nil, fmt.Errorf("merge read ours %q: %w", path, err)
-			}
-			content := renderFileConflict(oursData, nil)
+	for _, f := range mergeResult.Files {
+		switch f.Status {
+		case "unchanged":
+			// No action needed; file didn't change relative to ours.
+			continue
+		case "clean":
 			report.Files = append(report.Files, FileMergeReport{
-				Path:          path,
+				Path:        f.Path,
+				Status:      "clean",
+				EntityCount: f.Conflicts,
+			})
+			mergedFiles = append(mergedFiles, mergedFile{
+				path: f.Path, content: f.Content, mode: f.Mode,
+			})
+		case "conflict":
+			report.Files = append(report.Files, FileMergeReport{
+				Path:          f.Path,
 				Status:        "conflict",
-				ConflictCount: 1,
+				ConflictCount: f.Conflicts,
 			})
-			report.HasConflicts = true
-			report.TotalConflicts++
 			mergedFiles = append(mergedFiles, mergedFile{
-				path:    path,
-				content: content,
-				mode:    normalizeFileMode(oursMap[path].Mode),
+				path: f.Path, content: f.Content, mode: f.Mode,
 			})
+			// Determine blob hashes for conflict state.
+			var bh, oh, th object.Hash
+			if base, ok := baseMap[f.Path]; ok {
+				bh = base.BlobHash
+			}
+			if ours, ok := oursMap[f.Path]; ok {
+				oh = ours.BlobHash
+			}
+			if theirs, ok := theirsMap[f.Path]; ok {
+				th = theirs.BlobHash
+			}
 			conflictedFiles = append(conflictedFiles, mergeConflictState{
-				path:       path,
-				baseHash:   baseMap[path].BlobHash,
-				oursHash:   oursMap[path].BlobHash,
-				theirsHash: "",
-				mode:       normalizeFileMode(oursMap[path].Mode),
+				path: f.Path, baseHash: bh, oursHash: oh, theirsHash: th, mode: f.Mode,
 			})
-
-		case inBase && !inOurs && inTheirs:
-			// Deleted by ours.
-			if theirsMap[path].BlobHash == baseMap[path].BlobHash {
-				// Theirs unchanged: clean delete.
-				report.Files = append(report.Files, FileMergeReport{
-					Path:   path,
-					Status: "deleted",
-				})
-				deletedPaths = append(deletedPaths, path)
-				continue
-			}
-
-			// Delete-vs-modify must be a conflict (avoid silent data loss).
-			theirsData, err := r.readBlobData(theirsMap[path].BlobHash)
-			if err != nil {
-				return nil, fmt.Errorf("merge read theirs %q: %w", path, err)
-			}
-			content := renderFileConflict(nil, theirsData)
+		case "added":
 			report.Files = append(report.Files, FileMergeReport{
-				Path:          path,
-				Status:        "conflict",
-				ConflictCount: 1,
-			})
-			report.HasConflicts = true
-			report.TotalConflicts++
-			mergedFiles = append(mergedFiles, mergedFile{
-				path:    path,
-				content: content,
-				mode:    normalizeFileMode(theirsMap[path].Mode),
-			})
-			conflictedFiles = append(conflictedFiles, mergeConflictState{
-				path:       path,
-				baseHash:   baseMap[path].BlobHash,
-				oursHash:   "",
-				theirsHash: theirsMap[path].BlobHash,
-				mode:       normalizeFileMode(theirsMap[path].Mode),
-			})
-
-		case !inBase && inOurs && !inTheirs:
-			// New in ours only: keep as-is.
-			content, err := r.readBlobData(oursMap[path].BlobHash)
-			if err != nil {
-				return nil, fmt.Errorf("merge read %q: %w", path, err)
-			}
-			report.Files = append(report.Files, FileMergeReport{
-				Path:   path,
+				Path:   f.Path,
 				Status: "added",
 			})
 			mergedFiles = append(mergedFiles, mergedFile{
-				path:    path,
-				content: content,
-				mode:    normalizeFileMode(oursMap[path].Mode),
+				path: f.Path, content: f.Content, mode: f.Mode,
 			})
-
-		case !inBase && !inOurs && inTheirs:
-			// New in theirs only: add.
-			content, err := r.readBlobData(theirsMap[path].BlobHash)
-			if err != nil {
-				return nil, fmt.Errorf("merge read %q: %w", path, err)
-			}
+		case "deleted":
 			report.Files = append(report.Files, FileMergeReport{
-				Path:   path,
-				Status: "added",
-			})
-			mergedFiles = append(mergedFiles, mergedFile{
-				path:    path,
-				content: content,
-				mode:    normalizeFileMode(theirsMap[path].Mode),
-			})
-
-		case inBase && !inOurs && !inTheirs:
-			// Both deleted: remove.
-			report.Files = append(report.Files, FileMergeReport{
-				Path:   path,
+				Path:   f.Path,
 				Status: "deleted",
 			})
-			deletedPaths = append(deletedPaths, path)
+			deletedPaths = append(deletedPaths, f.Path)
 		}
 	}
 
@@ -711,10 +667,11 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 			}
 		}
 
-		// Create merge commit with two parents.
+		// Create merge commit with two parents using the resolved author.
+		author := r.ResolveAuthor()
 		mergeHash, err := r.commitMerge(
 			fmt.Sprintf("Merge branch '%s'", branchName),
-			"graft-merge",
+			author,
 			headHash,
 			branchHash,
 		)
@@ -722,6 +679,10 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 			return nil, fmt.Errorf("merge: commit: %w", err)
 		}
 		report.MergeCommit = mergeHash
+
+		// Clean up merge state and run post-merge hook.
+		r.cleanMergeState()
+		_ = r.RunHook(HookPostMerge)
 	} else {
 		if err := r.stageConflictState(conflictedFiles, deletedPaths); err != nil {
 			return nil, fmt.Errorf("merge: stage conflicts: %w", err)
@@ -729,6 +690,43 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 	}
 
 	return report, nil
+}
+
+// mergeFastForward performs a fast-forward merge: HEAD is an ancestor of the
+// target, so we simply update HEAD and check out the target tree.
+func (r *Repo) mergeFastForward(branchName string, headHash, branchHash object.Hash) (*MergeReport, error) {
+	branchCommit, err := r.Store.ReadCommit(branchHash)
+	if err != nil {
+		return nil, fmt.Errorf("merge: read branch commit: %w", err)
+	}
+
+	// Check out the target tree.
+	if err := r.checkoutTree(branchCommit); err != nil {
+		return nil, fmt.Errorf("merge: fast-forward checkout: %w", err)
+	}
+
+	// Update the current branch ref to point to the target.
+	head, err := r.Head()
+	if err != nil {
+		return nil, fmt.Errorf("merge: read HEAD: %w", err)
+	}
+	if strings.HasPrefix(head, "refs/") {
+		if err := r.UpdateRefCAS(head, branchHash, headHash); err != nil {
+			return nil, fmt.Errorf("merge: update ref %q: %w", head, err)
+		}
+	} else {
+		if err := r.UpdateRefCAS("HEAD", branchHash, headHash); err != nil {
+			return nil, fmt.Errorf("merge: update detached HEAD: %w", err)
+		}
+	}
+
+	r.invalidateStatusCache()
+	_ = r.RunHook(HookPostMerge)
+
+	return &MergeReport{
+		IsFastForward: true,
+		MergeCommit:   branchHash,
+	}, nil
 }
 
 func (r *Repo) stageConflictState(conflicted []mergeConflictState, deletedPaths []string) error {

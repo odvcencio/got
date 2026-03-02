@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -12,12 +13,17 @@ import (
 
 func newPullCmd() *cobra.Command {
 	var allowMerge bool
+	var rebaseFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "pull [remote] [branch]",
-		Short: "Fetch from remote and fast-forward (or merge with --merge)",
+		Short: "Fetch from remote and integrate (fast-forward, --merge, or --rebase)",
 		Args:  cobra.MaximumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if allowMerge && rebaseFlag {
+				return fmt.Errorf("--merge and --rebase are mutually exclusive")
+			}
+
 			r, err := repo.Open(".")
 			if err != nil {
 				return err
@@ -44,7 +50,7 @@ func newPullCmd() *cobra.Command {
 				return err
 			}
 			if transport == remoteTransportGit {
-				return pullViaGit(cmd, r, remoteURL, branch, allowMerge)
+				return pullViaGit(cmd, r, remoteURL, branch, allowMerge, rebaseFlag)
 			}
 
 			currentBranch, err := r.CurrentBranch()
@@ -95,10 +101,38 @@ func newPullCmd() *cobra.Command {
 					return nil
 				}
 
-				// Diverged: require explicit merge mode.
+				// Diverged: require explicit merge or rebase mode.
 				if base != localHash {
+					if rebaseFlag {
+						// Rebase local commits on top of remote.
+						if currentBranch != branch {
+							return fmt.Errorf("pull --rebase requires checked out branch %q (current: %q)", branch, currentBranch)
+						}
+
+						err := r.Rebase(string(remoteHash))
+						if err != nil {
+							var conflictErr *repo.ErrRebaseConflict
+							if errors.As(err, &conflictErr) {
+								details := conflictErr.Details
+								details = strings.TrimPrefix(details, "conflict in: ")
+								paths := strings.Split(details, ", ")
+								out := cmd.OutOrStdout()
+								for _, p := range paths {
+									p = strings.TrimSpace(p)
+									if p != "" {
+										fmt.Fprintf(out, "CONFLICT in %s. Fix conflicts and run: graft rebase --continue\n", p)
+									}
+								}
+								return nil
+							}
+							return fmt.Errorf("pull --rebase: %w", err)
+						}
+						fmt.Fprintf(cmd.OutOrStdout(), "rebased onto %s (%d objects fetched)\n", shortHash(remoteHash), result.ObjectCount)
+						return nil
+					}
+
 					if !allowMerge {
-						return fmt.Errorf("pull would not fast-forward %s (local %s, remote %s); retry with --merge", branch, shortHash(localHash), shortHash(remoteHash))
+						return fmt.Errorf("pull would not fast-forward %s (local %s, remote %s); retry with --merge or --rebase", branch, shortHash(localHash), shortHash(remoteHash))
 					}
 					if currentBranch != branch {
 						return fmt.Errorf("pull --merge requires checked out branch %q (current: %q)", branch, currentBranch)
@@ -154,6 +188,7 @@ func newPullCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&allowMerge, "merge", false, "allow a merge commit when fast-forward is not possible")
+	cmd.Flags().BoolVar(&rebaseFlag, "rebase", false, "rebase local commits on top of remote instead of merging")
 	return cmd
 }
 

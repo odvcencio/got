@@ -17,6 +17,119 @@ type LogEntry struct {
 	Commit *object.CommitObj
 }
 
+// LogAll walks the commit history from all branches and tags, collecting
+// up to limit unique commits sorted by timestamp (newest first). Each
+// branch/tag tip is walked independently; commits reachable from multiple
+// refs are deduplicated. In a shallow repository, walking stops at shallow
+// boundaries.
+func (r *Repo) LogAll(limit int) ([]LogEntry, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	// Collect all ref tips: branches + tags.
+	branchRefs, err := r.ListRefs("heads")
+	if err != nil {
+		return nil, fmt.Errorf("log all: list branches: %w", err)
+	}
+	tagRefs, err := r.ListRefs("tags")
+	if err != nil {
+		return nil, fmt.Errorf("log all: list tags: %w", err)
+	}
+
+	seen := make(map[object.Hash]struct{})
+	var all []LogEntry
+
+	shallow, _ := r.ShallowState()
+
+	// Walk from each ref tip collecting all reachable commits.
+	for _, refs := range []map[string]object.Hash{branchRefs, tagRefs} {
+		for _, tip := range refs {
+			current := tip
+			for current != "" {
+				if _, dup := seen[current]; dup {
+					break
+				}
+
+				c, err := r.Store.ReadCommit(current)
+				if err != nil {
+					if errors.Is(err, os.ErrNotExist) {
+						break
+					}
+					return nil, fmt.Errorf("log all: read commit %s: %w", current, err)
+				}
+
+				seen[current] = struct{}{}
+				all = append(all, LogEntry{Hash: current, Commit: c})
+
+				// Follow first parent.
+				if len(c.Parents) == 0 {
+					break
+				}
+
+				// Also enqueue non-first parents for walking.
+				for _, p := range c.Parents[1:] {
+					if _, dup := seen[p]; !dup {
+						if shallow != nil && shallow.IsShallow(p) {
+							continue
+						}
+						// Walk secondary parents iteratively via a stack.
+						stack := []object.Hash{p}
+						for len(stack) > 0 {
+							top := stack[len(stack)-1]
+							stack = stack[:len(stack)-1]
+
+							if _, dup := seen[top]; dup {
+								continue
+							}
+
+							pc, err := r.Store.ReadCommit(top)
+							if err != nil {
+								if errors.Is(err, os.ErrNotExist) {
+									continue
+								}
+								return nil, fmt.Errorf("log all: read commit %s: %w", top, err)
+							}
+
+							seen[top] = struct{}{}
+							all = append(all, LogEntry{Hash: top, Commit: pc})
+
+							for _, pp := range pc.Parents {
+								if _, dup := seen[pp]; !dup {
+									if shallow == nil || !shallow.IsShallow(pp) {
+										stack = append(stack, pp)
+									}
+								}
+							}
+						}
+					}
+				}
+
+				next := c.Parents[0]
+				if shallow != nil && shallow.IsShallow(next) {
+					break
+				}
+				current = next
+			}
+		}
+	}
+
+	// Sort by timestamp descending (newest first), break ties by hash.
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].Commit.Timestamp != all[j].Commit.Timestamp {
+			return all[i].Commit.Timestamp > all[j].Commit.Timestamp
+		}
+		return all[i].Hash < all[j].Hash
+	})
+
+	// Apply limit.
+	if len(all) > limit {
+		all = all[:limit]
+	}
+
+	return all, nil
+}
+
 // LogByEntity walks first-parent history from start and returns up to limit
 // commits that touched entityKey. If pathFilter is non-empty, matching is
 // restricted to that path. In a shallow repository, walking stops at shallow

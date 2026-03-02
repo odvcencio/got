@@ -3,6 +3,7 @@ package repo
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -294,5 +295,382 @@ func TestStashMultipleAndPopOrder(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Errorf("stash list has %d entries, want 0", len(list))
+	}
+}
+
+// Test 8: StashShow displays correct changed files (modified).
+func TestStashShowModified(t *testing.T) {
+	r := stashTestRepo(t, "hello.txt", []byte("original"))
+
+	// Modify the file.
+	modPath := filepath.Join(r.RootDir, "hello.txt")
+	if err := os.WriteFile(modPath, []byte("modified"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if _, err := r.Stash("test-author"); err != nil {
+		t.Fatalf("Stash: %v", err)
+	}
+
+	entries, err := r.StashShow(0)
+	if err != nil {
+		t.Fatalf("StashShow: %v", err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("StashShow returned %d entries, want 1", len(entries))
+	}
+	if entries[0].Path != "hello.txt" {
+		t.Errorf("entry path = %q, want %q", entries[0].Path, "hello.txt")
+	}
+	if entries[0].ChangeType != "modified" {
+		t.Errorf("entry change type = %q, want %q", entries[0].ChangeType, "modified")
+	}
+}
+
+// Test 9: StashShow shows added files.
+func TestStashShowAdded(t *testing.T) {
+	r := stashTestRepo(t, "hello.txt", []byte("original"))
+
+	// Add a new file.
+	newPath := filepath.Join(r.RootDir, "new.txt")
+	if err := os.WriteFile(newPath, []byte("new content"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if _, err := r.Stash("test-author"); err != nil {
+		t.Fatalf("Stash: %v", err)
+	}
+
+	entries, err := r.StashShow(0)
+	if err != nil {
+		t.Fatalf("StashShow: %v", err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("StashShow returned %d entries, want 1", len(entries))
+	}
+	if entries[0].Path != "new.txt" {
+		t.Errorf("entry path = %q, want %q", entries[0].Path, "new.txt")
+	}
+	if entries[0].ChangeType != "added" {
+		t.Errorf("entry change type = %q, want %q", entries[0].ChangeType, "added")
+	}
+}
+
+// Test 10: StashShow shows deleted files.
+func TestStashShowDeleted(t *testing.T) {
+	r := stashTestRepo(t, "hello.txt", []byte("original"))
+
+	// Delete the file.
+	modPath := filepath.Join(r.RootDir, "hello.txt")
+	if err := os.Remove(modPath); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	if _, err := r.Stash("test-author"); err != nil {
+		t.Fatalf("Stash: %v", err)
+	}
+
+	entries, err := r.StashShow(0)
+	if err != nil {
+		t.Fatalf("StashShow: %v", err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("StashShow returned %d entries, want 1", len(entries))
+	}
+	if entries[0].Path != "hello.txt" {
+		t.Errorf("entry path = %q, want %q", entries[0].Path, "hello.txt")
+	}
+	if entries[0].ChangeType != "deleted" {
+		t.Errorf("entry change type = %q, want %q", entries[0].ChangeType, "deleted")
+	}
+}
+
+// Test 11: StashShow with multiple changes.
+func TestStashShowMultipleChanges(t *testing.T) {
+	r := stashTestRepo(t, "a.txt", []byte("original a"))
+
+	// Also add another file before the initial stash context.
+	bPath := filepath.Join(r.RootDir, "b.txt")
+	if err := os.WriteFile(bPath, []byte("original b"), 0o644); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+	if err := r.Add([]string{"b.txt"}); err != nil {
+		t.Fatalf("Add(b): %v", err)
+	}
+	if _, err := r.Commit("add b", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// Modify a.txt, delete b.txt, add c.txt.
+	if err := os.WriteFile(filepath.Join(r.RootDir, "a.txt"), []byte("modified a"), 0o644); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if err := os.Remove(bPath); err != nil {
+		t.Fatalf("remove b: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(r.RootDir, "c.txt"), []byte("new c"), 0o644); err != nil {
+		t.Fatalf("write c: %v", err)
+	}
+
+	if _, err := r.Stash("test-author"); err != nil {
+		t.Fatalf("Stash: %v", err)
+	}
+
+	entries, err := r.StashShow(0)
+	if err != nil {
+		t.Fatalf("StashShow: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Fatalf("StashShow returned %d entries, want 3", len(entries))
+	}
+
+	// Entries should be sorted by path.
+	want := map[string]string{
+		"a.txt": "modified",
+		"b.txt": "deleted",
+		"c.txt": "added",
+	}
+	for _, e := range entries {
+		expected, ok := want[e.Path]
+		if !ok {
+			t.Errorf("unexpected entry: %q", e.Path)
+			continue
+		}
+		if e.ChangeType != expected {
+			t.Errorf("entry %q: change type = %q, want %q", e.Path, e.ChangeType, expected)
+		}
+	}
+}
+
+// Test 12: StashApply with merge applies cleanly when no conflicts.
+func TestStashApplyMerge_CleanApply(t *testing.T) {
+	r := stashTestRepo(t, "a.txt", []byte("line 1\nline 2\nline 3\n"))
+
+	// Modify a.txt and stash.
+	modPath := filepath.Join(r.RootDir, "a.txt")
+	if err := os.WriteFile(modPath, []byte("line 1\nmodified by stash\nline 3\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := r.Stash("test-author"); err != nil {
+		t.Fatalf("Stash: %v", err)
+	}
+
+	// Now apply the stash (working tree is clean, same as when stash was made).
+	result, err := r.StashApplyMerge(0)
+	if err != nil {
+		t.Fatalf("StashApplyMerge: %v", err)
+	}
+	if !result.Clean {
+		t.Errorf("expected clean apply, got conflicts: %v", result.ConflictPaths)
+	}
+
+	// Verify file content.
+	data, err := os.ReadFile(modPath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "line 1\nmodified by stash\nline 3\n" {
+		t.Errorf("content = %q, want %q", string(data), "line 1\nmodified by stash\nline 3\n")
+	}
+}
+
+// Test 13: StashApply with merge where working tree changed independently.
+func TestStashApplyMerge_IndependentChanges(t *testing.T) {
+	// Create repo with two files.
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Create and commit two files.
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("file a\n"), 0o644); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("file b\n"), 0o644); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+	if err := r.Add([]string{"a.txt", "b.txt"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// Modify a.txt and stash.
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("modified a\n"), 0o644); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if _, err := r.Stash("test-author"); err != nil {
+		t.Fatalf("Stash: %v", err)
+	}
+
+	// Modify b.txt and commit (independent change).
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("modified b\n"), 0o644); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+	if err := r.Add([]string{"b.txt"}); err != nil {
+		t.Fatalf("Add b: %v", err)
+	}
+	if _, err := r.Commit("modify b", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// Apply the stash. The stash modified a.txt, HEAD modified b.txt.
+	// These are independent changes so it should apply cleanly.
+	result, err := r.StashApplyMerge(0)
+	if err != nil {
+		t.Fatalf("StashApplyMerge: %v", err)
+	}
+	if !result.Clean {
+		t.Errorf("expected clean apply, got conflicts: %v", result.ConflictPaths)
+	}
+
+	// Verify both changes are present.
+	dataA, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	if err != nil {
+		t.Fatalf("read a: %v", err)
+	}
+	if string(dataA) != "modified a\n" {
+		t.Errorf("a.txt = %q, want %q", string(dataA), "modified a\n")
+	}
+
+	dataB, err := os.ReadFile(filepath.Join(dir, "b.txt"))
+	if err != nil {
+		t.Fatalf("read b: %v", err)
+	}
+	if string(dataB) != "modified b\n" {
+		t.Errorf("b.txt = %q, want %q", string(dataB), "modified b\n")
+	}
+}
+
+// Test 14: StashApply with merge handles conflicts properly.
+func TestStashApplyMerge_Conflicts(t *testing.T) {
+	r := stashTestRepo(t, "file.txt", []byte("original content\n"))
+
+	// Modify file and stash.
+	modPath := filepath.Join(r.RootDir, "file.txt")
+	if err := os.WriteFile(modPath, []byte("stash version\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := r.Stash("test-author"); err != nil {
+		t.Fatalf("Stash: %v", err)
+	}
+
+	// Make a conflicting change and commit.
+	if err := os.WriteFile(modPath, []byte("HEAD version\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("conflicting commit", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// Apply the stash -- should have conflict.
+	result, err := r.StashApplyMerge(0)
+	if err != nil {
+		t.Fatalf("StashApplyMerge: %v", err)
+	}
+	if result.Clean {
+		t.Fatal("expected conflicts, got clean apply")
+	}
+	if len(result.ConflictPaths) != 1 {
+		t.Fatalf("expected 1 conflict, got %d: %v", len(result.ConflictPaths), result.ConflictPaths)
+	}
+	if result.ConflictPaths[0] != "file.txt" {
+		t.Errorf("conflict path = %q, want %q", result.ConflictPaths[0], "file.txt")
+	}
+
+	// The file on disk should have conflict markers.
+	data, err := os.ReadFile(modPath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "<<<<<<<") || !strings.Contains(content, ">>>>>>>") {
+		t.Errorf("file should contain conflict markers, got:\n%s", content)
+	}
+}
+
+// Test 15: StashApply (non-merge) returns error on conflict.
+func TestStashApply_ReturnsErrorOnConflict(t *testing.T) {
+	r := stashTestRepo(t, "file.txt", []byte("original\n"))
+
+	modPath := filepath.Join(r.RootDir, "file.txt")
+	if err := os.WriteFile(modPath, []byte("stash version\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := r.Stash("test-author"); err != nil {
+		t.Fatalf("Stash: %v", err)
+	}
+
+	if err := os.WriteFile(modPath, []byte("HEAD version\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"file.txt"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("conflicting", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	err := r.StashApply(0)
+	if err == nil {
+		t.Fatal("expected error from StashApply on conflict, got nil")
+	}
+	if !strings.Contains(err.Error(), "conflict") {
+		t.Errorf("error should mention conflict, got: %v", err)
+	}
+}
+
+// Test 16: StashShow index out of range returns error.
+func TestStashShow_OutOfRange(t *testing.T) {
+	r := stashTestRepo(t, "hello.txt", []byte("original"))
+
+	_, err := r.StashShow(0)
+	if err == nil {
+		t.Fatal("expected error for empty stash, got nil")
+	}
+	if !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("error should mention out of range, got: %v", err)
+	}
+}
+
+// Test 17: StashShowDiff returns unified diff content.
+func TestStashShowDiff(t *testing.T) {
+	r := stashTestRepo(t, "hello.txt", []byte("original\n"))
+
+	modPath := filepath.Join(r.RootDir, "hello.txt")
+	if err := os.WriteFile(modPath, []byte("modified\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if _, err := r.Stash("test-author"); err != nil {
+		t.Fatalf("Stash: %v", err)
+	}
+
+	diff, err := r.StashShowDiff(0)
+	if err != nil {
+		t.Fatalf("StashShowDiff: %v", err)
+	}
+
+	content := string(diff)
+	if !strings.Contains(content, "--- a/hello.txt") {
+		t.Errorf("diff should contain --- a/hello.txt, got:\n%s", content)
+	}
+	if !strings.Contains(content, "+++ b/hello.txt") {
+		t.Errorf("diff should contain +++ b/hello.txt, got:\n%s", content)
+	}
+	if !strings.Contains(content, "-original") {
+		t.Errorf("diff should contain -original, got:\n%s", content)
+	}
+	if !strings.Contains(content, "+modified") {
+		t.Errorf("diff should contain +modified, got:\n%s", content)
 	}
 }

@@ -570,3 +570,109 @@ func TestRebase_NoRebaseInProgressErrors(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
+
+// TestRebase_PullRebaseScenario simulates the pull --rebase flow:
+// 1. Create a shared base commit
+// 2. Local branch gets additional commits
+// 3. A "remote" branch advances independently
+// 4. Rebase local commits onto the remote tip (using raw hash, as pull would)
+//
+// This verifies that Rebase works correctly when given a raw commit hash
+// (the remote tracking branch tip) as the upstream argument.
+func TestRebase_PullRebaseScenario(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	// Shared base commit.
+	rebaseCommitFile(t, r, "shared.txt", []byte("shared\n"), "shared base", "alice")
+
+	baseHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD): %v", err)
+	}
+
+	// Simulate remote: create a branch "remote-main" and add commits.
+	if err := r.CreateBranch("remote-main", baseHash); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+	if err := r.Checkout("remote-main"); err != nil {
+		t.Fatalf("Checkout(remote-main): %v", err)
+	}
+	rebaseCommitFile(t, r, "remote1.txt", []byte("remote commit 1\n"), "remote advance 1", "server")
+	rebaseCommitFile(t, r, "remote2.txt", []byte("remote commit 2\n"), "remote advance 2", "server")
+
+	remoteHash, err := r.ResolveRef("refs/heads/remote-main")
+	if err != nil {
+		t.Fatalf("ResolveRef(remote-main): %v", err)
+	}
+
+	// Switch to main and add local commits.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+	rebaseCommitFile(t, r, "local1.txt", []byte("local commit 1\n"), "local change 1", "bob")
+	rebaseCommitFile(t, r, "local2.txt", []byte("local commit 2\n"), "local change 2", "bob")
+
+	// Rebase main onto the remote tip using the raw hash (simulating pull --rebase).
+	if err := r.Rebase(string(remoteHash)); err != nil {
+		t.Fatalf("Rebase(remote hash): %v", err)
+	}
+
+	// Verify HEAD is still on main.
+	branch, err := r.CurrentBranch()
+	if err != nil {
+		t.Fatalf("CurrentBranch: %v", err)
+	}
+	if branch != "main" {
+		t.Errorf("CurrentBranch = %q, want %q", branch, "main")
+	}
+
+	// Verify commit history: local2, local1, remote2, remote1, shared.
+	tip, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD): %v", err)
+	}
+	commits, err := r.Log(tip, 10)
+	if err != nil {
+		t.Fatalf("Log: %v", err)
+	}
+
+	if len(commits) < 5 {
+		var msgs []string
+		for _, c := range commits {
+			msgs = append(msgs, c.Message)
+		}
+		t.Fatalf("expected at least 5 commits, got %d: %v", len(commits), msgs)
+	}
+
+	// Verify order (newest first).
+	if commits[0].Message != "local change 2" {
+		t.Errorf("commits[0] = %q, want %q", commits[0].Message, "local change 2")
+	}
+	if commits[1].Message != "local change 1" {
+		t.Errorf("commits[1] = %q, want %q", commits[1].Message, "local change 1")
+	}
+	if commits[2].Message != "remote advance 2" {
+		t.Errorf("commits[2] = %q, want %q", commits[2].Message, "remote advance 2")
+	}
+
+	// Verify the parent of the oldest rebased local commit is the remote tip.
+	if len(commits[1].Parents) == 0 || commits[1].Parents[0] != remoteHash {
+		t.Errorf("oldest rebased commit parent = %v, want [%s]", commits[1].Parents, remoteHash)
+	}
+
+	// Verify all files exist.
+	for _, f := range []string{"shared.txt", "remote1.txt", "remote2.txt", "local1.txt", "local2.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
+			t.Errorf("file %q missing after pull --rebase: %v", f, err)
+		}
+	}
+
+	// Verify sequencer is cleaned up.
+	if r.isRebaseInProgress() {
+		t.Error("rebase should not be in progress after completion")
+	}
+}

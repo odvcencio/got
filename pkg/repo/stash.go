@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
+	"github.com/odvcencio/graft/pkg/merge"
 	"github.com/odvcencio/graft/pkg/object"
 )
 
@@ -262,83 +264,277 @@ func (r *Repo) StashPop(index int) error {
 	return r.StashDrop(index)
 }
 
-// StashApply applies the stash at index (restores files and staging) without
-// removing the entry from the stack.
+// StashApply applies the stash at index using a 3-way merge:
+//   - Base = the parent of the stash commit (state when stash was created)
+//   - Ours = the current working tree / HEAD
+//   - Theirs = the stash commit's tree
+//
+// This handles the case where the working tree has changed since the stash was
+// created, properly detecting and reporting conflicts instead of silently
+// clobbering changes. Returns nil error on success (including when there are
+// conflicts). Use StashApplyMerge to get a detailed result.
 func (r *Repo) StashApply(index int) error {
-	stack, err := r.readStashStack()
+	result, err := r.StashApplyMerge(index)
 	if err != nil {
 		return err
 	}
+	if !result.Clean {
+		return fmt.Errorf("stash apply: %d conflict(s) in: %s",
+			len(result.ConflictPaths),
+			joinPaths(result.ConflictPaths))
+	}
+	return nil
+}
+
+// joinPaths joins a slice of paths with ", ".
+func joinPaths(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	result := paths[0]
+	for _, p := range paths[1:] {
+		result += ", " + p
+	}
+	return result
+}
+
+// StashApplyMerge applies the stash at index using a 3-way merge and returns
+// a detailed result. Unlike StashApply, this method does not return an error
+// for conflicts -- instead it reports them in StashApplyResult.
+func (r *Repo) StashApplyMerge(index int) (*StashApplyResult, error) {
+	stack, err := r.readStashStack()
+	if err != nil {
+		return nil, err
+	}
 
 	if index < 0 || index >= len(stack) {
-		return fmt.Errorf("stash: index %d out of range (stack has %d entries)", index, len(stack))
+		return nil, fmt.Errorf("stash: index %d out of range (stack has %d entries)", index, len(stack))
 	}
 
 	entry := stack[index]
 
 	// Read the stash commit.
-	commit, err := r.Store.ReadCommit(entry.CommitHash)
+	stashCommit, err := r.Store.ReadCommit(entry.CommitHash)
 	if err != nil {
-		return fmt.Errorf("stash: read commit %s: %w", entry.CommitHash, err)
+		return nil, fmt.Errorf("stash: read commit %s: %w", entry.CommitHash, err)
 	}
 
-	// Flatten the stash commit's tree.
-	stashFiles, err := r.FlattenTree(commit.TreeHash)
+	// Flatten the stash commit's tree (theirs).
+	theirsFiles, err := r.FlattenTree(stashCommit.TreeHash)
 	if err != nil {
-		return fmt.Errorf("stash: flatten tree: %w", err)
+		return nil, fmt.Errorf("stash: flatten stash tree: %w", err)
+	}
+	theirsMap := indexByPath(theirsFiles)
+
+	// Get the base: the parent of the stash commit.
+	var baseMap map[string]TreeFileEntry
+	if len(stashCommit.Parents) > 0 && stashCommit.Parents[0] != "" {
+		parentCommit, err := r.Store.ReadCommit(stashCommit.Parents[0])
+		if err != nil {
+			return nil, fmt.Errorf("stash: read parent commit: %w", err)
+		}
+		baseFiles, err := r.FlattenTree(parentCommit.TreeHash)
+		if err != nil {
+			return nil, fmt.Errorf("stash: flatten base tree: %w", err)
+		}
+		baseMap = indexByPath(baseFiles)
+	} else {
+		baseMap = make(map[string]TreeFileEntry)
 	}
 
-	// Remove all currently tracked files from disk.
-	currentFiles := r.trackedFiles()
-	for path := range currentFiles {
-		absPath := filepath.Join(r.RootDir, filepath.FromSlash(path))
+	// Get ours: the current HEAD tree.
+	var oursMap map[string]TreeFileEntry
+	headHash, err := r.ResolveRef("HEAD")
+	if err == nil && headHash != "" {
+		headCommit, err := r.Store.ReadCommit(headHash)
+		if err != nil {
+			return nil, fmt.Errorf("stash: read HEAD commit: %w", err)
+		}
+		oursFiles, err := r.FlattenTree(headCommit.TreeHash)
+		if err != nil {
+			return nil, fmt.Errorf("stash: flatten HEAD tree: %w", err)
+		}
+		oursMap = indexByPath(oursFiles)
+	} else {
+		oursMap = make(map[string]TreeFileEntry)
+	}
+
+	allPaths := collectAllPaths(baseMap, oursMap, theirsMap)
+
+	type fileWrite struct {
+		path    string
+		content []byte
+		mode    string
+	}
+	var writes []fileWrite
+	var deletes []string
+	var conflictPaths []string
+
+	for _, p := range allPaths {
+		_, inBase := baseMap[p]
+		_, inOurs := oursMap[p]
+		_, inTheirs := theirsMap[p]
+
+		switch {
+		case inBase && inOurs && inTheirs:
+			// All three present: 3-way merge.
+			if oursMap[p].BlobHash == theirsMap[p].BlobHash {
+				continue // same content, no merge needed
+			}
+			if oursMap[p].BlobHash == baseMap[p].BlobHash {
+				// Only theirs (stash) changed -- take theirs.
+				content, err := r.readBlobData(theirsMap[p].BlobHash)
+				if err != nil {
+					return nil, err
+				}
+				writes = append(writes, fileWrite{p, content, normalizeFileMode(theirsMap[p].Mode)})
+				continue
+			}
+			if theirsMap[p].BlobHash == baseMap[p].BlobHash {
+				// Only ours changed -- keep ours.
+				continue
+			}
+			// Both changed -- full merge.
+			baseData, err := r.readBlobData(baseMap[p].BlobHash)
+			if err != nil {
+				return nil, err
+			}
+			oursData, err := r.readBlobData(oursMap[p].BlobHash)
+			if err != nil {
+				return nil, err
+			}
+			theirsData, err := r.readBlobData(theirsMap[p].BlobHash)
+			if err != nil {
+				return nil, err
+			}
+			result, err := merge.MergeFiles(p, baseData, oursData, theirsData)
+			if err != nil {
+				return nil, fmt.Errorf("stash: merge %q: %w", p, err)
+			}
+			if result.HasConflicts {
+				conflictPaths = append(conflictPaths, p)
+			}
+			writes = append(writes, fileWrite{p, result.Merged, normalizeFileMode(oursMap[p].Mode)})
+
+		case !inBase && !inOurs && inTheirs:
+			// New file only in stash: add it.
+			content, err := r.readBlobData(theirsMap[p].BlobHash)
+			if err != nil {
+				return nil, err
+			}
+			writes = append(writes, fileWrite{p, content, normalizeFileMode(theirsMap[p].Mode)})
+
+		case !inBase && inOurs && inTheirs:
+			// Added in both (no base).
+			if oursMap[p].BlobHash == theirsMap[p].BlobHash {
+				continue
+			}
+			oursData, err := r.readBlobData(oursMap[p].BlobHash)
+			if err != nil {
+				return nil, err
+			}
+			theirsData, err := r.readBlobData(theirsMap[p].BlobHash)
+			if err != nil {
+				return nil, err
+			}
+			result, err := merge.MergeFiles(p, nil, oursData, theirsData)
+			if err != nil {
+				return nil, fmt.Errorf("stash: merge %q: %w", p, err)
+			}
+			if result.HasConflicts {
+				conflictPaths = append(conflictPaths, p)
+			}
+			writes = append(writes, fileWrite{p, result.Merged, normalizeFileMode(oursMap[p].Mode)})
+
+		case inBase && inOurs && !inTheirs:
+			// Deleted in stash.
+			if oursMap[p].BlobHash == baseMap[p].BlobHash {
+				// Ours unchanged: clean delete.
+				deletes = append(deletes, p)
+			} else {
+				// Ours modified, stash deleted: conflict.
+				conflictPaths = append(conflictPaths, p)
+				oursData, err := r.readBlobData(oursMap[p].BlobHash)
+				if err != nil {
+					return nil, err
+				}
+				content := renderFileConflict(oursData, nil)
+				writes = append(writes, fileWrite{p, content, normalizeFileMode(oursMap[p].Mode)})
+			}
+
+		case inBase && !inOurs && inTheirs:
+			// Deleted in ours, present in stash.
+			if theirsMap[p].BlobHash == baseMap[p].BlobHash {
+				continue // theirs unchanged, keep ours' deletion
+			}
+			// Stash modified, ours deleted: conflict.
+			conflictPaths = append(conflictPaths, p)
+			theirsData, err := r.readBlobData(theirsMap[p].BlobHash)
+			if err != nil {
+				return nil, err
+			}
+			content := renderFileConflict(nil, theirsData)
+			writes = append(writes, fileWrite{p, content, normalizeFileMode(theirsMap[p].Mode)})
+
+		case !inBase && inOurs && !inTheirs:
+			// Only in ours, not relevant to stash.
+			continue
+
+		case inBase && !inOurs && !inTheirs:
+			// Deleted in both.
+			continue
+		}
+	}
+
+	// Write merged files.
+	for _, w := range writes {
+		absPath := filepath.Join(r.RootDir, filepath.FromSlash(w.path))
+		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+			return nil, fmt.Errorf("stash: mkdir: %w", err)
+		}
+		if err := os.WriteFile(absPath, w.content, filePermFromMode(w.mode)); err != nil {
+			return nil, fmt.Errorf("stash: write %q: %w", w.path, err)
+		}
+	}
+
+	// Delete files.
+	for _, p := range deletes {
+		absPath := filepath.Join(r.RootDir, filepath.FromSlash(p))
 		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("stash: remove %q: %w", path, err)
+			return nil, fmt.Errorf("stash: remove %q: %w", p, err)
 		}
 		r.removeEmptyParents(filepath.Dir(absPath))
 	}
 
-	// Write all files from the stash tree.
-	for _, f := range stashFiles {
-		absPath := filepath.Join(r.RootDir, filepath.FromSlash(f.Path))
-
-		dir := filepath.Dir(absPath)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("stash: mkdir %q: %w", dir, err)
+	// Update staging to reflect the merged state.
+	var pathsToStage []string
+	for _, w := range writes {
+		pathsToStage = append(pathsToStage, w.path)
+	}
+	if len(pathsToStage) > 0 {
+		if err := r.Add(pathsToStage); err != nil {
+			return nil, fmt.Errorf("stash: stage: %w", err)
 		}
+	}
 
-		blob, err := r.Store.ReadBlob(f.BlobHash)
+	// Remove deleted files from staging.
+	if len(deletes) > 0 {
+		stg, err := r.ReadStaging()
 		if err != nil {
-			return fmt.Errorf("stash: read blob for %q: %w", f.Path, err)
+			return nil, fmt.Errorf("stash: read staging: %w", err)
 		}
-
-		if err := os.WriteFile(absPath, blob.Data, filePermFromMode(f.Mode)); err != nil {
-			return fmt.Errorf("stash: write %q: %w", f.Path, err)
+		for _, p := range deletes {
+			delete(stg.Entries, p)
+		}
+		if err := r.WriteStaging(stg); err != nil {
+			return nil, fmt.Errorf("stash: write staging: %w", err)
 		}
 	}
 
-	// Rebuild staging to match stash tree.
-	stg := &Staging{Entries: make(map[string]*StagingEntry, len(stashFiles))}
-	for _, f := range stashFiles {
-		absPath := filepath.Join(r.RootDir, filepath.FromSlash(f.Path))
-		info, err := os.Stat(absPath)
-		if err != nil {
-			return fmt.Errorf("stash: stat %q: %w", f.Path, err)
-		}
-
-		se := &StagingEntry{
-			Path:           f.Path,
-			BlobHash:       f.BlobHash,
-			EntityListHash: f.EntityListHash,
-		}
-		setStagingEntryStat(se, info, normalizeFileMode(f.Mode))
-		stg.Entries[f.Path] = se
-	}
-	if err := r.WriteStaging(stg); err != nil {
-		return fmt.Errorf("stash: %w", err)
-	}
-
-	return nil
+	return &StashApplyResult{
+		Clean:         len(conflictPaths) == 0,
+		ConflictPaths: conflictPaths,
+	}, nil
 }
 
 // StashList returns all stash entries, newest first.
@@ -363,4 +559,252 @@ func (r *Repo) StashDrop(index int) error {
 
 	stack = append(stack[:index], stack[index+1:]...)
 	return r.writeStashStack(stack)
+}
+
+// StashShowEntry describes a single file changed in a stash entry.
+type StashShowEntry struct {
+	Path       string // file path
+	ChangeType string // "added", "modified", "deleted"
+}
+
+// StashShow returns the list of files changed in the stash at the given index
+// by comparing the stash commit's tree against its parent's tree. If the stash
+// has no parent (created on an empty repo), all files are reported as "added".
+func (r *Repo) StashShow(index int) ([]StashShowEntry, error) {
+	stack, err := r.readStashStack()
+	if err != nil {
+		return nil, err
+	}
+
+	if index < 0 || index >= len(stack) {
+		return nil, fmt.Errorf("stash: index %d out of range (stack has %d entries)", index, len(stack))
+	}
+
+	entry := stack[index]
+	commit, err := r.Store.ReadCommit(entry.CommitHash)
+	if err != nil {
+		return nil, fmt.Errorf("stash: read commit %s: %w", entry.CommitHash, err)
+	}
+
+	stashFiles, err := r.FlattenTree(commit.TreeHash)
+	if err != nil {
+		return nil, fmt.Errorf("stash: flatten stash tree: %w", err)
+	}
+	stashMap := indexByPath(stashFiles)
+
+	// If the stash commit has a parent, compare against the parent's tree.
+	var parentMap map[string]TreeFileEntry
+	if len(commit.Parents) > 0 && commit.Parents[0] != "" {
+		parentCommit, err := r.Store.ReadCommit(commit.Parents[0])
+		if err != nil {
+			return nil, fmt.Errorf("stash: read parent commit %s: %w", commit.Parents[0], err)
+		}
+		parentFiles, err := r.FlattenTree(parentCommit.TreeHash)
+		if err != nil {
+			return nil, fmt.Errorf("stash: flatten parent tree: %w", err)
+		}
+		parentMap = indexByPath(parentFiles)
+	} else {
+		parentMap = make(map[string]TreeFileEntry)
+	}
+
+	// Collect all paths from both trees.
+	allPaths := make(map[string]bool)
+	for p := range stashMap {
+		allPaths[p] = true
+	}
+	for p := range parentMap {
+		allPaths[p] = true
+	}
+
+	sortedPaths := make([]string, 0, len(allPaths))
+	for p := range allPaths {
+		sortedPaths = append(sortedPaths, p)
+	}
+	sort.Strings(sortedPaths)
+
+	var result []StashShowEntry
+	for _, p := range sortedPaths {
+		_, inStash := stashMap[p]
+		_, inParent := parentMap[p]
+
+		switch {
+		case inStash && !inParent:
+			result = append(result, StashShowEntry{Path: p, ChangeType: "added"})
+		case !inStash && inParent:
+			result = append(result, StashShowEntry{Path: p, ChangeType: "deleted"})
+		case inStash && inParent:
+			if stashMap[p].BlobHash != parentMap[p].BlobHash {
+				result = append(result, StashShowEntry{Path: p, ChangeType: "modified"})
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// StashShowDiff returns the full diff (patch) content for a stash entry by
+// comparing the stash commit's tree against its parent's tree.
+func (r *Repo) StashShowDiff(index int) ([]byte, error) {
+	stack, err := r.readStashStack()
+	if err != nil {
+		return nil, err
+	}
+
+	if index < 0 || index >= len(stack) {
+		return nil, fmt.Errorf("stash: index %d out of range (stack has %d entries)", index, len(stack))
+	}
+
+	entry := stack[index]
+	commit, err := r.Store.ReadCommit(entry.CommitHash)
+	if err != nil {
+		return nil, fmt.Errorf("stash: read commit %s: %w", entry.CommitHash, err)
+	}
+
+	stashFiles, err := r.FlattenTree(commit.TreeHash)
+	if err != nil {
+		return nil, fmt.Errorf("stash: flatten stash tree: %w", err)
+	}
+	stashMap := indexByPath(stashFiles)
+
+	var parentMap map[string]TreeFileEntry
+	if len(commit.Parents) > 0 && commit.Parents[0] != "" {
+		parentCommit, err := r.Store.ReadCommit(commit.Parents[0])
+		if err != nil {
+			return nil, fmt.Errorf("stash: read parent commit %s: %w", commit.Parents[0], err)
+		}
+		parentFiles, err := r.FlattenTree(parentCommit.TreeHash)
+		if err != nil {
+			return nil, fmt.Errorf("stash: flatten parent tree: %w", err)
+		}
+		parentMap = indexByPath(parentFiles)
+	} else {
+		parentMap = make(map[string]TreeFileEntry)
+	}
+
+	allPaths := make(map[string]bool)
+	for p := range stashMap {
+		allPaths[p] = true
+	}
+	for p := range parentMap {
+		allPaths[p] = true
+	}
+	sortedPaths := make([]string, 0, len(allPaths))
+	for p := range allPaths {
+		sortedPaths = append(sortedPaths, p)
+	}
+	sort.Strings(sortedPaths)
+
+	var buf []byte
+	for _, p := range sortedPaths {
+		sEntry, inStash := stashMap[p]
+		pEntry, inParent := parentMap[p]
+
+		var oldData, newData []byte
+
+		switch {
+		case inStash && !inParent:
+			newBlob, err := r.Store.ReadBlob(sEntry.BlobHash)
+			if err != nil {
+				return nil, fmt.Errorf("stash: read blob %s: %w", sEntry.BlobHash, err)
+			}
+			newData = newBlob.Data
+		case !inStash && inParent:
+			oldBlob, err := r.Store.ReadBlob(pEntry.BlobHash)
+			if err != nil {
+				return nil, fmt.Errorf("stash: read blob %s: %w", pEntry.BlobHash, err)
+			}
+			oldData = oldBlob.Data
+		case inStash && inParent:
+			if sEntry.BlobHash == pEntry.BlobHash {
+				continue // unchanged
+			}
+			oldBlob, err := r.Store.ReadBlob(pEntry.BlobHash)
+			if err != nil {
+				return nil, fmt.Errorf("stash: read blob %s: %w", pEntry.BlobHash, err)
+			}
+			oldData = oldBlob.Data
+			newBlob, err := r.Store.ReadBlob(sEntry.BlobHash)
+			if err != nil {
+				return nil, fmt.Errorf("stash: read blob %s: %w", sEntry.BlobHash, err)
+			}
+			newData = newBlob.Data
+		default:
+			continue
+		}
+
+		buf = append(buf, formatUnifiedDiff(p, oldData, newData)...)
+	}
+
+	return buf, nil
+}
+
+// formatUnifiedDiff produces a simple unified-diff header for a single file.
+func formatUnifiedDiff(path string, oldData, newData []byte) []byte {
+	var buf []byte
+
+	aPath := "a/" + path
+	bPath := "b/" + path
+	if oldData == nil {
+		aPath = "/dev/null"
+	}
+	if newData == nil {
+		bPath = "/dev/null"
+	}
+
+	buf = append(buf, []byte(fmt.Sprintf("--- %s\n+++ %s\n", aPath, bPath))...)
+
+	oldLines := splitLines(oldData)
+	newLines := splitLines(newData)
+
+	// Simple diff: show removed and added lines.
+	if len(oldLines) > 0 || len(newLines) > 0 {
+		buf = append(buf, []byte(fmt.Sprintf("@@ -%d +%d @@\n", len(oldLines), len(newLines)))...)
+		for _, l := range oldLines {
+			buf = append(buf, '-')
+			buf = append(buf, l...)
+			buf = append(buf, '\n')
+		}
+		for _, l := range newLines {
+			buf = append(buf, '+')
+			buf = append(buf, l...)
+			buf = append(buf, '\n')
+		}
+	}
+
+	return buf
+}
+
+// splitLines splits data into lines, stripping the trailing newline.
+func splitLines(data []byte) [][]byte {
+	if len(data) == 0 {
+		return nil
+	}
+	// Remove trailing newline to avoid a spurious empty line.
+	if data[len(data)-1] == '\n' {
+		data = data[:len(data)-1]
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	var lines [][]byte
+	start := 0
+	for i, b := range data {
+		if b == '\n' {
+			lines = append(lines, data[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(data) {
+		lines = append(lines, data[start:])
+	}
+	return lines
+}
+
+// StashApplyResult holds the outcome of a stash apply with 3-way merge.
+type StashApplyResult struct {
+	// Clean is true if the apply completed without conflicts.
+	Clean bool
+	// ConflictPaths lists files that have merge conflicts.
+	ConflictPaths []string
 }

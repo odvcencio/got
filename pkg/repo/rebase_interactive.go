@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/odvcencio/graft/pkg/merge"
 	"github.com/odvcencio/graft/pkg/object"
 )
 
@@ -729,166 +728,35 @@ func (r *Repo) squashCommit(commitHash object.Hash, combineMessages bool) error 
 	oursMap := indexByPath(oursFiles)
 	theirsMap := indexByPath(theirsFiles)
 
-	allPaths := collectAllPaths(baseMap, oursMap, theirsMap)
-
-	hasConflicts := false
-	var conflictDetails []string
-
-	type fileWrite struct {
-		path    string
-		content []byte
-		mode    string
-	}
-	var writes []fileWrite
-	var deletes []string
-
-	for _, path := range allPaths {
-		_, inBase := baseMap[path]
-		_, inOurs := oursMap[path]
-		_, inTheirs := theirsMap[path]
-
-		switch {
-		case inBase && inOurs && inTheirs:
-			if oursMap[path].BlobHash == theirsMap[path].BlobHash {
-				continue
-			}
-			if oursMap[path].BlobHash == baseMap[path].BlobHash {
-				content, err := r.readBlobData(theirsMap[path].BlobHash)
-				if err != nil {
-					return err
-				}
-				writes = append(writes, fileWrite{path, content, normalizeFileMode(theirsMap[path].Mode)})
-				continue
-			}
-			if theirsMap[path].BlobHash == baseMap[path].BlobHash {
-				continue
-			}
-			// Both changed - do merge.
-			baseData, err := r.readBlobData(baseMap[path].BlobHash)
-			if err != nil {
-				return err
-			}
-			oursData, err := r.readBlobData(oursMap[path].BlobHash)
-			if err != nil {
-				return err
-			}
-			theirsData, err := r.readBlobData(theirsMap[path].BlobHash)
-			if err != nil {
-				return err
-			}
-			result, err := merge.MergeFiles(path, baseData, oursData, theirsData)
-			if err != nil {
-				return fmt.Errorf("merge %q: %w", path, err)
-			}
-			if result.HasConflicts {
-				hasConflicts = true
-				conflictDetails = append(conflictDetails, path)
-			}
-			writes = append(writes, fileWrite{path, result.Merged, normalizeFileMode(oursMap[path].Mode)})
-
-		case !inBase && !inOurs && inTheirs:
-			content, err := r.readBlobData(theirsMap[path].BlobHash)
-			if err != nil {
-				return err
-			}
-			writes = append(writes, fileWrite{path, content, normalizeFileMode(theirsMap[path].Mode)})
-
-		case !inBase && inOurs && inTheirs:
-			if oursMap[path].BlobHash == theirsMap[path].BlobHash {
-				continue
-			}
-			oursData, err := r.readBlobData(oursMap[path].BlobHash)
-			if err != nil {
-				return err
-			}
-			theirsData, err := r.readBlobData(theirsMap[path].BlobHash)
-			if err != nil {
-				return err
-			}
-			result, err := merge.MergeFiles(path, nil, oursData, theirsData)
-			if err != nil {
-				return fmt.Errorf("merge %q: %w", path, err)
-			}
-			if result.HasConflicts {
-				hasConflicts = true
-				conflictDetails = append(conflictDetails, path)
-			}
-			writes = append(writes, fileWrite{path, result.Merged, normalizeFileMode(oursMap[path].Mode)})
-
-		case inBase && inOurs && !inTheirs:
-			// Deleted by theirs (the commit being squashed).
-			if oursMap[path].BlobHash == baseMap[path].BlobHash {
-				// Ours unchanged -- clean delete.
-				deletes = append(deletes, path)
-			} else {
-				// Ours modified, theirs deleted -- conflict.
-				hasConflicts = true
-				conflictDetails = append(conflictDetails, path)
-				oursData, err := r.readBlobData(oursMap[path].BlobHash)
-				if err != nil {
-					return err
-				}
-				content := renderFileConflict(oursData, nil)
-				writes = append(writes, fileWrite{path, content, normalizeFileMode(oursMap[path].Mode)})
-			}
-
-		case inBase && !inOurs && inTheirs:
-			// Deleted by ours, modified by theirs.
-			if theirsMap[path].BlobHash == baseMap[path].BlobHash {
-				continue // theirs unchanged, keep deletion
-			}
-			// Theirs modified, ours deleted -- conflict.
-			hasConflicts = true
-			conflictDetails = append(conflictDetails, path)
-			theirsData, err := r.readBlobData(theirsMap[path].BlobHash)
-			if err != nil {
-				return err
-			}
-			content := renderFileConflict(nil, theirsData)
-			writes = append(writes, fileWrite{path, content, normalizeFileMode(theirsMap[path].Mode)})
-
-		case !inBase && inOurs && !inTheirs:
-			continue
-
-		case inBase && !inOurs && !inTheirs:
-			continue
-		}
+	// Use the shared three-way merge helper.
+	mergeResult, err := r.threeWayTreeMerge(baseMap, oursMap, theirsMap)
+	if err != nil {
+		return err
 	}
 
-	// Apply file changes to working directory.
-	for _, w := range writes {
-		absPath := filepath.Join(r.RootDir, filepath.FromSlash(w.path))
-		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-			return fmt.Errorf("mkdir: %w", err)
-		}
-		if err := os.WriteFile(absPath, w.content, filePermFromMode(w.mode)); err != nil {
-			return fmt.Errorf("write %q: %w", w.path, err)
-		}
-	}
-	for _, path := range deletes {
-		absPath := filepath.Join(r.RootDir, filepath.FromSlash(path))
-		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove %q: %w", path, err)
-		}
-		r.removeEmptyParents(filepath.Dir(absPath))
+	// Apply results to the working directory.
+	if err := r.applyThreeWayResult(mergeResult); err != nil {
+		return err
 	}
 
 	// Stage everything.
 	var pathsToStage []string
-	for _, w := range writes {
-		pathsToStage = append(pathsToStage, w.path)
+	for _, f := range mergeResult.Files {
+		if f.Status != "unchanged" && f.Status != "deleted" {
+			pathsToStage = append(pathsToStage, f.Path)
+		}
 	}
 	if len(pathsToStage) > 0 {
 		if err := r.Add(pathsToStage); err != nil {
 			return fmt.Errorf("stage: %w", err)
 		}
 	}
-	if len(deletes) > 0 {
+	if len(mergeResult.DeletedPaths) > 0 {
 		stg, err := r.ReadStaging()
 		if err != nil {
 			return fmt.Errorf("read staging: %w", err)
 		}
-		for _, p := range deletes {
+		for _, p := range mergeResult.DeletedPaths {
 			delete(stg.Entries, p)
 		}
 		if err := r.WriteStaging(stg); err != nil {
@@ -896,11 +764,11 @@ func (r *Repo) squashCommit(commitHash object.Hash, combineMessages bool) error 
 		}
 	}
 
-	if hasConflicts {
+	if mergeResult.HasConflicts {
 		return &ErrRebaseConflict{
 			CommitHash: commitHash,
 			Message:    origCommit.Message,
-			Details:    fmt.Sprintf("conflict in: %s", strings.Join(conflictDetails, ", ")),
+			Details:    fmt.Sprintf("conflict in: %s", mergeResult.conflictDetailsString()),
 		}
 	}
 
@@ -1041,17 +909,6 @@ func (r *Repo) execCommand(command string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
-}
-
-// mergeFilesForRebase is a helper that performs a three-way merge and returns
-// the merged content. Unlike the full replaySingleCommit, it does not track
-// conflicts separately (used for squash/fixup where conflicts are less expected).
-func mergeFilesForRebase(path string, base, ours, theirs []byte) ([]byte, error) {
-	result, err := merge.MergeFiles(path, base, ours, theirs)
-	if err != nil {
-		return nil, fmt.Errorf("merge %q: %w", path, err)
-	}
-	return result.Merged, nil
 }
 
 // buildTodoItems creates TodoItem entries from a list of commit hashes.

@@ -172,6 +172,114 @@ func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (ob
 	return commitHash, nil
 }
 
+// CommitAmend replaces the current HEAD commit with a new one built from the
+// current staging area. The new commit inherits the parent(s) of the original
+// HEAD commit (not HEAD itself). If message is empty, the original commit's
+// message is reused.
+func (r *Repo) CommitAmend(message, author string) (object.Hash, error) {
+	return r.CommitAmendWithSigner(message, author, nil)
+}
+
+// CommitAmendWithSigner is like CommitAmend but signs the new commit when
+// signer is non-nil.
+func (r *Repo) CommitAmendWithSigner(message, author string, signer CommitSigner) (object.Hash, error) {
+	// 1. Read the current HEAD commit.
+	headHash, err := r.ResolveRef("HEAD")
+	if err != nil {
+		return "", fmt.Errorf("commit --amend: cannot resolve HEAD: %w", err)
+	}
+	oldCommit, err := r.Store.ReadCommit(headHash)
+	if err != nil {
+		return "", fmt.Errorf("commit --amend: read HEAD commit: %w", err)
+	}
+
+	// 2. If message is empty, reuse the original commit's message.
+	if message == "" {
+		message = oldCommit.Message
+	}
+
+	// 3. Run pre-commit hook.
+	if err := r.RunHook(HookPreCommit); err != nil {
+		return "", fmt.Errorf("commit --amend: %w", err)
+	}
+
+	// 4. Run commit-msg hook.
+	msgFile := filepath.Join(r.GraftDir, "COMMIT_EDITMSG")
+	if err := os.WriteFile(msgFile, []byte(message), 0o644); err != nil {
+		return "", fmt.Errorf("commit --amend: write message file: %w", err)
+	}
+	if err := r.RunHook(HookCommitMsg, msgFile); err != nil {
+		os.Remove(msgFile)
+		return "", fmt.Errorf("commit --amend: %w", err)
+	}
+	modifiedMsg, err := os.ReadFile(msgFile)
+	if err != nil {
+		return "", fmt.Errorf("commit --amend: read message file: %w", err)
+	}
+	os.Remove(msgFile)
+	message = string(modifiedMsg)
+
+	// 5. Read staging and build tree.
+	stg, err := r.ReadStaging()
+	if err != nil {
+		return "", fmt.Errorf("commit --amend: %w", err)
+	}
+	if len(stg.Entries) == 0 {
+		return "", fmt.Errorf("commit --amend: nothing staged")
+	}
+
+	treeHash, err := r.BuildTree(stg)
+	if err != nil {
+		return "", fmt.Errorf("commit --amend: %w", err)
+	}
+
+	// 6. Use HEAD's parents (not HEAD itself) as the new commit's parents.
+	parents := oldCommit.Parents
+
+	// 7. Create the new commit object.
+	commitObj := &object.CommitObj{
+		TreeHash:  treeHash,
+		Parents:   parents,
+		Author:    author,
+		Timestamp: time.Now().Unix(),
+		Message:   message,
+	}
+	if signer != nil {
+		payload := object.CommitSigningPayload(commitObj)
+		signature, err := signer(payload)
+		if err != nil {
+			return "", fmt.Errorf("commit --amend: sign commit: %w", err)
+		}
+		commitObj.Signature = signature
+	}
+
+	// 8. Write the new commit to store.
+	commitHash, err := r.Store.WriteCommit(commitObj)
+	if err != nil {
+		return "", fmt.Errorf("commit --amend: write commit: %w", err)
+	}
+
+	// 9. Update current branch ref to point to the new commit.
+	head, err := r.Head()
+	if err != nil {
+		return "", fmt.Errorf("commit --amend: read HEAD: %w", err)
+	}
+
+	if strings.HasPrefix(head, "refs/") {
+		if err := r.UpdateRefCAS(head, commitHash, headHash); err != nil {
+			return "", fmt.Errorf("commit --amend: update ref %q: %w", head, err)
+		}
+	} else {
+		if err := r.UpdateRefCAS("HEAD", commitHash, headHash); err != nil {
+			return "", fmt.Errorf("commit --amend: update detached HEAD: %w", err)
+		}
+	}
+
+	r.invalidateStatusCache()
+
+	return commitHash, nil
+}
+
 // Log walks the commit history starting from the given hash, following
 // first-parent links, returning up to limit commits in reverse-chronological
 // order (newest first). In a shallow repository, walking stops at shallow

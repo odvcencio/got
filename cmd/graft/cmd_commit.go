@@ -15,12 +15,13 @@ func newCommitCmd() *cobra.Command {
 	var sign bool
 	var signKey string
 	var noSign bool
+	var amend bool
 
 	cmd := &cobra.Command{
 		Use:   "commit",
 		Short: "Record changes to the repository",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if message == "" {
+			if message == "" && !amend {
 				return fmt.Errorf("commit message is required (-m)")
 			}
 
@@ -57,7 +58,25 @@ func newCommitCmd() *cobra.Command {
 				commitErr  error
 				signedWith string
 			)
-			if shouldSign {
+			if amend {
+				if shouldSign {
+					signer, keyPath, signErr := newSSHCommitSigner(resolvedKey)
+					if signErr != nil {
+						return signErr
+					}
+					signedWith = keyPath
+					if autoSigned {
+						signedWith = resolvedKey
+					}
+					commitHash, cErr := r.CommitAmendWithSigner(message, author, signer)
+					h = string(commitHash)
+					commitErr = cErr
+				} else {
+					commitHash, cErr := r.CommitAmend(message, author)
+					h = string(commitHash)
+					commitErr = cErr
+				}
+			} else if shouldSign {
 				signer, keyPath, signErr := newSSHCommitSigner(resolvedKey)
 				if signErr != nil {
 					return signErr
@@ -76,6 +95,16 @@ func newCommitCmd() *cobra.Command {
 			}
 			if commitErr != nil {
 				return commitErr
+			}
+
+			// For amend with empty message, read back the actual message.
+			if amend && message == "" {
+				headHash, err := r.ResolveRef("HEAD")
+				if err == nil {
+					if c, err := r.Store.ReadCommit(headHash); err == nil {
+						message = c.Message
+					}
+				}
 			}
 
 			// Determine current branch name for output.
@@ -104,6 +133,7 @@ func newCommitCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&sign, "sign", false, "sign commit with SSH private key")
 	cmd.Flags().StringVar(&signKey, "sign-key", "", "path to SSH private key (defaults to ~/.ssh/id_ed25519, id_ecdsa, id_rsa)")
 	cmd.Flags().BoolVar(&noSign, "no-sign", false, "disable auto-signing even if configured")
+	cmd.Flags().BoolVar(&amend, "amend", false, "replace the tip of the current branch by creating a new commit")
 
 	return cmd
 }
