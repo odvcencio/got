@@ -90,8 +90,8 @@ func Init(path string) (*Repo, error) {
 }
 
 // Open searches upward from path for a .graft/ directory (or .graft file for
-// linked worktrees) and opens the repository. Returns an error if no .graft
-// entry is found.
+// linked worktrees, or .graft symlink for module working trees) and opens the
+// repository. Returns an error if no .graft entry is found.
 func Open(path string) (*Repo, error) {
 	// Resolve to absolute path for consistent traversal.
 	abs, err := filepath.Abs(path)
@@ -101,19 +101,49 @@ func Open(path string) (*Repo, error) {
 
 	cur := abs
 	for {
-		graftDir := filepath.Join(cur, ".graft")
-		info, err := os.Stat(graftDir)
-		if err == nil {
-			if info.IsDir() {
-				// Normal repository.
+		graftPath := filepath.Join(cur, ".graft")
+
+		// Use Lstat so we can distinguish symlinks from regular
+		// files/directories without following them.
+		linfo, lerr := os.Lstat(graftPath)
+		if lerr == nil {
+			// 1. Real directory — normal repository.
+			if linfo.IsDir() {
 				return &Repo{
 					RootDir:  cur,
-					GraftDir: graftDir,
-					Store:    object.NewStore(graftDir),
+					GraftDir: graftPath,
+					Store:    object.NewStore(graftPath),
 				}, nil
 			}
-			// .graft is a file -- this is a linked worktree.
-			return openLinkedWorktree(cur, graftDir)
+
+			// 2. Symlink — check for module working tree.
+			if linfo.Mode()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(graftPath)
+				if err != nil {
+					return nil, fmt.Errorf("open: readlink .graft: %w", err)
+				}
+				if strings.Contains(target, "/modules/") {
+					return openModuleWorktree(cur, graftPath, target)
+				}
+				// Non-module symlink: follow it and treat as the
+				// resolved type (directory or file).
+				info, err := os.Stat(graftPath)
+				if err != nil {
+					return nil, fmt.Errorf("open: stat .graft symlink target: %w", err)
+				}
+				if info.IsDir() {
+					return &Repo{
+						RootDir:  cur,
+						GraftDir: graftPath,
+						Store:    object.NewStore(graftPath),
+					}, nil
+				}
+				// Symlink to a file — treat as linked worktree.
+				return openLinkedWorktree(cur, graftPath)
+			}
+
+			// 3. Regular file — linked worktree (gitdir: line).
+			return openLinkedWorktree(cur, graftPath)
 		}
 
 		parent := filepath.Dir(cur)
@@ -123,6 +153,33 @@ func Open(path string) (*Repo, error) {
 		}
 		cur = parent
 	}
+}
+
+// openModuleWorktree opens a Repo configured for bidirectional development
+// inside a module working tree. The .graft entry is a symlink whose target
+// contains "/modules/", indicating it points to a per-module metadata
+// directory under the parent repo's .graft/.
+func openModuleWorktree(rootDir, symlinkPath, target string) (*Repo, error) {
+	// The symlink is relative to the directory containing it.
+	moduleDir := filepath.Dir(symlinkPath)
+	metaDir := filepath.Join(moduleDir, target)
+	metaDir = filepath.Clean(metaDir)
+
+	// Derive the parent repo's .graft/ directory by stripping the
+	// /modules/<name> suffix from the metadata dir path.
+	// metaDir looks like: /path/to/repo/.graft/modules/mylib
+	idx := strings.LastIndex(metaDir, string(filepath.Separator)+"modules"+string(filepath.Separator))
+	if idx == -1 {
+		return nil, fmt.Errorf("open: module metadata dir %q does not contain /modules/", metaDir)
+	}
+	parentGraftDir := metaDir[:idx]
+
+	return &Repo{
+		RootDir:   rootDir,
+		GraftDir:  metaDir,
+		CommonDir: parentGraftDir,
+		Store:     object.NewStore(parentGraftDir),
+	}, nil
 }
 
 // openLinkedWorktree opens a Repo from a linked worktree where .graft is a
