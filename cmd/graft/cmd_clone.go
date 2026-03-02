@@ -18,6 +18,7 @@ func newCloneCmd() *cobra.Command {
 	var branch string
 	var bootstrapGot bool
 	var depth int
+	var noModules bool
 
 	cmd := &cobra.Command{
 		Use:   "clone <remote-url> [directory]",
@@ -68,10 +69,16 @@ func newCloneCmd() *cobra.Command {
 			}
 
 			if isLocalSource {
-				return cloneFromLocalSource(cmd, localSourceRoot, source, absDest, remoteName, branch)
+				if err := cloneFromLocalSource(cmd, localSourceRoot, source, absDest, remoteName, branch); err != nil {
+					return err
+				}
+				return syncModulesAfterClone(cmd, absDest, noModules)
 			}
 			if remoteKind == remoteTransportGit {
-				return cloneFromGitRemote(cmd, remoteSource, absDest, remoteName, branch, bootstrapGot)
+				if err := cloneFromGitRemote(cmd, remoteSource, absDest, remoteName, branch, bootstrapGot); err != nil {
+					return err
+				}
+				return syncModulesAfterClone(cmd, absDest, noModules)
 			}
 
 			client, err := remote.NewClient(remoteSource)
@@ -164,7 +171,7 @@ func newCloneCmd() *cobra.Command {
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", remoteSource, absDest)
-			return nil
+			return syncModulesAfterClone(cmd, absDest, noModules)
 		},
 	}
 
@@ -172,7 +179,36 @@ func newCloneCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&branch, "branch", "b", "", "branch to checkout after clone")
 	cmd.Flags().BoolVar(&bootstrapGot, "bootstrap-graft", true, "initialize .graft repository from cloned git HEAD snapshot")
 	cmd.Flags().IntVar(&depth, "depth", 0, "create a shallow clone with history truncated to the specified number of commits")
+	cmd.Flags().BoolVar(&noModules, "no-modules", false, "skip automatic module sync after clone")
 	return cmd
+}
+
+// syncModulesAfterClone opens the cloned repo at absDest, checks for a
+// .graftmodules file, and runs ModuleSync if modules are declared. Errors
+// are reported as warnings to stderr and never fail the clone.
+func syncModulesAfterClone(cmd *cobra.Command, absDest string, skip bool) error {
+	if skip {
+		return nil
+	}
+	r, err := repo.Open(absDest)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: module sync: open repo: %v\n", err)
+		return nil
+	}
+	entries, err := r.ReadGraftModulesFile()
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: module sync: read .graftmodules: %v\n", err)
+		return nil
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	if err := r.ModuleSync(); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: module sync: %v\n", err)
+		return nil
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%d modules synced\n", len(entries))
+	return nil
 }
 
 func resolveLocalCloneSource(source string) (string, bool, error) {
@@ -197,6 +233,13 @@ func cloneFromLocalSource(cmd *cobra.Command, sourceRoot, sourceSpec, absDest, r
 		return err
 	}
 
+	// The copied staging index and HEAD reference files/commits from the
+	// source repo, but the clone's working tree is empty.  Remove the index
+	// and reset HEAD to an unborn symbolic ref so Checkout's clean-tree
+	// check passes (it sees an empty staging and no HEAD tree).  Checkout
+	// will rebuild the index and set HEAD correctly.
+	os.Remove(filepath.Join(dstGraftDir, "index"))
+
 	r, err := repo.Open(absDest)
 	if err != nil {
 		return err
@@ -205,31 +248,32 @@ func cloneFromLocalSource(cmd *cobra.Command, sourceRoot, sourceSpec, absDest, r
 		return err
 	}
 
+	// Determine which branch/hash to check out.
 	selectedBranch := strings.TrimSpace(branch)
+	var checkoutTarget string
 	if selectedBranch != "" {
 		if _, err := r.ResolveRef("refs/heads/" + selectedBranch); err != nil {
 			return fmt.Errorf("local branch %q not found", selectedBranch)
 		}
-		if err := r.Checkout(selectedBranch); err != nil {
-			return err
+		checkoutTarget = selectedBranch
+	} else if cb, err := r.CurrentBranch(); err == nil && strings.TrimSpace(cb) != "" {
+		checkoutTarget = cb
+	} else {
+		headHash, err := r.ResolveRef("HEAD")
+		if err != nil {
+			return fmt.Errorf("resolve HEAD: %w", err)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", sourceSpec, absDest)
-		return nil
+		checkoutTarget = string(headHash)
 	}
 
-	if currentBranch, err := r.CurrentBranch(); err == nil && strings.TrimSpace(currentBranch) != "" {
-		if err := r.Checkout(currentBranch); err != nil {
-			return err
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", sourceSpec, absDest)
-		return nil
+	// Point HEAD to an unborn branch so the working tree appears clean
+	// (no HEAD tree, empty staging).  Checkout will set HEAD properly.
+	headPath := filepath.Join(dstGraftDir, "HEAD")
+	if err := os.WriteFile(headPath, []byte("ref: refs/heads/_graft_clone_unborn\n"), 0o644); err != nil {
+		return fmt.Errorf("reset HEAD for clone: %w", err)
 	}
 
-	headHash, err := r.ResolveRef("HEAD")
-	if err != nil {
-		return fmt.Errorf("resolve HEAD: %w", err)
-	}
-	if err := r.Checkout(string(headHash)); err != nil {
+	if err := r.Checkout(checkoutTarget); err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "cloned %s into %s\n", sourceSpec, absDest)
