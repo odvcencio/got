@@ -137,7 +137,7 @@ func (r *Repo) Stash(author string) (*StashEntry, error) {
 		Parents:   parents,
 		Author:    author,
 		Timestamp: now.Unix(),
-		Message:   fmt.Sprintf("WIP on stash"),
+		Message:   "WIP on stash",
 	}
 	commitHash, err := r.Store.WriteCommit(commitObj)
 	if err != nil {
