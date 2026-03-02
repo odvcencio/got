@@ -139,7 +139,41 @@ func TestBranch_ListEmpty(t *testing.T) {
 	}
 }
 
-// Test 7: CreateBranch writes the correct hash to the ref file.
+// Test 7: ListBranches discovers hierarchical (slashed) branch names.
+func TestBranch_ListHierarchical(t *testing.T) {
+	r := initRepoWithFile(t, "main.go", []byte("package main\n\nfunc main() {}\n"))
+
+	h, err := r.Commit("initial commit", "test-author")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// Create hierarchical branches.
+	if err := r.CreateBranch("feature/my-branch", h); err != nil {
+		t.Fatalf("CreateBranch(feature/my-branch): %v", err)
+	}
+	if err := r.CreateBranch("bugfix/issue-42", h); err != nil {
+		t.Fatalf("CreateBranch(bugfix/issue-42): %v", err)
+	}
+
+	branches, err := r.ListBranches()
+	if err != nil {
+		t.Fatalf("ListBranches: %v", err)
+	}
+
+	// Expect: bugfix/issue-42, feature/my-branch, main (sorted).
+	want := []string{"bugfix/issue-42", "feature/my-branch", "main"}
+	if len(branches) != len(want) {
+		t.Fatalf("ListBranches: got %d branches %v, want %d %v", len(branches), branches, len(want), want)
+	}
+	for i, w := range want {
+		if branches[i] != w {
+			t.Errorf("branches[%d] = %q, want %q", i, branches[i], w)
+		}
+	}
+}
+
+// Test 8: CreateBranch writes the correct hash to the ref file.
 func TestBranch_CreateWritesCorrectHash(t *testing.T) {
 	r := initRepoWithFile(t, "main.go", []byte("package main\n\nfunc main() {}\n"))
 

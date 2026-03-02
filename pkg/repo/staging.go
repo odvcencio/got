@@ -104,6 +104,11 @@ func (r *Repo) writeStaging(s *Staging, invalidateStatusCache bool) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("write staging: write: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return fmt.Errorf("write staging: sync: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
 		return fmt.Errorf("write staging: close: %w", err)

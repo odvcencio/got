@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // Test 1: Add a Go file — blob + entity list stored, both hashes non-empty.
@@ -689,6 +689,58 @@ func TestRemove_DirectoryPathRemovesTrackedPrefix(t *testing.T) {
 	}
 	if _, ok := stg.Entries["pkg/b.go"]; ok {
 		t.Fatalf("expected pkg/b.go to be removed from staging")
+	}
+}
+
+// Test: WriteStaging persists data atomically (Sync + rename). Verify the
+// written file is fully readable immediately after write returns, which
+// exercises the Sync-before-rename path.
+func TestStaging_WriteSyncPersistence(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	stg := &Staging{
+		Entries: map[string]*StagingEntry{
+			"sync_test.go": {
+				Path:     "sync_test.go",
+				BlobHash: object.Hash("deadbeef"),
+				Mode:     object.TreeModeFile,
+				ModTime:  1111111111,
+				Size:     99,
+			},
+		},
+	}
+
+	if err := r.WriteStaging(stg); err != nil {
+		t.Fatalf("WriteStaging: %v", err)
+	}
+
+	// Read the index file directly to confirm it was fully flushed.
+	data, err := os.ReadFile(r.indexPath())
+	if err != nil {
+		t.Fatalf("ReadFile(index): %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("index file is empty after WriteStaging")
+	}
+
+	// Round-trip to confirm integrity.
+	got, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	entry, ok := got.Entries["sync_test.go"]
+	if !ok {
+		t.Fatalf("missing sync_test.go entry after round-trip")
+	}
+	if entry.BlobHash != object.Hash("deadbeef") {
+		t.Errorf("BlobHash = %q, want %q", entry.BlobHash, "deadbeef")
+	}
+	if entry.Size != 99 {
+		t.Errorf("Size = %d, want 99", entry.Size)
 	}
 }
 

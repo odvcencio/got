@@ -47,25 +47,40 @@ func (r *Repo) DeleteBranch(name string) error {
 	return nil
 }
 
-// ListBranches reads .graft/refs/heads/ and returns the branch names sorted
-// alphabetically.
+// ListBranches reads .graft/refs/heads/ recursively and returns the branch
+// names sorted alphabetically. Hierarchical branches (e.g. "feature/foo")
+// are discovered by walking subdirectories under refs/heads/.
 func (r *Repo) ListBranches() ([]string, error) {
 	headsDir := filepath.Join(r.refsBaseDir(), "refs", "heads")
 
-	entries, err := os.ReadDir(headsDir)
+	info, err := os.Stat(headsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("list branches: %w", err)
 	}
+	if !info.IsDir() {
+		return nil, nil
+	}
 
 	var names []string
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	err = filepath.WalkDir(headsDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		names = append(names, e.Name())
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(headsDir, path)
+		if err != nil {
+			return err
+		}
+		names = append(names, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list branches: %w", err)
 	}
 	sort.Strings(names)
 	return names, nil
