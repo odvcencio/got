@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/odvcencio/got/pkg/entity"
-	"github.com/odvcencio/got/pkg/repo"
+	"github.com/odvcencio/graft/pkg/entity"
+	"github.com/odvcencio/graft/pkg/repo"
 )
 
 func TestCherryPickCmd_EntityAppliesSelectedDelta(t *testing.T) {

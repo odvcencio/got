@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
-// objectTypeToPackType maps Got object types to pack object types.
+// objectTypeToPackType maps Graft object types to pack object types.
 func objectTypeToPackType(t object.ObjectType) (object.PackObjectType, bool) {
 	switch t {
 	case object.TypeCommit:
@@ -24,7 +24,7 @@ func objectTypeToPackType(t object.ObjectType) (object.PackObjectType, bool) {
 	}
 }
 
-// packTypeToObjectType maps pack types back to Got object types.
+// packTypeToObjectType maps pack types back to Graft object types.
 func packTypeToObjectType(t object.PackObjectType) (object.ObjectType, bool) {
 	switch t {
 	case object.PackCommit:

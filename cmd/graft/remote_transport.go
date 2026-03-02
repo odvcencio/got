@@ -6,13 +6,13 @@ import (
 	"path"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/remote"
+	"github.com/odvcencio/graft/pkg/remote"
 )
 
 type remoteTransportKind string
 
 const (
-	remoteTransportGot remoteTransportKind = "got"
+	remoteTransportGraft remoteTransportKind = "graft"
 	remoteTransportGit remoteTransportKind = "git"
 )
 
@@ -25,7 +25,7 @@ func parseRemoteSpec(raw string) (remoteTransportKind, string, error) {
 		return remoteTransportGit, canonical, nil
 	}
 	if _, err := remote.ParseEndpoint(canonical); err == nil {
-		return remoteTransportGot, canonical, nil
+		return remoteTransportGraft, canonical, nil
 	}
 	if looksLikeGitRemote(canonical) {
 		return remoteTransportGit, canonical, nil

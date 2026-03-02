@@ -17,60 +17,60 @@ import (
 	"time"
 )
 
-func TestGotCLIClonePushPullAgainstGothub(t *testing.T) {
+func TestGraftCLIClonePushPullAgainstOrchard(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping e2e test in short mode")
 	}
-	if os.Getenv("GOT_E2E_GOTHUB") != "1" {
-		t.Skip("set GOT_E2E_GOTHUB=1 to run gothub e2e test")
+	if os.Getenv("GRAFT_E2E_ORCHARD") != "1" {
+		t.Skip("set GRAFT_E2E_ORCHARD=1 to run orchard e2e test")
 	}
 
-	gotRoot := projectRoot(t)
-	gothubRoot := filepath.Clean(filepath.Join(gotRoot, "..", "gothub"))
-	if _, err := os.Stat(filepath.Join(gothubRoot, "cmd", "gothub", "main.go")); err != nil {
-		t.Skipf("gothub source not found at %s", gothubRoot)
+	graftRoot := projectRoot(t)
+	orchardRoot := filepath.Clean(filepath.Join(graftRoot, "..", "orchard"))
+	if _, err := os.Stat(filepath.Join(orchardRoot, "cmd", "orchard", "main.go")); err != nil {
+		t.Skipf("orchard source not found at %s", orchardRoot)
 	}
 
-	gotBin := buildBinary(t, gotRoot, "got", "./cmd/got")
-	gothubBin := buildBinary(t, gothubRoot, "gothub", "./cmd/gothub")
+	graftBin := buildBinary(t, graftRoot, "graft", "./cmd/graft")
+	orchardBin := buildBinary(t, orchardRoot, "orchard", "./cmd/orchard")
 
-	baseURL, stop := startGothub(t, gothubBin)
+	baseURL, stop := startOrchard(t, orchardBin)
 	defer stop()
 
 	token := registerUser(t, baseURL, "alice", "alice@example.com", "secret123")
 	createRepo(t, baseURL, token, "demo")
 
-	remoteURL := strings.Replace(baseURL, "http://", "http://alice:secret123@", 1) + "/got/alice/demo"
+	remoteURL := strings.Replace(baseURL, "http://", "http://alice:secret123@", 1) + "/graft/alice/demo"
 
 	repo1 := filepath.Join(t.TempDir(), "repo1")
-	runCommand(t, "", gotBin, "init", repo1)
+	runCommand(t, "", graftBin, "init", repo1)
 	writeText(t, filepath.Join(repo1, "main.go"), "package main\n\nfunc main() {}\n")
-	runCommand(t, repo1, gotBin, "add", "main.go")
-	runCommand(t, repo1, gotBin, "commit", "-m", "initial", "--author", "alice")
-	runCommand(t, repo1, gotBin, "remote", "add", "origin", remoteURL)
-	runCommand(t, repo1, gotBin, "push", "origin", "main")
+	runCommand(t, repo1, graftBin, "add", "main.go")
+	runCommand(t, repo1, graftBin, "commit", "-m", "initial", "--author", "alice")
+	runCommand(t, repo1, graftBin, "remote", "add", "origin", remoteURL)
+	runCommand(t, repo1, graftBin, "push", "origin", "main")
 
 	cloneDir := filepath.Join(t.TempDir(), "clone")
-	runCommand(t, "", gotBin, "clone", remoteURL, cloneDir)
+	runCommand(t, "", graftBin, "clone", remoteURL, cloneDir)
 
-	got := readText(t, filepath.Join(cloneDir, "main.go"))
-	if !strings.Contains(got, "func main() {}") {
-		t.Fatalf("clone file content mismatch:\n%s", got)
+	content := readText(t, filepath.Join(cloneDir, "main.go"))
+	if !strings.Contains(content, "func main() {}") {
+		t.Fatalf("clone file content mismatch:\n%s", content)
 	}
 
 	writeText(t, filepath.Join(cloneDir, "main.go"), "package main\n\nfunc main() {}\nfunc feature() {}\n")
-	runCommand(t, cloneDir, gotBin, "add", "main.go")
-	runCommand(t, cloneDir, gotBin, "commit", "-m", "feature", "--author", "alice")
-	runCommand(t, cloneDir, gotBin, "push", "origin", "main")
+	runCommand(t, cloneDir, graftBin, "add", "main.go")
+	runCommand(t, cloneDir, graftBin, "commit", "-m", "feature", "--author", "alice")
+	runCommand(t, cloneDir, graftBin, "push", "origin", "main")
 
-	runCommand(t, repo1, gotBin, "pull", "origin", "main")
+	runCommand(t, repo1, graftBin, "pull", "origin", "main")
 	updated := readText(t, filepath.Join(repo1, "main.go"))
 	if !strings.Contains(updated, "func feature() {}") {
 		t.Fatalf("pull did not update working tree:\n%s", updated)
 	}
 
-	runCommand(t, cloneDir, gotBin, "tag", "-a", "-m", "release 1.0.0", "v1.0.0")
-	runCommand(t, cloneDir, gotBin, "push", "origin", "refs/tags/v1.0.0")
+	runCommand(t, cloneDir, graftBin, "tag", "-a", "-m", "release 1.0.0", "v1.0.0")
+	runCommand(t, cloneDir, graftBin, "push", "origin", "refs/tags/v1.0.0")
 	refs := listProtocolRefs(t, remoteURL)
 	if strings.TrimSpace(refs["tags/v1.0.0"]) == "" {
 		t.Fatalf("expected pushed tag refs/tags/v1.0.0 to exist on remote, refs=%v", refs)
@@ -131,7 +131,7 @@ func readText(t *testing.T, path string) string {
 	return string(data)
 }
 
-func startGothub(t *testing.T, gothubBin string) (string, func()) {
+func startOrchard(t *testing.T, orchardBin string) (string, func()) {
 	t.Helper()
 	work := t.TempDir()
 	port := freePort(t)
@@ -147,26 +147,26 @@ storage:
 auth:
   jwt_secret: "0123456789abcdef0123456789abcdef"
   token_duration: "24h"
-`, port, filepath.Join(work, "gothub.db"), filepath.Join(work, "repos"))
+`, port, filepath.Join(work, "orchard.db"), filepath.Join(work, "repos"))
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, gothubBin, "serve", "-config", cfgPath)
+	cmd := exec.CommandContext(ctx, orchardBin, "serve", "-config", cfgPath)
 	var logs bytes.Buffer
 	cmd.Stdout = &logs
 	cmd.Stderr = &logs
 	if err := cmd.Start(); err != nil {
 		cancel()
-		t.Fatalf("start gothub: %v", err)
+		t.Fatalf("start orchard: %v", err)
 	}
 
 	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	if err := waitForServer(baseURL + "/api/v1/user"); err != nil {
 		cancel()
 		_ = cmd.Wait()
-		t.Fatalf("gothub did not become ready: %v\nlogs:\n%s", err, logs.String())
+		t.Fatalf("orchard did not become ready: %v\nlogs:\n%s", err, logs.String())
 	}
 
 	stop := func() {

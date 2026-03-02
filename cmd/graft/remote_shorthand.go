@@ -9,14 +9,14 @@ import (
 )
 
 const (
-	defaultGothubBaseURL    = "https://gothub.dev"
+	defaultOrchardBaseURL    = "https://orchard.dev"
 	defaultGitHubBaseURL    = "https://github.com"
 	defaultGitLabBaseURL    = "https://gitlab.com"
 	defaultBitbucketBaseURL = "https://bitbucket.org"
 )
 
-// canonicalizeRemoteSpec expands shorthand forms like "gothub:owner/repo" into
-// canonical Got protocol endpoints and normalizes host-only variations.
+// canonicalizeRemoteSpec expands shorthand forms like "orchard:owner/repo" into
+// canonical Graft protocol endpoints and normalizes host-only variations.
 func canonicalizeRemoteSpec(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -38,12 +38,12 @@ func canonicalizeRemoteSpec(raw string) (string, error) {
 
 	providerLower := strings.ToLower(provider)
 	switch providerLower {
-	case "gothub":
+	case "orchard":
 		owner, repoName, err := parseOwnerRepo(repoPath)
 		if err != nil {
 			return "", err
 		}
-		baseURL, err := normalizeBaseURL(os.Getenv("GOT_GOTHUB_URL"), defaultGothubBaseURL)
+		baseURL, err := normalizeBaseURL(configuredOrchardHost(""), defaultOrchardBaseURL)
 		if err != nil {
 			return "", err
 		}
@@ -53,13 +53,13 @@ func canonicalizeRemoteSpec(raw string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		baseURL, err := normalizeBaseURL(os.Getenv("GOT_GITHUB_URL"), defaultGitHubBaseURL)
+		baseURL, err := normalizeBaseURL(os.Getenv("GRAFT_GITHUB_URL"), defaultGitHubBaseURL)
 		if err != nil {
 			return "", err
 		}
 		return joinGitEndpoint(baseURL, owner+"/"+repoName), nil
 	case "gitlab", "gl":
-		baseURL, err := normalizeBaseURL(os.Getenv("GOT_GITLAB_URL"), defaultGitLabBaseURL)
+		baseURL, err := normalizeBaseURL(os.Getenv("GRAFT_GITLAB_URL"), defaultGitLabBaseURL)
 		if err != nil {
 			return "", err
 		}
@@ -73,20 +73,20 @@ func canonicalizeRemoteSpec(raw string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		baseURL, err := normalizeBaseURL(os.Getenv("GOT_BITBUCKET_URL"), defaultBitbucketBaseURL)
+		baseURL, err := normalizeBaseURL(os.Getenv("GRAFT_BITBUCKET_URL"), defaultBitbucketBaseURL)
 		if err != nil {
 			return "", err
 		}
 		return joinGitEndpoint(baseURL, owner+"/"+repoName), nil
 	default:
 		// Allow host shorthand for self-hosted instances:
-		//   code.example.com:owner/repo -> https://code.example.com/got/owner/repo
+		//   code.example.com:owner/repo -> https://code.example.com/graft/owner/repo
 		if strings.Contains(provider, ".") || strings.EqualFold(provider, "localhost") {
 			owner, repoName, err := parseOwnerRepo(repoPath)
 			if err != nil {
 				return "", err
 			}
-			baseURL, err := normalizeBaseURL("https://"+provider, defaultGothubBaseURL)
+			baseURL, err := normalizeBaseURL("https://"+provider, defaultOrchardBaseURL)
 			if err != nil {
 				return "", err
 			}
@@ -150,7 +150,7 @@ func parseGitRepoPath(raw string) (string, error) {
 }
 
 func joinGotEndpoint(baseURL, owner, repo string) string {
-	return strings.TrimRight(baseURL, "/") + path.Join("/got", owner, repo)
+	return strings.TrimRight(baseURL, "/") + path.Join("/graft", owner, repo)
 }
 
 func joinGitEndpoint(baseURL, repoPath string) string {

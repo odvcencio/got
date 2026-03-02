@@ -24,14 +24,14 @@ type PackEntityTrailerEntry struct {
 	StableID   string
 }
 
-// PackEntityTrailer is the parsed Got-specific pack extension trailer.
+// PackEntityTrailer is the parsed Graft-specific pack extension trailer.
 type PackEntityTrailer struct {
 	Version  uint16
 	Entries  []PackEntityTrailerEntry
 	Checksum Hash
 }
 
-// MarshalPackEntityTrailer serializes entries to the Got pack trailer format.
+// MarshalPackEntityTrailer serializes entries to the Graft pack trailer format.
 func MarshalPackEntityTrailer(entries []PackEntityTrailerEntry) ([]byte, error) {
 	normalized, err := normalizePackEntityTrailerEntries(entries)
 	if err != nil {

@@ -5,14 +5,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/odvcencio/got/pkg/repo"
+	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
 )
 
 func newInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init [path]",
-		Short: "Create an empty got repository",
+		Short: "Create an empty graft repository",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := "."
@@ -35,7 +35,7 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "initialized empty got repository in %s\n", filepath.Join(r.RootDir, ".got")+string(filepath.Separator))
+			fmt.Fprintf(cmd.OutOrStdout(), "initialized empty graft repository in %s\n", filepath.Join(r.RootDir, ".graft")+string(filepath.Separator))
 			return nil
 		},
 	}

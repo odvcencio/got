@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/odvcencio/got/pkg/repo"
+	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
 )
 

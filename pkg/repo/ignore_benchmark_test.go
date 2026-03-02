@@ -90,7 +90,7 @@ func BenchmarkIgnoreCheckerLargeWildcardSet(b *testing.B) {
 func newBenchmarkIgnoreChecker(lines []string) *IgnoreChecker {
 	ic := &IgnoreChecker{}
 	ic.patterns = append(ic.patterns,
-		ignorePattern{pattern: ".got", dirOnly: false, hasSlash: false},
+		ignorePattern{pattern: ".graft", dirOnly: false, hasSlash: false},
 		ignorePattern{pattern: ".git", dirOnly: false, hasSlash: false},
 	)
 
@@ -125,7 +125,7 @@ type wildcardScanIndex struct {
 func buildWildcardScanIndex(patterns []ignorePattern) wildcardScanIndex {
 	var index wildcardScanIndex
 	for idx, p := range patterns {
-		if p.dirOnly || p.pattern == ".got" || p.pattern == ".git" {
+		if p.dirOnly || p.pattern == ".graft" || p.pattern == ".git" {
 			continue
 		}
 		if p.regex != nil || !isLiteralPattern(p.pattern) {

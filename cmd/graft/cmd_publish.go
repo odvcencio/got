@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/odvcencio/got/pkg/repo"
+	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
 )
 
@@ -34,10 +33,11 @@ func newPublishCmd() *cobra.Command {
 		noCreate    bool
 		description string
 	)
+	host = configuredOrchardHost("")
 
 	cmd := &cobra.Command{
 		Use:   "publish [owner/repo]",
-		Short: "Create a remote repo on Gothub, set origin, and push current branch",
+		Short: "Create a remote repo on Orchard, set origin, and push current branch",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := repo.Open(".")
@@ -50,7 +50,7 @@ func newPublishCmd() *cobra.Command {
 				return err
 			}
 
-			baseURL, err := normalizeBaseURL(host, defaultGothubBaseURL)
+			baseURL, err := normalizeBaseURL(host, defaultOrchardBaseURL)
 			if err != nil {
 				return err
 			}
@@ -82,14 +82,14 @@ func newPublishCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if transport != remoteTransportGot {
-				return fmt.Errorf("publish currently supports gothub/got remotes only")
+			if transport != remoteTransportGraft {
+				return fmt.Errorf("publish currently supports orchard/graft remotes only")
 			}
 			return pushBranchGot(cmd, r, remoteName, remoteURL, pushBranchName, false)
 		},
 	}
 
-	cmd.Flags().StringVar(&host, "host", os.Getenv("GOT_GOTHUB_URL"), "Gothub base URL (default: GOT_GOTHUB_URL or https://gothub.dev)")
+	cmd.Flags().StringVar(&host, "host", host, "Orchard base URL (default: --host, GRAFT_ORCHARD_URL, ~/.graftconfig, or https://orchard.dev)")
 	cmd.Flags().StringVar(&remoteName, "remote", "origin", "remote name to configure")
 	cmd.Flags().StringVarP(&branch, "branch", "b", "", "branch to publish (default: current branch)")
 	cmd.Flags().BoolVar(&privateRepo, "private", false, "create repository as private")
@@ -104,12 +104,9 @@ func resolvePublishTarget(args []string, rootDir string) (string, string, error)
 		target = strings.TrimSpace(args[0])
 	}
 	if target == "" {
-		owner := strings.TrimSpace(os.Getenv("GOT_OWNER"))
+		owner := configuredOwner()
 		if owner == "" {
-			owner = strings.TrimSpace(os.Getenv("GOTHUB_OWNER"))
-		}
-		if owner == "" {
-			return "", "", fmt.Errorf("owner is required (pass owner/repo or set GOT_OWNER)")
+			return "", "", fmt.Errorf("owner is required (pass owner/repo, set GRAFT_OWNER, or run `graft auth setup`)")
 		}
 		repoName := filepath.Base(rootDir)
 		if strings.TrimSpace(repoName) == "" || repoName == "." || repoName == string(filepath.Separator) {
@@ -137,7 +134,7 @@ func createRemoteRepository(cmd *cobra.Command, baseURL, name, description strin
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	token := strings.TrimSpace(os.Getenv("GOT_TOKEN"))
+	token := configuredToken("")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -167,7 +164,7 @@ func createRemoteRepository(cmd *cobra.Command, baseURL, name, description strin
 	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		if token == "" {
-			return fmt.Errorf("create remote repository failed (%d): set GOT_TOKEN or use --no-create", resp.StatusCode)
+			return fmt.Errorf("create remote repository failed (%d): set GRAFT_TOKEN or use --no-create", resp.StatusCode)
 		}
 		return fmt.Errorf("create remote repository failed (%d): %s", resp.StatusCode, errMessage)
 	}

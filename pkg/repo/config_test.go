@@ -3,7 +3,7 @@ package repo
 import (
 	"testing"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func TestConfigRemoteRoundTrip(t *testing.T) {

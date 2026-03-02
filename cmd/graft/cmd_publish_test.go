@@ -9,18 +9,18 @@ func TestResolvePublishTarget(t *testing.T) {
 			t.Fatalf("resolvePublishTarget: %v", err)
 		}
 		if owner != "alice" || repo != "demo" {
-			t.Fatalf("got %q/%q, want alice/demo", owner, repo)
+			t.Fatalf("graft %q/%q, want alice/demo", owner, repo)
 		}
 	})
 
 	t.Run("infer from env and root dir", func(t *testing.T) {
-		t.Setenv("GOT_OWNER", "alice")
+		t.Setenv("GRAFT_OWNER", "alice")
 		owner, repo, err := resolvePublishTarget(nil, "/tmp/my-repo")
 		if err != nil {
 			t.Fatalf("resolvePublishTarget: %v", err)
 		}
 		if owner != "alice" || repo != "my-repo" {
-			t.Fatalf("got %q/%q, want alice/my-repo", owner, repo)
+			t.Fatalf("graft %q/%q, want alice/my-repo", owner, repo)
 		}
 	})
 }

@@ -25,7 +25,7 @@ func TestZstdRoundTrip(t *testing.T) {
 }
 
 func TestZstdStreamRoundTrip(t *testing.T) {
-	original := bytes.Repeat([]byte("got protocol compression test data\n"), 100)
+	original := bytes.Repeat([]byte("graft protocol compression test data\n"), 100)
 	var compressed bytes.Buffer
 	if err := compressZstdStream(&compressed, bytes.NewReader(original)); err != nil {
 		t.Fatalf("compressZstdStream: %v", err)

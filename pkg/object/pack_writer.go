@@ -146,7 +146,7 @@ func (p *PackWriter) Finish() (Hash, error) {
 }
 
 // FinishWithEntityTrailer behaves like Finish and additionally appends the
-// Got-specific entity trailer after the standard pack checksum.
+// Graft-specific entity trailer after the standard pack checksum.
 func (p *PackWriter) FinishWithEntityTrailer(entries []PackEntityTrailerEntry) (Hash, error) {
 	return p.finish(entries)
 }

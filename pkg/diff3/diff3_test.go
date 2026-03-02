@@ -23,7 +23,7 @@ func TestMyersDiff_Basic(t *testing.T) {
 	wantLines := []string{"a", "b", "x", "c"}
 
 	if len(ops) != len(wantTypes) {
-		t.Fatalf("got %d ops, want %d: %v", len(ops), len(wantTypes), ops)
+		t.Fatalf("graft %d ops, want %d: %v", len(ops), len(wantTypes), ops)
 	}
 	for i, op := range ops {
 		if op.Type != wantTypes[i] || op.Line != wantLines[i] {

@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/odvcencio/got/pkg/repo"
+	"github.com/odvcencio/graft/pkg/repo"
 )
 
 func TestResolvePushRefNames(t *testing.T) {

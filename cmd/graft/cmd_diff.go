@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/odvcencio/got/pkg/diff"
-	"github.com/odvcencio/got/pkg/diff3"
-	"github.com/odvcencio/got/pkg/object"
-	"github.com/odvcencio/got/pkg/repo"
+	"github.com/odvcencio/graft/pkg/diff"
+	"github.com/odvcencio/graft/pkg/diff3"
+	"github.com/odvcencio/graft/pkg/object"
+	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
 )
 
@@ -256,7 +256,7 @@ func printLineDiff(out io.Writer, path string, before, after []byte) error {
 		return nil
 	}
 
-	fmt.Fprintf(out, "diff --got a/%s b/%s\n", path, path)
+	fmt.Fprintf(out, "diff --graft a/%s b/%s\n", path, path)
 	fmt.Fprintf(out, "--- a/%s\n", path)
 	fmt.Fprintf(out, "+++ b/%s\n", path)
 
@@ -360,7 +360,7 @@ func (h lineDiffHunk) lineRange(lines []diff3.DiffLine) (oldStart, oldCount, new
 }
 
 func printRename(out io.Writer, fromPath, toPath string) {
-	fmt.Fprintf(out, "diff --got a/%s b/%s\n", fromPath, toPath)
+	fmt.Fprintf(out, "diff --graft a/%s b/%s\n", fromPath, toPath)
 	fmt.Fprintf(out, "rename from %s\n", fromPath)
 	fmt.Fprintf(out, "rename to %s\n", toPath)
 }

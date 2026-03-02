@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/odvcencio/got/pkg/object"
-	"github.com/odvcencio/got/pkg/repo"
+	"github.com/odvcencio/graft/pkg/object"
+	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
 )
 

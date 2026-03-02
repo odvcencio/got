@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func (r *Repo) treeEntryAtPath(treeHash object.Hash, relPath string) (object.TreeEntry, bool, error) {

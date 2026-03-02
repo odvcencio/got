@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/odvcencio/got/pkg/object"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 func TestParseEndpoint(t *testing.T) {
@@ -24,22 +24,22 @@ func TestParseEndpoint(t *testing.T) {
 	}{
 		{
 			name:      "canonical got path",
-			in:        "https://example.com/got/alice/proj",
-			wantBase:  "https://example.com/got/alice/proj",
+			in:        "https://example.com/graft/alice/proj",
+			wantBase:  "https://example.com/graft/alice/proj",
 			wantOwner: "alice",
 			wantRepo:  "proj",
 		},
 		{
 			name:      "plain owner repo path",
 			in:        "https://example.com/alice/proj",
-			wantBase:  "https://example.com/got/alice/proj",
+			wantBase:  "https://example.com/graft/alice/proj",
 			wantOwner: "alice",
 			wantRepo:  "proj",
 		},
 		{
 			name:      "api prefix with got path",
-			in:        "https://example.com/api/v1/got/alice/proj",
-			wantBase:  "https://example.com/api/v1/got/alice/proj",
+			in:        "https://example.com/api/v1/graft/alice/proj",
+			wantBase:  "https://example.com/api/v1/graft/alice/proj",
 			wantOwner: "alice",
 			wantRepo:  "proj",
 		},
@@ -78,7 +78,7 @@ func TestParseEndpoint(t *testing.T) {
 func TestPushObjectsIncludesComputedHash(t *testing.T) {
 	var received int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/got/alice/repo/objects" {
+		if r.Method != http.MethodPost || r.URL.Path != "/graft/alice/repo/objects" {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
@@ -105,7 +105,7 @@ func TestPushObjectsIncludesComputedHash(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestPushObjectsRejectsProvidedHashMismatch(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestParseObjectTypeAcceptsTag(t *testing.T) {
 }
 
 func TestNewClientWithOptionsTimeout(t *testing.T) {
-	client, err := NewClientWithOptions("https://example.com/got/alice/repo", ClientOptions{
+	client, err := NewClientWithOptions("https://example.com/graft/alice/repo", ClientOptions{
 		Timeout:     120 * time.Second,
 		MaxAttempts: 5,
 	})
@@ -181,7 +181,7 @@ func TestNewClientWithOptionsTimeout(t *testing.T) {
 }
 
 func TestNewClientWithOptionsDefaults(t *testing.T) {
-	client, err := NewClientWithOptions("https://example.com/got/alice/repo", ClientOptions{})
+	client, err := NewClientWithOptions("https://example.com/graft/alice/repo", ClientOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestDoRejectsWrongContentType(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestListRefsRejectsInvalidHash(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,26 +234,26 @@ func TestListRefsRejectsInvalidHash(t *testing.T) {
 }
 
 func TestClientSendsCapabilityHeaders(t *testing.T) {
-	var gotProtocol, gotCaps string
+	var graftProtocol, graftCaps string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotProtocol = r.Header.Get("Got-Protocol")
-		gotCaps = r.Header.Get("Got-Capabilities")
+		graftProtocol = r.Header.Get("Graft-Protocol")
+		graftCaps = r.Header.Get("Graft-Capabilities")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("{}"))
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, _ = client.ListRefs(t.Context())
 
-	if gotProtocol != ProtocolVersion {
-		t.Fatalf("Got-Protocol = %q, want %q", gotProtocol, ProtocolVersion)
+	if graftProtocol != ProtocolVersion {
+		t.Fatalf("Graft-Protocol = %q, want %q", graftProtocol, ProtocolVersion)
 	}
-	if gotCaps == "" {
-		t.Fatal("Got-Capabilities header missing")
+	if graftCaps == "" {
+		t.Fatal("Graft-Capabilities header missing")
 	}
 }
 
@@ -268,7 +268,7 @@ func TestListRefsHandlesLargeResponse(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestListRefsHandlesLargeResponse(t *testing.T) {
 		t.Fatalf("ListRefs: %v", err)
 	}
 	if len(got) != 1000 {
-		t.Fatalf("got %d refs, want 1000", len(got))
+		t.Fatalf("graft %d refs, want 1000", len(got))
 	}
 }
 
@@ -312,7 +312,7 @@ func TestListRefsPaginated(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestListRefsPaginated(t *testing.T) {
 		t.Fatalf("ListRefs: %v", err)
 	}
 	if len(refs) != 3 {
-		t.Fatalf("got %d refs, want 3", len(refs))
+		t.Fatalf("graft %d refs, want 3", len(refs))
 	}
 	if _, ok := refs["heads/main"]; !ok {
 		t.Fatal("missing heads/main")
@@ -347,7 +347,7 @@ func TestListRefsLegacyFormat(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestListRefsLegacyFormat(t *testing.T) {
 		t.Fatalf("ListRefs: %v", err)
 	}
 	if len(refs) != 1 {
-		t.Fatalf("got %d refs, want 1", len(refs))
+		t.Fatalf("graft %d refs, want 1", len(refs))
 	}
 	if _, ok := refs["heads/main"]; !ok {
 		t.Fatal("missing heads/main")
@@ -369,13 +369,13 @@ func TestPushObjectsPackRoundTrip(t *testing.T) {
 
 	var serverRecords []ObjectRecord
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/got/alice/repo/objects" {
+		if r.Method != http.MethodPost || r.URL.Path != "/graft/alice/repo/objects" {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		ct := r.Header.Get("Content-Type")
-		if ct != "application/x-got-pack" {
-			t.Errorf("Content-Type = %q, want application/x-got-pack", ct)
+		if ct != "application/x-graft-pack" {
+			t.Errorf("Content-Type = %q, want application/x-graft-pack", ct)
 		}
 		ce := r.Header.Get("Content-Encoding")
 		if ce != "zstd" {
@@ -407,7 +407,7 @@ func TestPushObjectsPackRoundTrip(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,13 +433,13 @@ func TestPushObjectsPackRoundTrip(t *testing.T) {
 
 func TestClientCachesServerLimits(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Got-Limits", "max_batch=5000,max_payload=10000000")
+		w.Header().Set("Graft-Limits", "max_batch=5000,max_payload=10000000")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("{}"))
 	}))
 	defer ts.Close()
 
-	client, err := NewClient(ts.URL + "/got/alice/repo")
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
