@@ -23,6 +23,7 @@ func newModuleCmd() *cobra.Command {
 	cmd.AddCommand(newModuleRmCmd())
 	cmd.AddCommand(newModuleSyncCmd())
 	cmd.AddCommand(newModuleUpdateCmd())
+	cmd.AddCommand(newModuleImpactCmd())
 
 	return cmd
 }
@@ -335,4 +336,75 @@ func shortHashOrNone(h object.Hash) string {
 		return "-------"
 	}
 	return shortHash(h)
+}
+
+func newModuleImpactCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "impact <name>",
+		Short: "Show entity-level impact of module changes",
+		Long: `Analyze entity-level changes between the old and new versions of a module
+and find entities in the parent repository that may be affected.
+
+The old version is the last checked-out commit (from module HEAD), and the
+new version is the locked commit (from .graftmodules.lock). Run 'graft module
+update' first to fetch the latest version, then use 'graft module impact' to
+see what changed and what callers may be affected before syncing.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+
+			r, err := repo.Open(".")
+			if err != nil {
+				return err
+			}
+
+			report, err := r.ModuleImpact(name)
+			if err != nil {
+				return err
+			}
+
+			out := cmd.OutOrStdout()
+
+			// Header.
+			fmt.Fprintf(out, "Module: %s\n", report.ModuleName)
+			fmt.Fprintf(out, "Old:    %s\n", shortHashOrNone(report.OldCommit))
+			fmt.Fprintf(out, "New:    %s\n", shortHashOrNone(report.NewCommit))
+			fmt.Fprintln(out)
+
+			// Changes in module.
+			if len(report.Changes) == 0 {
+				fmt.Fprintln(out, "No entity changes detected.")
+				return nil
+			}
+
+			fmt.Fprintf(out, "Entity changes (%d):\n", len(report.Changes))
+			for _, c := range report.Changes {
+				symbol := " "
+				switch c.ChangeType {
+				case "added":
+					symbol = "+"
+				case "modified":
+					symbol = "~"
+				case "removed":
+					symbol = "-"
+				}
+				fmt.Fprintf(out, "  %s %-10s %s (%s)\n", symbol, c.ChangeType, c.EntityName, c.FilePath)
+			}
+
+			// Impacted entities.
+			fmt.Fprintln(out)
+			if len(report.Impacted) == 0 {
+				fmt.Fprintln(out, "No impacted entities found in parent repository.")
+				return nil
+			}
+
+			fmt.Fprintf(out, "Impacted entities in parent repo (%d):\n", len(report.Impacted))
+			for _, imp := range report.Impacted {
+				fmt.Fprintf(out, "  %s:%s\n", imp.FilePath, imp.EntityName)
+				fmt.Fprintf(out, "    %s\n", imp.Reason)
+			}
+
+			return nil
+		},
+	}
 }
