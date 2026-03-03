@@ -140,13 +140,19 @@ type JSONShowChange struct {
 
 // --- Blame ---
 
-// JSONBlameOutput is the JSON output for "graft blame --json".
+// JSONBlameOutput is the JSON output for "graft blame --entity --json".
 type JSONBlameOutput struct {
 	Path       string `json:"path"`
 	EntityKey  string `json:"entityKey"`
 	Author     string `json:"author"`
 	CommitHash string `json:"commitHash"`
 	Message    string `json:"message"`
+}
+
+// JSONBatchBlameOutput is the JSON output for "graft blame <path> --json".
+type JSONBatchBlameOutput struct {
+	Path     string            `json:"path"`
+	Entities []JSONBlameOutput `json:"entities"`
 }
 
 // --- Conflicts ---
