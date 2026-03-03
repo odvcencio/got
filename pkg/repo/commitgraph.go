@@ -18,8 +18,8 @@ type CommitGraphEntry struct {
 }
 
 // CommitGraph is an in-memory commit graph mapping commit hashes to their
-// precomputed metadata. It is persisted as a JSON file at
-// .graft/objects/info/commit-graph.
+// precomputed metadata. It is persisted in binary format (GCG1) at
+// .graft/objects/info/commit-graph, with backward-compatible JSON reading.
 type CommitGraph struct {
 	Entries map[object.Hash]*CommitGraphEntry `json:"entries"`
 }
@@ -36,8 +36,8 @@ func (r *Repo) commitGraphPath() string {
 }
 
 // WriteCommitGraph computes and writes the commit-graph by walking all
-// reachable commits from every ref tip. It writes the graph as a JSON
-// file at .graft/objects/info/commit-graph.
+// reachable commits from every ref tip. It writes the graph in binary
+// (GCG1) format at .graft/objects/info/commit-graph.
 func (r *Repo) WriteCommitGraph() error {
 	refs, err := r.ListRefs("")
 	if err != nil {
@@ -166,52 +166,24 @@ func (r *Repo) WriteCommitGraph() error {
 		entries[h].Generation = generations[h]
 	}
 
-	// Write the graph file.
-	graphFile := commitGraphFile{
-		Version: 1,
-		Entries: entries,
-	}
-
-	data, err := json.MarshalIndent(graphFile, "", "  ")
-	if err != nil {
-		return fmt.Errorf("write commit graph: marshal: %w", err)
-	}
-
+	// Write the graph file in binary format.
 	path := r.commitGraphPath()
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("write commit graph: mkdir: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(dir, "commit-graph.tmp.*")
-	if err != nil {
-		return fmt.Errorf("write commit graph: create temp: %w", err)
-	}
-	tmpPath := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("write commit graph: write: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("write commit graph: sync: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("write commit graph: close: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("write commit graph: rename: %w", err)
+	if err := WriteBinaryCommitGraph(path, entries); err != nil {
+		return fmt.Errorf("write commit graph: %w", err)
 	}
 
 	return nil
 }
 
-// ReadCommitGraph loads the commit-graph file. Returns an empty graph if
-// the file does not exist.
+// ReadCommitGraph loads the commit-graph file. It auto-detects the format:
+// if the file starts with "GCG1" magic bytes, it reads binary format;
+// otherwise it falls back to JSON for backward compatibility. Returns an
+// empty graph if the file does not exist.
 func (r *Repo) ReadCommitGraph() (*CommitGraph, error) {
 	path := r.commitGraphPath()
 	data, err := os.ReadFile(path)
@@ -224,6 +196,19 @@ func (r *Repo) ReadCommitGraph() (*CommitGraph, error) {
 		return nil, fmt.Errorf("read commit graph: %w", err)
 	}
 
+	// Detect format by checking for binary magic bytes.
+	if isBinaryCommitGraph(data) {
+		entries, err := ReadBinaryCommitGraph(path)
+		if err != nil {
+			return nil, fmt.Errorf("read commit graph: %w", err)
+		}
+		if entries == nil {
+			entries = make(map[object.Hash]*CommitGraphEntry)
+		}
+		return &CommitGraph{Entries: entries}, nil
+	}
+
+	// Fall back to JSON format for backward compatibility.
 	var gf commitGraphFile
 	if err := json.Unmarshal(data, &gf); err != nil {
 		return nil, fmt.Errorf("read commit graph: unmarshal: %w", err)
