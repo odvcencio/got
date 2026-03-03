@@ -66,7 +66,7 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 
 	matches := MatchEntities(baseEL, oursEL, theirsEL)
 
-	language := detectLanguage(path)
+	language := DetectLanguage(path)
 
 	var resolved []ResolvedEntity
 	var stats MergeStats
@@ -411,8 +411,8 @@ func hasTrailingNewline(b []byte) bool {
 	return len(b) > 0 && b[len(b)-1] == '\n'
 }
 
-// detectLanguage returns the language name based on file extension.
-func detectLanguage(path string) string {
+// DetectLanguage returns the language name based on file extension.
+func DetectLanguage(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".go":

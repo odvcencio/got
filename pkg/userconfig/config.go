@@ -28,6 +28,9 @@ type Config struct {
 	Owner          string `json:"owner,omitempty"`
 	SigningKeyPath string `json:"signing_key_path,omitempty"`
 	AutoSign       bool   `json:"auto_sign,omitempty"`
+	AIProvider     string `json:"ai_provider,omitempty"` // "claude" (default) or future providers
+	AIAPIKey       string `json:"ai_api_key,omitempty"`  // API key for AI provider
+	AIModel        string `json:"ai_model,omitempty"`    // model override (e.g. "claude-opus-4-20250514")
 }
 
 // Load reads ~/.graftconfig. Missing file returns an empty config.
@@ -131,4 +134,7 @@ func (c *Config) normalize() {
 	c.Username = strings.TrimSpace(c.Username)
 	c.Owner = strings.TrimSpace(c.Owner)
 	c.SigningKeyPath = strings.TrimSpace(c.SigningKeyPath)
+	c.AIProvider = strings.TrimSpace(c.AIProvider)
+	c.AIAPIKey = strings.TrimSpace(c.AIAPIKey)
+	c.AIModel = strings.TrimSpace(c.AIModel)
 }

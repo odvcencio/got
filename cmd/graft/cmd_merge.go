@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
+	"github.com/odvcencio/graft/pkg/merge"
 	"github.com/odvcencio/graft/pkg/repo"
+	"github.com/odvcencio/graft/pkg/userconfig"
 	"github.com/spf13/cobra"
 )
 
@@ -12,6 +17,7 @@ func newMergeCmd() *cobra.Command {
 	var abortFlag bool
 	var dryRunFlag bool
 	var jsonFlag bool
+	var aiResolveFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "merge <branch>",
@@ -88,6 +94,28 @@ func newMergeCmd() *cobra.Command {
 				printFileReport(out, f)
 			}
 
+			if report.HasConflicts && aiResolveFlag {
+				resolved, failed := runAIResolveAll(cmd, r, out)
+				if resolved > 0 {
+					fmt.Fprintf(out, "AI resolved %d conflict", resolved)
+					if resolved != 1 {
+						fmt.Fprint(out, "s")
+					}
+					fmt.Fprintln(out)
+				}
+				if failed > 0 {
+					fmt.Fprintf(out, "AI could not resolve %d conflict", failed)
+					if failed != 1 {
+						fmt.Fprint(out, "s")
+					}
+					fmt.Fprintln(out)
+					fmt.Fprintln(out, "fix remaining conflicts and run graft commit")
+				} else {
+					fmt.Fprintln(out, "all conflicts resolved by AI — review and run graft commit")
+				}
+				return nil
+			}
+
 			if report.HasConflicts {
 				fmt.Fprintf(out, "merge completed with %d conflict", report.TotalConflicts)
 				if report.TotalConflicts != 1 {
@@ -111,6 +139,7 @@ func newMergeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&abortFlag, "abort", false, "abort the current merge and restore original state")
 	cmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "preview what a merge would do without modifying anything")
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
+	cmd.Flags().BoolVar(&aiResolveFlag, "ai-resolve", false, "attempt to resolve conflicts using AI")
 
 	return cmd
 }
@@ -222,4 +251,102 @@ func runMergePreviewJSON(r *repo.Repo, cmd *cobra.Command, branchName, current s
 		return err
 	}
 	return mergeReportToJSON(cmd, report, "preview", branchName, current)
+}
+
+// runAIResolveAll attempts to resolve all conflicts in the working tree using
+// AI. It returns counts of resolved and failed conflicts.
+func runAIResolveAll(cmd *cobra.Command, r *repo.Repo, out io.Writer) (resolved, failed int) {
+	resolver, err := newAIResolverFromConfig()
+	if err != nil {
+		fmt.Fprintf(out, "AI resolve: %v\n", err)
+		return 0, 0
+	}
+
+	conflicts, err := r.ListConflicts()
+	if err != nil {
+		fmt.Fprintf(out, "AI resolve: list conflicts: %v\n", err)
+		return 0, 0
+	}
+
+	ctx := context.Background()
+	for _, c := range conflicts {
+		if c.EntityName == "" {
+			// Skip non-structural (text) conflicts — no entity context.
+			failed++
+			continue
+		}
+
+		ok := aiResolveConflict(ctx, resolver, r, c, out)
+		if ok {
+			resolved++
+		} else {
+			failed++
+		}
+	}
+
+	return resolved, failed
+}
+
+// aiResolveConflict attempts to resolve a single conflict entry using AI.
+// Returns true if the conflict was resolved and the file updated.
+func aiResolveConflict(ctx context.Context, resolver merge.AIResolver, r *repo.Repo, c repo.ConflictEntry, out io.Writer) bool {
+	// Read the conflicted file to extract base/ours/theirs from staging.
+	baseBody, oursBody, theirsBody, err := r.ReadConflictBodies(c.Path)
+	if err != nil {
+		fmt.Fprintf(out, "  %s (%s): skip — %v\n", c.Path, c.EntityName, err)
+		return false
+	}
+
+	language := merge.DetectLanguage(c.Path)
+
+	req := merge.AIResolveRequest{
+		FilePath:   c.Path,
+		EntityKey:  c.EntityKey,
+		EntityKind: c.EntityKind,
+		Language:   language,
+		BaseBody:   baseBody,
+		OursBody:   oursBody,
+		TheirsBody: theirsBody,
+	}
+
+	result, err := resolver.Resolve(ctx, req)
+	if err != nil {
+		fmt.Fprintf(out, "  %s (%s): AI error — %v\n", c.Path, c.EntityName, err)
+		return false
+	}
+
+	fmt.Fprintf(out, "  %s (%s): resolved (confidence: %.0f%%) — %s\n",
+		c.Path, c.EntityName, result.Confidence*100, result.Explanation)
+
+	// Write the resolved content back by replacing the conflict markers in the file.
+	if err := r.ApplyAIResolution(c.Path, c.EntityName, result.ResolvedBody); err != nil {
+		fmt.Fprintf(out, "  %s (%s): apply failed — %v\n", c.Path, c.EntityName, err)
+		return false
+	}
+
+	return true
+}
+
+// newAIResolverFromConfig creates an AIResolver from user config and environment.
+func newAIResolverFromConfig() (merge.AIResolver, error) {
+	cfg, err := userconfig.Load()
+	if err != nil {
+		// Fall back to env var only.
+		cfg = &userconfig.Config{}
+	}
+
+	provider := cfg.AIProvider
+	if provider == "" {
+		provider = os.Getenv("GRAFT_AI_PROVIDER")
+	}
+	if provider == "" {
+		provider = "claude"
+	}
+
+	switch strings.ToLower(provider) {
+	case "claude", "anthropic", "":
+		return merge.NewClaudeResolver(cfg.AIAPIKey, cfg.AIModel)
+	default:
+		return nil, fmt.Errorf("unsupported AI provider: %s", provider)
+	}
 }
