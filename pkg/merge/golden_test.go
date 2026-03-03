@@ -180,3 +180,173 @@ func Main() {
 
 	t.Logf("merged output (%d bytes):\n%s", len(result.Merged), merged)
 }
+
+// TestGoldenGoStructFieldMerge verifies that when both sides add different fields
+// to the same Go struct, the merged output contains all fields via set-union merge
+// with no conflicts.
+func TestGoldenGoStructFieldMerge(t *testing.T) {
+	const base = `package config
+
+type Config struct {
+	Host string
+}
+
+func NewConfig() *Config {
+	return &Config{Host: "localhost"}
+}
+`
+	const ours = `package config
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func NewConfig() *Config {
+	return &Config{Host: "localhost"}
+}
+`
+	const theirs = `package config
+
+type Config struct {
+	Host    string
+	Timeout int
+}
+
+func NewConfig() *Config {
+	return &Config{Host: "localhost"}
+}
+`
+
+	result, err := MergeFiles("config.go", []byte(base), []byte(ours), []byte(theirs))
+	if err != nil {
+		t.Fatalf("MergeFiles failed: %v", err)
+	}
+
+	merged := string(result.Merged)
+
+	// No conflicts — struct field merge should resolve this cleanly
+	if result.HasConflicts {
+		t.Errorf("expected no conflicts for struct field merge, got HasConflicts=true (ConflictCount=%d)\nmerged output:\n%s",
+			result.ConflictCount, merged)
+	}
+
+	// All three fields must be present
+	for _, field := range []string{"Host", "Port", "Timeout"} {
+		if !strings.Contains(merged, field) {
+			t.Errorf("merged output missing field %q\nmerged:\n%s", field, merged)
+		}
+	}
+
+	// Package declaration and function must survive
+	if !strings.Contains(merged, "package config") {
+		t.Errorf("merged output missing package declaration\nmerged:\n%s", merged)
+	}
+	if !strings.Contains(merged, "func NewConfig()") {
+		t.Errorf("merged output missing func NewConfig()\nmerged:\n%s", merged)
+	}
+
+	t.Logf("merged output (%d bytes):\n%s", len(result.Merged), merged)
+}
+
+// TestGoldenGoInterfaceMethodMerge verifies that when both sides add different
+// methods to the same Go interface, the merged output contains all methods via
+// set-union merge with no conflicts.
+func TestGoldenGoInterfaceMethodMerge(t *testing.T) {
+	const base = `package service
+
+type Handler interface {
+	Handle(req Request) Response
+}
+
+func Process() {}
+`
+	const ours = `package service
+
+type Handler interface {
+	Handle(req Request) Response
+	Close() error
+}
+
+func Process() {}
+`
+	const theirs = `package service
+
+type Handler interface {
+	Handle(req Request) Response
+	Reset()
+}
+
+func Process() {}
+`
+
+	result, err := MergeFiles("service.go", []byte(base), []byte(ours), []byte(theirs))
+	if err != nil {
+		t.Fatalf("MergeFiles failed: %v", err)
+	}
+
+	merged := string(result.Merged)
+
+	// No conflicts — interface member merge should resolve this cleanly
+	if result.HasConflicts {
+		t.Errorf("expected no conflicts for interface method merge, got HasConflicts=true (ConflictCount=%d)\nmerged output:\n%s",
+			result.ConflictCount, merged)
+	}
+
+	// All three methods must be present
+	for _, method := range []string{"Handle(", "Close()", "Reset()"} {
+		if !strings.Contains(merged, method) {
+			t.Errorf("merged output missing method %q\nmerged:\n%s", method, merged)
+		}
+	}
+
+	// Package and function should survive
+	if !strings.Contains(merged, "package service") {
+		t.Errorf("merged output missing package declaration\nmerged:\n%s", merged)
+	}
+	if !strings.Contains(merged, "func Process()") {
+		t.Errorf("merged output missing func Process()\nmerged:\n%s", merged)
+	}
+
+	t.Logf("merged output (%d bytes):\n%s", len(result.Merged), merged)
+}
+
+// TestGoldenGoStructFieldTypeConflict verifies that when both sides change the
+// same struct field to different types, a conflict is produced.
+func TestGoldenGoStructFieldTypeConflict(t *testing.T) {
+	const base = `package config
+
+type Config struct {
+	Host string
+	Port int
+}
+`
+	const ours = `package config
+
+type Config struct {
+	Host string
+	Port int32
+}
+`
+	const theirs = `package config
+
+type Config struct {
+	Host string
+	Port uint16
+}
+`
+
+	result, err := MergeFiles("config.go", []byte(base), []byte(ours), []byte(theirs))
+	if err != nil {
+		t.Fatalf("MergeFiles failed: %v", err)
+	}
+
+	// This should have a conflict because both sides changed Port's type differently
+	if !result.HasConflicts {
+		t.Errorf("expected conflict for type change on same field, got HasConflicts=false\nmerged output:\n%s",
+			string(result.Merged))
+	}
+
+	t.Logf("merged output (%d bytes, conflicts=%d):\n%s",
+		len(result.Merged), result.ConflictCount, string(result.Merged))
+}

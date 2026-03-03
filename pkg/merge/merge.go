@@ -185,8 +185,9 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 }
 
 // resolveConflict handles entities where both sides modified differently.
-// For import blocks, it uses set-union merge. For declarations, it attempts
-// a line-level diff3 merge; if that fails, it produces a conflict.
+// For import blocks, it uses set-union merge. For struct and interface
+// declarations, it uses set-union field/member merge. For other declarations,
+// it attempts a line-level diff3 merge; if that fails, it produces a conflict.
 func resolveConflict(m MatchedEntity, language string) ResolvedEntity {
 	oursBody := m.Ours.Body
 	theirsBody := m.Theirs.Body
@@ -212,6 +213,38 @@ func resolveConflict(m MatchedEntity, language string) ResolvedEntity {
 		return ResolvedEntity{Entity: e}
 	}
 
+	// Struct declarations get set-union field merge.
+	if isStructBody(m.Ours.DeclKind, language, oursBody) {
+		var baseBody []byte
+		if m.Base != nil {
+			baseBody = m.Base.Body
+		}
+		merged, hasConflicts := MergeStructFields(baseBody, oursBody, theirsBody, language)
+		if !hasConflicts {
+			e := *m.Ours
+			e.Body = merged
+			return ResolvedEntity{Entity: e}
+		}
+		// Fall through to diff3 — MergeStructFields may signal conflict
+		// for type changes on the same field.
+	}
+
+	// Interface declarations get set-union member merge.
+	if isInterfaceBody(m.Ours.DeclKind, language, oursBody) {
+		var baseBody []byte
+		if m.Base != nil {
+			baseBody = m.Base.Body
+		}
+		merged, hasConflicts := MergeInterfaceMembers(baseBody, oursBody, theirsBody, language)
+		if !hasConflicts {
+			e := *m.Ours
+			e.Body = merged
+			return ResolvedEntity{Entity: e}
+		}
+		// Fall through to diff3 — MergeInterfaceMembers may signal conflict
+		// for signature changes on the same member.
+	}
+
 	// Declarations and other entities: try diff3 line merge on entity bodies.
 	var baseBody []byte
 	if m.Base != nil {
@@ -232,6 +265,40 @@ func resolveConflict(m MatchedEntity, language string) ResolvedEntity {
 		Conflict:   true,
 		OursBody:   oursBody,
 		TheirsBody: theirsBody,
+	}
+}
+
+// isStructBody checks if a declaration body represents a struct.
+// For Go, type_declaration can be either a struct or interface, so we
+// inspect the body content to distinguish.
+func isStructBody(declKind, language string, body []byte) bool {
+	switch language {
+	case "go":
+		if declKind != "type_declaration" {
+			return false
+		}
+		return bytes.Contains(body, []byte(" struct {")) || bytes.Contains(body, []byte(" struct{"))
+	case "rust":
+		return declKind == "struct_item"
+	default:
+		return false
+	}
+}
+
+// isInterfaceBody checks if a declaration body represents an interface.
+// For Go, type_declaration can be either a struct or interface, so we
+// inspect the body content to distinguish.
+func isInterfaceBody(declKind, language string, body []byte) bool {
+	switch language {
+	case "go":
+		if declKind != "type_declaration" {
+			return false
+		}
+		return bytes.Contains(body, []byte(" interface {")) || bytes.Contains(body, []byte(" interface{"))
+	case "typescript", "javascript":
+		return declKind == "interface_declaration" || declKind == "export_statement"
+	default:
+		return false
 	}
 }
 
