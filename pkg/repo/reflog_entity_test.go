@@ -108,7 +108,7 @@ func TestReflog_ReadWithEntities(t *testing.T) {
 	h2 := object.Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 
 	// Write an entity-enriched reflog entry manually.
-	entities := []EntityChange{
+	entities := []ReflogEntityChange{
 		{Path: "main.go", EntityKey: "declaration:Hello", ChangeType: "modify"},
 		{Path: "util.go", EntityKey: "declaration:Parse", ChangeType: "create"},
 		{Path: "old.go", EntityKey: "declaration:Legacy", ChangeType: "delete"},
@@ -142,7 +142,7 @@ func TestReflog_ReadWithEntities(t *testing.T) {
 	}
 
 	// Verify each entity change.
-	want := []EntityChange{
+	want := []ReflogEntityChange{
 		{Path: "main.go", EntityKey: "declaration:Hello", ChangeType: "modify"},
 		{Path: "util.go", EntityKey: "declaration:Parse", ChangeType: "create"},
 		{Path: "old.go", EntityKey: "declaration:Legacy", ChangeType: "delete"},
@@ -223,7 +223,7 @@ func TestReflog_MixedEntries(t *testing.T) {
 	}
 
 	// Write an entity-enriched line.
-	entities := []EntityChange{
+	entities := []ReflogEntityChange{
 		{Path: "main.go", EntityKey: "declaration:Foo", ChangeType: "create"},
 	}
 	if err := r.appendReflogWithEntities("refs/heads/main", h1, h2, "commit", entities); err != nil {
@@ -384,5 +384,48 @@ func TestParseEntityChanges(t *testing.T) {
 				t.Errorf("parseEntityChanges(%q) returned %d changes, want %d: %+v", tt.input, len(got), tt.want, got)
 			}
 		})
+	}
+}
+
+// TestReflog_URLEncodedPath verifies round-trip of entity data where the file
+// path contains colons (valid on Linux), which are URL-encoded in the reflog.
+func TestReflog_URLEncodedPath(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	h1 := object.Hash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	h2 := object.Hash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+
+	pathWithColon := "src:special/file.go"
+	entities := []ReflogEntityChange{
+		{Path: pathWithColon, EntityKey: "declaration:Hello", ChangeType: "create"},
+	}
+	if err := r.appendReflogWithEntities("refs/heads/main", h1, h2, "commit", entities); err != nil {
+		t.Fatalf("appendReflogWithEntities: %v", err)
+	}
+
+	entries, err := r.ReadReflogWithEntities("main", 10)
+	if err != nil {
+		t.Fatalf("ReadReflogWithEntities: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if len(entries[0].Entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entries[0].Entities))
+	}
+
+	got := entries[0].Entities[0]
+	if got.Path != pathWithColon {
+		t.Errorf("Path = %q, want %q", got.Path, pathWithColon)
+	}
+	if got.EntityKey != "declaration:Hello" {
+		t.Errorf("EntityKey = %q, want %q", got.EntityKey, "declaration:Hello")
+	}
+	if got.ChangeType != "create" {
+		t.Errorf("ChangeType = %q, want %q", got.ChangeType, "create")
 	}
 }

@@ -50,6 +50,10 @@ const (
 	claudeAPIVersion    = "2023-06-01"
 	claudeMaxTokens     = 4096
 	claudeHTTPTimeout   = 120 * time.Second
+	// maxEntityBodySize is the maximum size of a single entity body that will
+	// be sent to the AI resolver. Bodies larger than this are likely too big for
+	// the model's context window and would produce poor results.
+	maxEntityBodySize = 100 * 1024 // 100 KB
 )
 
 // NewClaudeResolver creates a ClaudeResolver from config values and environment.
@@ -78,6 +82,22 @@ func NewClaudeResolver(apiKey, model string) (*ClaudeResolver, error) {
 // Resolve sends the entity conflict to Claude and parses the resolved code
 // from the response.
 func (c *ClaudeResolver) Resolve(ctx context.Context, req AIResolveRequest) (*AIResolveResult, error) {
+	// Check entity body sizes to avoid sending requests that will exceed the
+	// model's context window or produce poor results.
+	for _, body := range []struct {
+		name string
+		data []byte
+	}{
+		{"base", req.BaseBody},
+		{"ours", req.OursBody},
+		{"theirs", req.TheirsBody},
+	} {
+		if len(body.data) > maxEntityBodySize {
+			return nil, fmt.Errorf("AI resolve: %s body too large (%d bytes, max %d) — resolve this conflict manually",
+				body.name, len(body.data), maxEntityBodySize)
+		}
+	}
+
 	prompt := buildResolvePrompt(req)
 
 	body := claudeRequest{

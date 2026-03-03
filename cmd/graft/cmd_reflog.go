@@ -75,7 +75,7 @@ func runReflogEntity(cmd *cobra.Command, r *repo.Repo, ref, entityFilter string,
 		}
 
 		// Find matching entity changes in this entry.
-		var matched []repo.EntityChange
+		var matched []repo.ReflogEntityChange
 		for _, ec := range e.Entities {
 			if matchEntityFilter(entityFilter, ec.EntityKey) {
 				matched = append(matched, ec)

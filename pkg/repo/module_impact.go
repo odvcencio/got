@@ -391,6 +391,11 @@ func (r *Repo) findImpactedEntities(moduleName string, changes []ModuleEntityCha
 // It uses word-boundary-aware matching to reduce false positives: the name
 // must not be preceded or followed by an identifier character (letter, digit,
 // underscore).
+//
+// Note: the boundary check is ASCII-only. Multi-byte Unicode identifier
+// characters (e.g., CJK or accented letters) are not recognized as word
+// boundaries. This is acceptable for typical programming language identifiers
+// but may produce false positives for files with Unicode identifiers.
 func containsReference(content, name string) bool {
 	idx := 0
 	for {

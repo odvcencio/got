@@ -23,8 +23,8 @@ type ReflogEntry struct {
 	Reason    string
 }
 
-// EntityChange records a single entity-level change in a ref update.
-type EntityChange struct {
+// ReflogEntityChange records a single entity-level change in a ref update.
+type ReflogEntityChange struct {
 	Path       string // file path the entity belongs to
 	EntityKey  string // entity identifier (e.g., "func:MyHandler" or "type:Config")
 	ChangeType string // "create", "modify", or "delete"
@@ -33,7 +33,7 @@ type EntityChange struct {
 // ReflogEntryWithEntities extends ReflogEntry with entity-level change data.
 type ReflogEntryWithEntities struct {
 	ReflogEntry
-	Entities []EntityChange
+	Entities []ReflogEntityChange
 }
 
 // appendReflog writes a plain reflog entry without entity data.
@@ -91,7 +91,7 @@ func (r *Repo) appendReflog(ref string, oldHash, newHash object.Hash, reason str
 //	<old> <new> <timestamp> <reason>\t<path>:<key>:<change>,<path>:<key>:<change>,...
 //
 // If entities is nil/empty, writes a normal reflog line (backward compatible).
-func (r *Repo) appendReflogWithEntities(ref string, oldHash, newHash object.Hash, reason string, entities []EntityChange) error {
+func (r *Repo) appendReflogWithEntities(ref string, oldHash, newHash object.Hash, reason string, entities []ReflogEntityChange) error {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil
@@ -122,7 +122,7 @@ func (r *Repo) appendReflogWithEntities(ref string, oldHash, newHash object.Hash
 	if len(entities) > 0 {
 		parts := make([]string, len(entities))
 		for i, ec := range entities {
-			parts[i] = ec.Path + ":" + ec.EntityKey + ":" + ec.ChangeType
+			parts[i] = encodeReflogPath(ec.Path) + ":" + ec.EntityKey + ":" + ec.ChangeType
 		}
 		line += "\t" + strings.Join(parts, ",")
 	}
@@ -183,7 +183,7 @@ func (r *Repo) ReadReflogWithEntities(ref string, limit int) ([]ReflogEntryWithE
 		}
 
 		reason := parts[3]
-		var entities []EntityChange
+		var entities []ReflogEntityChange
 
 		// Check for tab-separated entity data after the reason.
 		if tabIdx := strings.Index(reason, "\t"); tabIdx >= 0 {
@@ -221,13 +221,13 @@ func (r *Repo) ReadReflogWithEntities(ref string, limit int) ([]ReflogEntryWithE
 // Format: path:key:changeType,path:key:changeType,...
 // The entity key may itself contain colons (e.g., "declaration:Hello"),
 // so the changeType is identified as the last colon-separated segment.
-func parseEntityChanges(data string) []EntityChange {
+func parseEntityChanges(data string) []ReflogEntityChange {
 	data = strings.TrimSpace(data)
 	if data == "" {
 		return nil
 	}
 	items := strings.Split(data, ",")
-	var changes []EntityChange
+	var changes []ReflogEntityChange
 	for _, item := range items {
 		item = strings.TrimSpace(item)
 		if item == "" {
@@ -236,13 +236,15 @@ func parseEntityChanges(data string) []EntityChange {
 		// The format is path:entityKey:changeType where entityKey can contain
 		// colons. The changeType is always the last segment, and path is the
 		// first. Everything between the first and last colon is the key.
+		// The path is URL-encoded to handle colons in file paths.
 		firstColon := strings.Index(item, ":")
 		lastColon := strings.LastIndex(item, ":")
 		if firstColon < 0 || firstColon == lastColon {
 			continue
 		}
-		changes = append(changes, EntityChange{
-			Path:       item[:firstColon],
+		decodedPath := decodeReflogPath(item[:firstColon])
+		changes = append(changes, ReflogEntityChange{
+			Path:       decodedPath,
 			EntityKey:  item[firstColon+1 : lastColon],
 			ChangeType: item[lastColon+1:],
 		})
@@ -250,9 +252,37 @@ func parseEntityChanges(data string) []EntityChange {
 	return changes
 }
 
+// reflogPathEncoder escapes characters used as delimiters in reflog entity
+// data. Paths may contain colons (valid on Linux) which would break parsing.
+var reflogPathEncoder = strings.NewReplacer(
+	"%", "%25", // must be first to avoid double-encoding
+	":", "%3A",
+	",", "%2C",
+)
+
+// reflogPathDecoder reverses the encoding applied by encodeReflogPath.
+var reflogPathDecoder = strings.NewReplacer(
+	"%3A", ":",
+	"%2C", ",",
+	"%25", "%",
+)
+
+// encodeReflogPath percent-encodes delimiters in a file path for safe
+// storage in the reflog entity data format.
+func encodeReflogPath(path string) string {
+	return reflogPathEncoder.Replace(path)
+}
+
+// decodeReflogPath decodes a percent-encoded path from the reflog entity
+// data format. Unencoded paths (from older reflog entries) pass through
+// unchanged since the decoder only replaces known percent sequences.
+func decodeReflogPath(encoded string) string {
+	return reflogPathDecoder.Replace(encoded)
+}
+
 // diffTreeEntities compares two commit trees to find entity-level changes.
 // It returns a list of creates, modifies, and deletes.
-func diffTreeEntities(r *Repo, oldCommit, newCommit object.Hash) ([]EntityChange, error) {
+func diffTreeEntities(r *Repo, oldCommit, newCommit object.Hash) ([]ReflogEntityChange, error) {
 	// Read new commit tree.
 	newCommitObj, err := r.Store.ReadCommit(newCommit)
 	if err != nil {
@@ -303,7 +333,7 @@ func diffTreeEntities(r *Repo, oldCommit, newCommit object.Hash) ([]EntityChange
 	}
 	sort.Strings(sortedPaths)
 
-	var changes []EntityChange
+	var changes []ReflogEntityChange
 	for _, path := range sortedPaths {
 		oldEntry, inOld := oldByPath[path]
 		newEntry, inNew := newByPath[path]
@@ -336,13 +366,13 @@ func diffTreeEntities(r *Repo, oldCommit, newCommit object.Hash) ([]EntityChange
 		for key, newHash := range newEntityMap {
 			oldHash, inOldMap := oldEntityMap[key]
 			if !inOldMap {
-				changes = append(changes, EntityChange{
+				changes = append(changes, ReflogEntityChange{
 					Path:       path,
 					EntityKey:  key,
 					ChangeType: "create",
 				})
 			} else if oldHash != newHash {
-				changes = append(changes, EntityChange{
+				changes = append(changes, ReflogEntityChange{
 					Path:       path,
 					EntityKey:  key,
 					ChangeType: "modify",
@@ -353,7 +383,7 @@ func diffTreeEntities(r *Repo, oldCommit, newCommit object.Hash) ([]EntityChange
 		// Key in old but not new = delete
 		for key := range oldEntityMap {
 			if _, inNewMap := newEntityMap[key]; !inNewMap {
-				changes = append(changes, EntityChange{
+				changes = append(changes, ReflogEntityChange{
 					Path:       path,
 					EntityKey:  key,
 					ChangeType: "delete",
