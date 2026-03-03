@@ -102,16 +102,39 @@ func TestResolveCommentPosition_SurvivesRebase(t *testing.T) {
 	}
 }
 
-// TestReviewComment_Struct verifies the ReviewComment struct fields.
-func TestReviewComment_Struct(t *testing.T) {
-	c := ReviewComment{
-		EntityKey: "decl:function_definition:::Hello:0",
-		Body:      "This function needs error handling.",
+// TestResolveCommentPositionFromMap verifies the pre-built map variant.
+func TestResolveCommentPositionFromMap(t *testing.T) {
+	el, err := entity.Extract("main.go", []byte(goBase))
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
 	}
-	if c.EntityKey == "" {
-		t.Error("expected non-empty EntityKey")
+
+	// Find the Hello function's identity key.
+	var helloKey string
+	for i := range el.Entities {
+		e := &el.Entities[i]
+		if e.Kind == entity.KindDeclaration && e.Name == "Hello" {
+			helloKey = e.IdentityKey()
+			break
+		}
 	}
-	if c.Body == "" {
-		t.Error("expected non-empty Body")
+	if helloKey == "" {
+		t.Fatal("could not find Hello entity")
+	}
+
+	m := entity.BuildEntityMap(el)
+
+	start, end, ok := ResolveCommentPositionFromMap(m, helloKey)
+	if !ok {
+		t.Fatal("expected entity to be found via map")
+	}
+	if start <= 0 || end <= 0 {
+		t.Errorf("expected positive line numbers, got start=%d end=%d", start, end)
+	}
+
+	// Not found case.
+	_, _, ok2 := ResolveCommentPositionFromMap(m, "nonexistent:key")
+	if ok2 {
+		t.Error("expected ok=false for nonexistent key via map")
 	}
 }

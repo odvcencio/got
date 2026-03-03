@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/odvcencio/graft/pkg/diff3"
+	"github.com/odvcencio/graft/pkg/entity"
 )
 
 // FormatReview produces a structural code review output for a file diff.
@@ -16,8 +17,20 @@ func FormatReview(d *FileDiff) string {
 		return ""
 	}
 
-	var added, modified, removed int
+	// Filter to declaration-level entities only — interstitial/preamble changes
+	// produce ugly raw identity keys and meaningless line ranges.
+	var decls []EntityChange
 	for _, c := range d.Changes {
+		if isDeclChange(c) {
+			decls = append(decls, c)
+		}
+	}
+	if len(decls) == 0 {
+		return ""
+	}
+
+	var added, modified, removed int
+	for _, c := range decls {
 		switch c.Type {
 		case Added:
 			added++
@@ -27,7 +40,7 @@ func FormatReview(d *FileDiff) string {
 			removed++
 		}
 	}
-	total := len(d.Changes)
+	total := len(decls)
 
 	var b strings.Builder
 
@@ -49,7 +62,7 @@ func FormatReview(d *FileDiff) string {
 	}
 	b.WriteString("\n")
 
-	for _, c := range d.Changes {
+	for _, c := range decls {
 		name := entityDisplayName(c)
 
 		switch c.Type {
@@ -87,4 +100,15 @@ func pluralEntity(n int) string {
 		return "entity"
 	}
 	return "entities"
+}
+
+// isDeclChange returns true if the entity change is for a declaration-level entity.
+func isDeclChange(c EntityChange) bool {
+	if c.After != nil {
+		return c.After.Kind == entity.KindDeclaration
+	}
+	if c.Before != nil {
+		return c.Before.Kind == entity.KindDeclaration
+	}
+	return false
 }
