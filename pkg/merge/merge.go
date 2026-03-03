@@ -149,7 +149,7 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 			resolved = append(resolved, re)
 			if re.Conflict {
 				stats.Conflicts++
-				entityConflicts = append(entityConflicts, buildConflictDetail(m, ConflictTypeBothModified))
+				entityConflicts = append(entityConflicts, buildConflictDetail(m, ConflictTypeRenameConflict))
 			} else {
 				stats.OursModified++
 			}
@@ -159,7 +159,7 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 			resolved = append(resolved, re)
 			if re.Conflict {
 				stats.Conflicts++
-				entityConflicts = append(entityConflicts, buildConflictDetail(m, ConflictTypeBothModified))
+				entityConflicts = append(entityConflicts, buildConflictDetail(m, ConflictTypeRenameConflict))
 			} else {
 				stats.TheirsModified++
 			}

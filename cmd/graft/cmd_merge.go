@@ -159,6 +159,8 @@ func humanConflictType(ct string) string {
 		return "both modified"
 	case "delete_vs_modify":
 		return "delete vs modify"
+	case "rename_conflict":
+		return "rename conflict"
 	default:
 		return ct
 	}
