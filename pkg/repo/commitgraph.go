@@ -198,7 +198,7 @@ func (r *Repo) ReadCommitGraph() (*CommitGraph, error) {
 
 	// Detect format by checking for binary magic bytes.
 	if isBinaryCommitGraph(data) {
-		entries, err := ReadBinaryCommitGraph(path)
+		entries, err := parseBinaryCommitGraph(data)
 		if err != nil {
 			return nil, fmt.Errorf("read commit graph: %w", err)
 		}

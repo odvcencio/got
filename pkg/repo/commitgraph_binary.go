@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/odvcencio/graft/pkg/object"
@@ -187,7 +188,7 @@ func WriteBinaryCommitGraph(path string, entries map[object.Hash]*CommitGraphEnt
 	buf = append(buf, checksum[:]...)
 
 	// Atomic write via temp file + rename.
-	tmp, err := os.CreateTemp("", "commit-graph.tmp.*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), "commit-graph.tmp.*")
 	if err != nil {
 		return fmt.Errorf("binary commit graph: create temp: %w", err)
 	}
@@ -222,7 +223,11 @@ func ReadBinaryCommitGraph(path string) (map[object.Hash]*CommitGraphEntry, erro
 	if err != nil {
 		return nil, fmt.Errorf("binary commit graph: read: %w", err)
 	}
+	return parseBinaryCommitGraph(data)
+}
 
+// parseBinaryCommitGraph parses binary commit graph data from a byte slice.
+func parseBinaryCommitGraph(data []byte) (map[object.Hash]*CommitGraphEntry, error) {
 	if len(data) < binaryHeaderSize+binaryFanoutSize+binaryChecksumLen {
 		return nil, fmt.Errorf("binary commit graph: file too small (%d bytes)", len(data))
 	}
@@ -311,7 +316,7 @@ func ReadBinaryCommitGraph(path string) (map[object.Hash]*CommitGraphEntry, erro
 			}
 			pCount := binary.BigEndian.Uint32(overflowData[overflowOff : overflowOff+4])
 			overflowOff += 4
-			if int(overflowOff)+int(pCount)*32 > len(overflowData) {
+			if int64(overflowOff)+int64(pCount)*32 > int64(len(overflowData)) {
 				return nil, fmt.Errorf("binary commit graph: overflow parents overflow")
 			}
 			parents = make([]object.Hash, pCount)
