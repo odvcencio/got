@@ -21,6 +21,7 @@ func newDiffCmd() *cobra.Command {
 	var staged bool
 	var entity bool
 	var jsonFlag bool
+	var reviewFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "diff",
@@ -30,6 +31,12 @@ func newDiffCmd() *cobra.Command {
 			r, err := repo.Open(".")
 			if err != nil {
 				return err
+			}
+			if reviewFlag && entity {
+				return fmt.Errorf("--review and --entity cannot be combined")
+			}
+			if reviewFlag && jsonFlag {
+				return fmt.Errorf("--review and --json cannot be combined")
 			}
 			if jsonFlag {
 				if entity {
@@ -41,21 +48,22 @@ func newDiffCmd() *cobra.Command {
 				return diffUnstagedJSON(cmd, r)
 			}
 			if staged {
-				return diffStaged(cmd, r, entity)
+				return diffStaged(cmd, r, entity, reviewFlag)
 			}
-			return diffUnstaged(cmd, r, entity)
+			return diffUnstaged(cmd, r, entity, reviewFlag)
 		},
 	}
 
 	cmd.Flags().BoolVar(&staged, "staged", false, "show staged changes (staging vs HEAD)")
 	cmd.Flags().BoolVar(&entity, "entity", false, "show entity-level structural diff")
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
+	cmd.Flags().BoolVar(&reviewFlag, "review", false, "show structural code review format")
 
 	return cmd
 }
 
 // diffUnstaged compares the working tree against the staging area.
-func diffUnstaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
+func diffUnstaged(cmd *cobra.Command, r *repo.Repo, entityMode bool, reviewMode bool) error {
 	stg, err := r.ReadStaging()
 	if err != nil {
 		return err
@@ -96,7 +104,7 @@ func diffUnstaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 				if blobErr != nil {
 					return fmt.Errorf("diff: read staged blob %s: %w", p, blobErr)
 				}
-				if err := printDiff(out, p, stagedBlob.Data, nil, entityMode); err != nil {
+				if err := printDiff(out, p, stagedBlob.Data, nil, entityMode, reviewMode); err != nil {
 					return err
 				}
 				continue
@@ -115,7 +123,7 @@ func diffUnstaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 			return fmt.Errorf("diff: read staged blob %s: %w", p, err)
 		}
 
-		if err := printDiff(out, p, stagedBlob.Data, workData, entityMode); err != nil {
+		if err := printDiff(out, p, stagedBlob.Data, workData, entityMode, reviewMode); err != nil {
 			return err
 		}
 	}
@@ -124,7 +132,7 @@ func diffUnstaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 }
 
 // diffStaged compares the staging area against the HEAD commit tree.
-func diffStaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
+func diffStaged(cmd *cobra.Command, r *repo.Repo, entityMode bool, reviewMode bool) error {
 	stg, err := r.ReadStaging()
 	if err != nil {
 		return err
@@ -192,7 +200,7 @@ func diffStaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 			return fmt.Errorf("diff: read staged blob %s: %w", p, err)
 		}
 
-		if err := printDiff(out, p, before, stagedBlob.Data, entityMode); err != nil {
+		if err := printDiff(out, p, before, stagedBlob.Data, entityMode, reviewMode); err != nil {
 			return err
 		}
 	}
@@ -215,7 +223,7 @@ func diffStaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 		if err != nil {
 			return fmt.Errorf("diff: read HEAD blob %s: %w", p, err)
 		}
-		if err := printDiff(out, p, blob.Data, nil, entityMode); err != nil {
+		if err := printDiff(out, p, blob.Data, nil, entityMode, reviewMode); err != nil {
 			return err
 		}
 	}
@@ -225,7 +233,10 @@ func diffStaged(cmd *cobra.Command, r *repo.Repo, entityMode bool) error {
 
 // printDiff prints a diff for a single file. before or after may be nil for
 // additions and deletions respectively.
-func printDiff(out io.Writer, path string, before, after []byte, entityMode bool) error {
+func printDiff(out io.Writer, path string, before, after []byte, entityMode bool, reviewMode bool) error {
+	if reviewMode {
+		return printReviewDiff(out, path, before, after)
+	}
 	if entityMode {
 		return printEntityDiff(out, path, before, after)
 	}
@@ -248,6 +259,28 @@ func printEntityDiff(out io.Writer, path string, before, after []byte) error {
 	}
 
 	s := diff.FormatEntityDiff(fd)
+	if s != "" {
+		fmt.Fprint(out, s)
+	}
+	return nil
+}
+
+// printReviewDiff prints a structural code review format for a single file.
+func printReviewDiff(out io.Writer, path string, before, after []byte) error {
+	if before == nil {
+		before = []byte{}
+	}
+	if after == nil {
+		after = []byte{}
+	}
+
+	fd, err := diff.DiffFiles(path, before, after)
+	if err != nil {
+		// Entity extraction not supported for this file type; fall back to line diff.
+		return printLineDiff(out, path, before, after)
+	}
+
+	s := diff.FormatReview(fd)
 	if s != "" {
 		fmt.Fprint(out, s)
 	}
