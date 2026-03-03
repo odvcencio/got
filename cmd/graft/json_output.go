@@ -195,3 +195,19 @@ type JSONVerifyResult struct {
 	Algorithm  string `json:"algorithm,omitempty"`
 	Error      string `json:"error,omitempty"`
 }
+
+// --- Entity Search ---
+
+// JSONEntitySearchOutput is the top-level JSON output for "graft grep --entity --json".
+type JSONEntitySearchOutput struct {
+	Results []JSONEntitySearchResult `json:"results"`
+}
+
+// JSONEntitySearchResult represents a single entity match.
+type JSONEntitySearchResult struct {
+	Path     string `json:"path"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	DeclKind string `json:"declKind"`
+	Key      string `json:"key"`
+}
