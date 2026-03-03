@@ -286,11 +286,11 @@ func DiffTreeEntities(r *Repo, oldCommit, newCommit object.Hash) ([]ReflogEntity
 	// Read new commit tree.
 	newCommitObj, err := r.Store.ReadCommit(newCommit)
 	if err != nil {
-		return nil, fmt.Errorf("diffTreeEntities: read new commit %s: %w", newCommit, err)
+		return nil, fmt.Errorf("DiffTreeEntities: read new commit %s: %w", newCommit, err)
 	}
 	newEntries, err := r.FlattenTree(newCommitObj.TreeHash)
 	if err != nil {
-		return nil, fmt.Errorf("diffTreeEntities: flatten new tree: %w", err)
+		return nil, fmt.Errorf("DiffTreeEntities: flatten new tree: %w", err)
 	}
 
 	newByPath := make(map[string]TreeFileEntry, len(newEntries))
@@ -304,11 +304,11 @@ func DiffTreeEntities(r *Repo, oldCommit, newCommit object.Hash) ([]ReflogEntity
 	if !isInitial {
 		oldCommitObj, err := r.Store.ReadCommit(oldCommit)
 		if err != nil {
-			return nil, fmt.Errorf("diffTreeEntities: read old commit %s: %w", oldCommit, err)
+			return nil, fmt.Errorf("DiffTreeEntities: read old commit %s: %w", oldCommit, err)
 		}
 		oldEntries, err := r.FlattenTree(oldCommitObj.TreeHash)
 		if err != nil {
-			return nil, fmt.Errorf("diffTreeEntities: flatten old tree: %w", err)
+			return nil, fmt.Errorf("DiffTreeEntities: flatten old tree: %w", err)
 		}
 		oldByPath = make(map[string]TreeFileEntry, len(oldEntries))
 		for _, e := range oldEntries {
@@ -353,13 +353,13 @@ func DiffTreeEntities(r *Repo, oldCommit, newCommit object.Hash) ([]ReflogEntity
 		// Build old entity key -> hash map.
 		oldEntityMap, err := buildEntityKeyMap(r, oldEntry.EntityListHash, oldHasEntities)
 		if err != nil {
-			return nil, fmt.Errorf("diffTreeEntities: read old entities for %s: %w", path, err)
+			return nil, fmt.Errorf("DiffTreeEntities: read old entities for %s: %w", path, err)
 		}
 
 		// Build new entity key -> hash map.
 		newEntityMap, err := buildEntityKeyMap(r, newEntry.EntityListHash, newHasEntities)
 		if err != nil {
-			return nil, fmt.Errorf("diffTreeEntities: read new entities for %s: %w", path, err)
+			return nil, fmt.Errorf("DiffTreeEntities: read new entities for %s: %w", path, err)
 		}
 
 		// Compare: key in new but not old = create

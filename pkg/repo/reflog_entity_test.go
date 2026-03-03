@@ -266,7 +266,7 @@ func TestReflog_MixedEntries(t *testing.T) {
 	}
 }
 
-// TestDiffTreeEntities_BasicDiff verifies diffTreeEntities correctly identifies
+// TestDiffTreeEntities_BasicDiff verifies DiffTreeEntities correctly identifies
 // entity creates, modifies, and deletes between two commits.
 func TestDiffTreeEntities_BasicDiff(t *testing.T) {
 	dir := t.TempDir()
@@ -303,7 +303,7 @@ func TestDiffTreeEntities_BasicDiff(t *testing.T) {
 
 	changes, err := DiffTreeEntities(r, h1, h2)
 	if err != nil {
-		t.Fatalf("diffTreeEntities: %v", err)
+		t.Fatalf("DiffTreeEntities: %v", err)
 	}
 
 	// Build a map for easy lookup.
@@ -328,7 +328,7 @@ func TestDiffTreeEntities_BasicDiff(t *testing.T) {
 	}
 }
 
-// TestDiffTreeEntities_InitialCommit verifies that diffTreeEntities handles
+// TestDiffTreeEntities_InitialCommit verifies that DiffTreeEntities handles
 // initial commit (zero old hash) by treating all entities as creates.
 func TestDiffTreeEntities_InitialCommit(t *testing.T) {
 	dir := t.TempDir()
@@ -351,7 +351,7 @@ func TestDiffTreeEntities_InitialCommit(t *testing.T) {
 
 	changes, err := DiffTreeEntities(r, object.Hash(zeroHash), h)
 	if err != nil {
-		t.Fatalf("diffTreeEntities: %v", err)
+		t.Fatalf("DiffTreeEntities: %v", err)
 	}
 
 	if len(changes) == 0 {
