@@ -435,12 +435,17 @@ func (r *Repo) ReadReflog(ref string, limit int) ([]ReflogEntry, error) {
 		if err != nil {
 			continue
 		}
+		// Strip any entity data appended after the reason (tab-separated).
+		reason := parts[3]
+		if tabIdx := strings.Index(reason, "\t"); tabIdx >= 0 {
+			reason = reason[:tabIdx]
+		}
 		entries = append(entries, ReflogEntry{
 			Ref:       refName,
 			OldHash:   object.Hash(parts[0]),
 			NewHash:   object.Hash(parts[1]),
 			Timestamp: ts,
-			Reason:    parts[3],
+			Reason:    reason,
 		})
 	}
 	if err := scanner.Err(); err != nil {
