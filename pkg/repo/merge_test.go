@@ -893,3 +893,404 @@ func TestMerge_NoMergeInProgressBeforeMerge(t *testing.T) {
 		t.Fatal("IsMergeInProgress should be false before any merge")
 	}
 }
+
+// TestMergePreview_CleanMerge verifies that MergePreview returns the correct
+// report for a clean (non-conflicting) merge without modifying the working
+// tree, staging area, or refs.
+func TestMergePreview_CleanMerge(t *testing.T) {
+	r, dir := setupMergeRepo(t)
+
+	// On main: add func C.
+	oursContent := `package main
+
+func A() { println("a") }
+
+func C() { println("c") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(oursContent), 0o644); err != nil {
+		t.Fatalf("write main.go (ours): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (ours): %v", err)
+	}
+	mainCommit, err := r.Commit("add func C on main", "test-author")
+	if err != nil {
+		t.Fatalf("Commit (ours): %v", err)
+	}
+
+	// Switch to feature branch and add func B.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+	theirsContent := `package main
+
+func A() { println("a") }
+
+func B() { println("b") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(theirsContent), 0o644); err != nil {
+		t.Fatalf("write main.go (theirs): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (theirs): %v", err)
+	}
+	if _, err := r.Commit("add func B on feature", "test-author"); err != nil {
+		t.Fatalf("Commit (theirs): %v", err)
+	}
+
+	// Switch back to main.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+
+	// Snapshot working tree content and HEAD before preview.
+	previewMainGo, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go before preview: %v", err)
+	}
+	headBefore, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD) before preview: %v", err)
+	}
+
+	// Run MergePreview.
+	report, err := r.MergePreview("feature")
+	if err != nil {
+		t.Fatalf("MergePreview(feature): %v", err)
+	}
+
+	// Verify the report is correct.
+	if report.HasConflicts {
+		t.Fatalf("expected clean merge preview, got conflicts: %+v", report)
+	}
+	if report.IsFastForward {
+		t.Fatal("expected three-way merge preview, got fast-forward")
+	}
+	if len(report.Files) == 0 {
+		t.Fatal("expected at least one file in merge preview report")
+	}
+
+	// Verify at least one file reported as "clean" (the merged main.go).
+	foundClean := false
+	for _, f := range report.Files {
+		if f.Path == "main.go" && f.Status == "clean" {
+			foundClean = true
+		}
+	}
+	if !foundClean {
+		t.Errorf("expected main.go with status 'clean' in report, got: %+v", report.Files)
+	}
+
+	// MergeCommit should be empty — preview does not create a commit.
+	if report.MergeCommit != "" {
+		t.Errorf("MergePreview should not set MergeCommit, got %q", report.MergeCommit)
+	}
+
+	// Verify working tree was NOT modified.
+	postMainGo, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go after preview: %v", err)
+	}
+	if string(postMainGo) != string(previewMainGo) {
+		t.Errorf("MergePreview modified working tree.\nbefore:\n%s\nafter:\n%s", previewMainGo, postMainGo)
+	}
+
+	// Verify HEAD was NOT modified.
+	headAfter, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD) after preview: %v", err)
+	}
+	if headAfter != headBefore {
+		t.Errorf("MergePreview changed HEAD from %q to %q", headBefore, headAfter)
+	}
+	if headAfter != mainCommit {
+		t.Errorf("HEAD should still be %q (main commit), got %q", mainCommit, headAfter)
+	}
+
+	// Verify no merge state files were created.
+	if r.IsMergeInProgress() {
+		t.Error("MergePreview should not leave merge state files")
+	}
+}
+
+// TestMergePreview_ConflictMerge verifies that MergePreview correctly reports
+// conflicts without modifying the working tree, staging, or refs.
+func TestMergePreview_ConflictMerge(t *testing.T) {
+	r, dir := setupMergeRepo(t)
+
+	// On main: modify func A.
+	oursContent := `package main
+
+func A() { println("ours") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(oursContent), 0o644); err != nil {
+		t.Fatalf("write main.go (ours): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (ours): %v", err)
+	}
+	mainCommit, err := r.Commit("modify A on main", "test-author")
+	if err != nil {
+		t.Fatalf("Commit (ours): %v", err)
+	}
+
+	// Switch to feature and modify func A differently.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+	theirsContent := `package main
+
+func A() { println("theirs") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(theirsContent), 0o644); err != nil {
+		t.Fatalf("write main.go (theirs): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (theirs): %v", err)
+	}
+	if _, err := r.Commit("modify A on feature", "test-author"); err != nil {
+		t.Fatalf("Commit (theirs): %v", err)
+	}
+
+	// Switch back to main.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+
+	// Snapshot state before preview.
+	previewMainGo, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go before preview: %v", err)
+	}
+	headBefore, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD) before preview: %v", err)
+	}
+
+	// Run MergePreview.
+	report, err := r.MergePreview("feature")
+	if err != nil {
+		t.Fatalf("MergePreview(feature): %v", err)
+	}
+
+	// Verify report shows conflicts.
+	if !report.HasConflicts {
+		t.Fatal("expected conflicts in merge preview")
+	}
+	if report.TotalConflicts == 0 {
+		t.Error("TotalConflicts should be > 0")
+	}
+	if report.MergeCommit != "" {
+		t.Errorf("MergePreview should not set MergeCommit, got %q", report.MergeCommit)
+	}
+
+	// Verify at least one file reported as "conflict".
+	foundConflict := false
+	for _, f := range report.Files {
+		if f.Path == "main.go" && f.Status == "conflict" {
+			foundConflict = true
+		}
+	}
+	if !foundConflict {
+		t.Errorf("expected main.go with status 'conflict' in report, got: %+v", report.Files)
+	}
+
+	// Verify working tree was NOT modified (no conflict markers written).
+	postMainGo, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go after preview: %v", err)
+	}
+	if string(postMainGo) != string(previewMainGo) {
+		t.Errorf("MergePreview modified working tree.\nbefore:\n%s\nafter:\n%s", previewMainGo, postMainGo)
+	}
+	if strings.Contains(string(postMainGo), "<<<<<<<") {
+		t.Error("MergePreview wrote conflict markers to working tree")
+	}
+
+	// Verify HEAD was NOT modified.
+	headAfter, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD) after preview: %v", err)
+	}
+	if headAfter != headBefore {
+		t.Errorf("MergePreview changed HEAD from %q to %q", headBefore, headAfter)
+	}
+	if headAfter != mainCommit {
+		t.Errorf("HEAD should still be %q (main commit), got %q", mainCommit, headAfter)
+	}
+
+	// Verify no merge state files were created.
+	if r.IsMergeInProgress() {
+		t.Error("MergePreview should not leave merge state files")
+	}
+
+	// Verify staging was NOT modified (no conflict entries).
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging after preview: %v", err)
+	}
+	for path, entry := range stg.Entries {
+		if entry.Conflict {
+			t.Errorf("MergePreview left conflict staging entry for %q", path)
+		}
+	}
+}
+
+// TestMergePreview_FastForward verifies that MergePreview returns a
+// fast-forward report without actually advancing HEAD.
+func TestMergePreview_FastForward(t *testing.T) {
+	r, dir := setupMergeRepo(t)
+
+	// Feature is at same commit as main. Add a commit on feature so
+	// merging feature into main would be a fast-forward.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+	featureContent := `package main
+
+func A() { println("a") }
+
+func B() { println("b") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(featureContent), 0o644); err != nil {
+		t.Fatalf("write main.go (feature): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (feature): %v", err)
+	}
+	if _, err := r.Commit("add func B on feature", "test-author"); err != nil {
+		t.Fatalf("Commit (feature): %v", err)
+	}
+
+	// Switch back to main.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+
+	// Snapshot state before preview.
+	previewMainGo, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go before preview: %v", err)
+	}
+	headBefore, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD) before preview: %v", err)
+	}
+
+	// Run MergePreview.
+	report, err := r.MergePreview("feature")
+	if err != nil {
+		t.Fatalf("MergePreview(feature): %v", err)
+	}
+
+	// Verify it detected fast-forward.
+	if !report.IsFastForward {
+		t.Fatal("expected fast-forward merge preview")
+	}
+	if report.HasConflicts {
+		t.Fatal("fast-forward preview should not have conflicts")
+	}
+	// MergeCommit should be empty — preview does not advance refs.
+	if report.MergeCommit != "" {
+		t.Errorf("MergePreview should not set MergeCommit, got %q", report.MergeCommit)
+	}
+
+	// Verify working tree was NOT modified.
+	postMainGo, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read main.go after preview: %v", err)
+	}
+	if string(postMainGo) != string(previewMainGo) {
+		t.Errorf("MergePreview modified working tree.\nbefore:\n%s\nafter:\n%s", previewMainGo, postMainGo)
+	}
+
+	// Verify HEAD was NOT modified.
+	headAfter, err := r.ResolveRef("HEAD")
+	if err != nil {
+		t.Fatalf("ResolveRef(HEAD) after preview: %v", err)
+	}
+	if headAfter != headBefore {
+		t.Errorf("MergePreview changed HEAD from %q to %q", headBefore, headAfter)
+	}
+}
+
+// TestMergePreview_ThenMerge verifies that running MergePreview does not
+// interfere with a subsequent real Merge on the same branch.
+func TestMergePreview_ThenMerge(t *testing.T) {
+	r, dir := setupMergeRepo(t)
+
+	// On main: add func C.
+	oursContent := `package main
+
+func A() { println("a") }
+
+func C() { println("c") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(oursContent), 0o644); err != nil {
+		t.Fatalf("write main.go (ours): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (ours): %v", err)
+	}
+	if _, err := r.Commit("add func C on main", "test-author"); err != nil {
+		t.Fatalf("Commit (ours): %v", err)
+	}
+
+	// Switch to feature and add func B.
+	if err := r.Checkout("feature"); err != nil {
+		t.Fatalf("Checkout(feature): %v", err)
+	}
+	theirsContent := `package main
+
+func A() { println("a") }
+
+func B() { println("b") }
+`
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(theirsContent), 0o644); err != nil {
+		t.Fatalf("write main.go (theirs): %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add main.go (theirs): %v", err)
+	}
+	if _, err := r.Commit("add func B on feature", "test-author"); err != nil {
+		t.Fatalf("Commit (theirs): %v", err)
+	}
+
+	// Switch back to main.
+	if err := r.Checkout("main"); err != nil {
+		t.Fatalf("Checkout(main): %v", err)
+	}
+
+	// Run MergePreview first.
+	preview, err := r.MergePreview("feature")
+	if err != nil {
+		t.Fatalf("MergePreview(feature): %v", err)
+	}
+	if preview.HasConflicts {
+		t.Fatalf("expected clean preview, got conflicts")
+	}
+
+	// Now run the actual Merge — it should still succeed.
+	report, err := r.Merge("feature")
+	if err != nil {
+		t.Fatalf("Merge(feature) after preview: %v", err)
+	}
+	if report.HasConflicts {
+		t.Fatal("expected clean merge after preview")
+	}
+	if report.MergeCommit == "" {
+		t.Fatal("expected merge commit after real merge")
+	}
+
+	// Verify the merged file has all three functions.
+	merged, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read merged main.go: %v", err)
+	}
+	mergedStr := string(merged)
+	for _, fn := range []string{"func A()", "func B()", "func C()"} {
+		if !strings.Contains(mergedStr, fn) {
+			t.Errorf("merged file missing %s: %s", fn, mergedStr)
+		}
+	}
+}

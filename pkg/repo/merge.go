@@ -472,17 +472,30 @@ func (r *Repo) MergeAbort() error {
 	return nil
 }
 
-// Merge merges the named branch into the current HEAD.
+// mergeReportInput holds the resolved inputs needed to build a merge report.
+// This is produced by buildMergeReport and consumed by both Merge (which applies
+// the result) and MergePreview (which just returns the report).
+type mergeReportInput struct {
+	report          *MergeReport
+	mergeResult     *ThreeWayMergeResult
+	modResult       *ModuleMergeResult
+	baseMap         map[string]TreeFileEntry
+	oursMap         map[string]TreeFileEntry
+	theirsMap       map[string]TreeFileEntry
+	headHash        object.Hash
+	branchHash      object.Hash
+	conflictedFiles []mergeConflictState
+	deletedPaths    []string
+}
+
+// buildMergeReport runs the merge pipeline up through report generation:
+// resolve refs, find merge base, flatten trees, three-way merge, and
+// module merge. It does NOT write to the working tree, staging, or refs.
 //
-// Algorithm:
-//  1. Resolve current HEAD and branch name to commit hashes
-//  2. FindMergeBase(headHash, branchHash)
-//  3. Fast-forward detection: if HEAD is ancestor of target, just advance HEAD
-//  4. Flatten all three trees (base, ours=HEAD, theirs=branch)
-//  5. For each file, perform the appropriate merge action via threeWayTreeMerge
-//  6. If clean: write files, stage, auto-commit with two parents
-//  7. If conflicts: write conflict-marker files, save merge state, do NOT commit
-func (r *Repo) Merge(branchName string) (*MergeReport, error) {
+// If the merge is a fast-forward, it returns a report with IsFastForward=true
+// and all other fields empty — the caller decides whether to actually advance
+// HEAD.
+func (r *Repo) buildMergeReport(branchName string) (*mergeReportInput, error) {
 	// 1. Resolve HEAD and branch.
 	headHash, err := r.ResolveRef("HEAD")
 	if err != nil {
@@ -501,12 +514,13 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 
 	// 3. Fast-forward detection: if merge base == HEAD, we can fast-forward.
 	if baseHash == headHash {
-		return r.mergeFastForward(branchName, headHash, branchHash)
-	}
-
-	// Save pre-merge state for possible --abort.
-	if err := r.saveMergeState(headHash, branchHash); err != nil {
-		return nil, fmt.Errorf("merge: save state: %w", err)
+		return &mergeReportInput{
+			report: &MergeReport{
+				IsFastForward: true,
+			},
+			headHash:   headHash,
+			branchHash: branchHash,
+		}, nil
 	}
 
 	// 4. Flatten all three trees.
@@ -553,18 +567,12 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 		return nil, fmt.Errorf("merge: %w", err)
 	}
 
-	// Build the MergeReport and collect data for writing files.
+	// Build the MergeReport and collect data for applying.
 	report := &MergeReport{
 		HasConflicts:   mergeResult.HasConflicts,
 		TotalConflicts: mergeResult.TotalConflicts,
 	}
 
-	type mergedFile struct {
-		path    string
-		content []byte
-		mode    string
-	}
-	var mergedFiles []mergedFile
 	var conflictedFiles []mergeConflictState
 	var deletedPaths []string
 
@@ -579,18 +587,12 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 				Status:      "clean",
 				EntityCount: f.Conflicts,
 			})
-			mergedFiles = append(mergedFiles, mergedFile{
-				path: f.Path, content: f.Content, mode: f.Mode,
-			})
 		case "conflict":
 			report.Files = append(report.Files, FileMergeReport{
 				Path:            f.Path,
 				Status:          "conflict",
 				ConflictCount:   f.Conflicts,
 				EntityConflicts: f.EntityConflicts,
-			})
-			mergedFiles = append(mergedFiles, mergedFile{
-				path: f.Path, content: f.Content, mode: f.Mode,
 			})
 			// Determine blob hashes for conflict state.
 			var bh, oh, th object.Hash
@@ -610,9 +612,6 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 			report.Files = append(report.Files, FileMergeReport{
 				Path:   f.Path,
 				Status: "added",
-			})
-			mergedFiles = append(mergedFiles, mergedFile{
-				path: f.Path, content: f.Content, mode: f.Mode,
 			})
 		case "deleted":
 			report.Files = append(report.Files, FileMergeReport{
@@ -645,6 +644,75 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 		}
 	}
 
+	return &mergeReportInput{
+		report:          report,
+		mergeResult:     mergeResult,
+		modResult:       modResult,
+		baseMap:         baseMap,
+		oursMap:         oursMap,
+		theirsMap:       theirsMap,
+		headHash:        headHash,
+		branchHash:      branchHash,
+		conflictedFiles: conflictedFiles,
+		deletedPaths:    deletedPaths,
+	}, nil
+}
+
+// MergePreview runs the full merge pipeline without writing to the working
+// tree, staging area, or refs. It returns a MergeReport describing what a
+// real merge would produce.
+func (r *Repo) MergePreview(branchName string) (*MergeReport, error) {
+	input, err := r.buildMergeReport(branchName)
+	if err != nil {
+		return nil, err
+	}
+	return input.report, nil
+}
+
+// Merge merges the named branch into the current HEAD.
+//
+// Algorithm:
+//  1. Resolve current HEAD and branch name to commit hashes
+//  2. FindMergeBase(headHash, branchHash)
+//  3. Fast-forward detection: if HEAD is ancestor of target, just advance HEAD
+//  4. Flatten all three trees (base, ours=HEAD, theirs=branch)
+//  5. For each file, perform the appropriate merge action via threeWayTreeMerge
+//  6. If clean: write files, stage, auto-commit with two parents
+//  7. If conflicts: write conflict-marker files, save merge state, do NOT commit
+func (r *Repo) Merge(branchName string) (*MergeReport, error) {
+	input, err := r.buildMergeReport(branchName)
+	if err != nil {
+		return nil, err
+	}
+
+	report := input.report
+
+	// Fast-forward: delegate to the fast-forward handler.
+	if report.IsFastForward {
+		return r.mergeFastForward(branchName, input.headHash, input.branchHash)
+	}
+
+	// Save pre-merge state for possible --abort.
+	if err := r.saveMergeState(input.headHash, input.branchHash); err != nil {
+		return nil, fmt.Errorf("merge: save state: %w", err)
+	}
+
+	// Collect merged file data for writing.
+	type mergedFile struct {
+		path    string
+		content []byte
+		mode    string
+	}
+	var mergedFiles []mergedFile
+	for _, f := range input.mergeResult.Files {
+		if f.Status == "unchanged" || f.Status == "deleted" {
+			continue
+		}
+		mergedFiles = append(mergedFiles, mergedFile{
+			path: f.Path, content: f.Content, mode: f.Mode,
+		})
+	}
+
 	// 6/7. Write files to working directory.
 	for _, mf := range mergedFiles {
 		absPath := filepath.Join(r.RootDir, filepath.FromSlash(mf.path))
@@ -658,7 +726,7 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 	}
 
 	// Remove deleted files.
-	for _, path := range deletedPaths {
+	for _, path := range input.deletedPaths {
 		absPath := filepath.Join(r.RootDir, filepath.FromSlash(path))
 		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
 			return nil, fmt.Errorf("merge: remove %q: %w", path, err)
@@ -679,25 +747,25 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 		}
 
 		// Stage resolved module entries and remove deleted files/modules.
-		needsStagingWrite := len(deletedPaths) > 0 ||
-			len(modResult.Resolved) > 0 ||
-			len(modResult.Removed) > 0
+		needsStagingWrite := len(input.deletedPaths) > 0 ||
+			len(input.modResult.Resolved) > 0 ||
+			len(input.modResult.Removed) > 0
 		if needsStagingWrite {
 			stg, err := r.ReadStaging()
 			if err != nil {
 				return nil, fmt.Errorf("merge: read staging: %w", err)
 			}
-			for _, p := range deletedPaths {
+			for _, p := range input.deletedPaths {
 				delete(stg.Entries, p)
 			}
-			for modPath, commitHash := range modResult.Resolved {
+			for modPath, commitHash := range input.modResult.Resolved {
 				stg.Entries[modPath] = &StagingEntry{
 					Path:     modPath,
 					BlobHash: commitHash,
 					Mode:     object.TreeModeModule,
 				}
 			}
-			for _, modPath := range modResult.Removed {
+			for _, modPath := range input.modResult.Removed {
 				delete(stg.Entries, modPath)
 			}
 			if err := r.WriteStaging(stg); err != nil {
@@ -710,8 +778,8 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 		mergeHash, err := r.commitMerge(
 			fmt.Sprintf("Merge branch '%s'", branchName),
 			author,
-			headHash,
-			branchHash,
+			input.headHash,
+			input.branchHash,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("merge: commit: %w", err)
@@ -722,7 +790,7 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 		r.cleanMergeState()
 		_ = r.RunHook(HookPostMerge)
 	} else {
-		if err := r.stageConflictState(conflictedFiles, deletedPaths); err != nil {
+		if err := r.stageConflictState(input.conflictedFiles, input.deletedPaths); err != nil {
 			return nil, fmt.Errorf("merge: stage conflicts: %w", err)
 		}
 	}

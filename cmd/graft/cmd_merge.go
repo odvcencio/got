@@ -10,6 +10,7 @@ import (
 
 func newMergeCmd() *cobra.Command {
 	var abortFlag bool
+	var dryRunFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "merge <branch>",
@@ -27,6 +28,9 @@ func newMergeCmd() *cobra.Command {
 				if len(args) > 0 {
 					return fmt.Errorf("--abort takes no positional arguments")
 				}
+				if dryRunFlag {
+					return fmt.Errorf("--abort and --dry-run are mutually exclusive")
+				}
 				if err := r.MergeAbort(); err != nil {
 					return err
 				}
@@ -42,6 +46,10 @@ func newMergeCmd() *cobra.Command {
 			current, err := r.CurrentBranch()
 			if err != nil {
 				return err
+			}
+
+			if dryRunFlag {
+				return runMergePreview(r, out, branchName, current)
 			}
 
 			fmt.Fprintf(out, "merging %s into %s...\n", branchName, current)
@@ -85,8 +93,41 @@ func newMergeCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&abortFlag, "abort", false, "abort the current merge and restore original state")
+	cmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "preview what a merge would do without modifying anything")
 
 	return cmd
+}
+
+// runMergePreview handles the --dry-run flag: it calls MergePreview and
+// prints the report without modifying the working tree, staging, or refs.
+func runMergePreview(r *repo.Repo, out io.Writer, branchName, current string) error {
+	fmt.Fprintf(out, "previewing merge of %s into %s...\n", branchName, current)
+
+	report, err := r.MergePreview(branchName)
+	if err != nil {
+		return err
+	}
+
+	if report.IsFastForward {
+		fmt.Fprintf(out, "merge would fast-forward %s\n", current)
+		return nil
+	}
+
+	for _, f := range report.Files {
+		printFileReport(out, f)
+	}
+
+	if report.HasConflicts {
+		fmt.Fprintf(out, "merge would produce %d conflict", report.TotalConflicts)
+		if report.TotalConflicts != 1 {
+			fmt.Fprint(out, "s")
+		}
+		fmt.Fprintln(out)
+	} else {
+		fmt.Fprintln(out, "merge would complete cleanly")
+	}
+
+	return nil
 }
 
 func printFileReport(out io.Writer, f repo.FileMergeReport) {
