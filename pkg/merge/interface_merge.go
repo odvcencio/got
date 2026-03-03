@@ -430,15 +430,3 @@ func orderMembers(merged map[string]interfaceMember, base, ours, theirs []interf
 	return result
 }
 
-// isInterfaceDecl checks if the given DeclKind represents an interface declaration
-// in the specified language.
-func isInterfaceDecl(declKind, language string) bool {
-	switch language {
-	case "go":
-		return declKind == "type_declaration"
-	case "typescript", "javascript":
-		return declKind == "interface_declaration" || declKind == "export_statement"
-	default:
-		return false
-	}
-}

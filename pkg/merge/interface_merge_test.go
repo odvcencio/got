@@ -385,25 +385,3 @@ func TestMergeGoInterfaceMembersEmptyBase(t *testing.T) {
 	}
 }
 
-func TestIsInterfaceDecl(t *testing.T) {
-	tests := []struct {
-		declKind string
-		language string
-		want     bool
-	}{
-		{"type_declaration", "go", true},
-		{"interface_declaration", "typescript", true},
-		{"export_statement", "typescript", true},
-		{"interface_declaration", "javascript", true},
-		{"function_declaration", "go", false},
-		{"class_definition", "typescript", false},
-		{"interface_declaration", "rust", false},
-	}
-
-	for _, tt := range tests {
-		got := isInterfaceDecl(tt.declKind, tt.language)
-		if got != tt.want {
-			t.Errorf("isInterfaceDecl(%q, %q) = %v, want %v", tt.declKind, tt.language, got, tt.want)
-		}
-	}
-}

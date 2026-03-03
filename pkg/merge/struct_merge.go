@@ -476,17 +476,3 @@ func orderFields(merged map[string]structField, base, ours, theirs []structField
 	return result
 }
 
-// isStructDecl checks if the given DeclKind represents a struct declaration
-// in the specified language.
-func isStructDecl(declKind, language string) bool {
-	switch language {
-	case "go":
-		// Go structs are type_declaration nodes. We need to also verify
-		// the body contains "struct" but at dispatch time we check the body content.
-		return declKind == "type_declaration"
-	case "rust":
-		return declKind == "struct_item"
-	default:
-		return false
-	}
-}

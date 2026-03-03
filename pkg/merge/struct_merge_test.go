@@ -383,24 +383,3 @@ func TestMergeGoStructFieldsEmptyBase(t *testing.T) {
 	}
 }
 
-func TestIsStructDecl(t *testing.T) {
-	tests := []struct {
-		declKind string
-		language string
-		want     bool
-	}{
-		{"type_declaration", "go", true},
-		{"struct_item", "rust", true},
-		{"function_declaration", "go", false},
-		{"struct_item", "go", false},
-		{"type_declaration", "rust", false},
-		{"class_definition", "python", false},
-	}
-
-	for _, tt := range tests {
-		got := isStructDecl(tt.declKind, tt.language)
-		if got != tt.want {
-			t.Errorf("isStructDecl(%q, %q) = %v, want %v", tt.declKind, tt.language, got, tt.want)
-		}
-	}
-}

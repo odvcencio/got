@@ -296,7 +296,13 @@ func isInterfaceBody(declKind, language string, body []byte) bool {
 		}
 		return bytes.Contains(body, []byte(" interface {")) || bytes.Contains(body, []byte(" interface{"))
 	case "typescript", "javascript":
-		return declKind == "interface_declaration" || declKind == "export_statement"
+		if declKind == "interface_declaration" {
+			return true
+		}
+		if declKind == "export_statement" {
+			return bytes.Contains(body, []byte("interface "))
+		}
+		return false
 	default:
 		return false
 	}
