@@ -52,7 +52,7 @@ func newVerifyCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&signatures, "signatures", false, "Verify commit signatures on current branch (up to 100)")
-	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output in JSON format")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
 
 	// Add the "commit" subcommand.
 	cmd.AddCommand(newVerifyCommitCmd())
@@ -90,7 +90,7 @@ func newVerifyCommitCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output in JSON format")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
 
 	return cmd
 }
