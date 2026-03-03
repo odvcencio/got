@@ -479,9 +479,6 @@ type mergeReportInput struct {
 	report          *MergeReport
 	mergeResult     *ThreeWayMergeResult
 	modResult       *ModuleMergeResult
-	baseMap         map[string]TreeFileEntry
-	oursMap         map[string]TreeFileEntry
-	theirsMap       map[string]TreeFileEntry
 	headHash        object.Hash
 	branchHash      object.Hash
 	conflictedFiles []mergeConflictState
@@ -648,9 +645,6 @@ func (r *Repo) buildMergeReport(branchName string) (*mergeReportInput, error) {
 		report:          report,
 		mergeResult:     mergeResult,
 		modResult:       modResult,
-		baseMap:         baseMap,
-		oursMap:         oursMap,
-		theirsMap:       theirsMap,
 		headHash:        headHash,
 		branchHash:      branchHash,
 		conflictedFiles: conflictedFiles,
