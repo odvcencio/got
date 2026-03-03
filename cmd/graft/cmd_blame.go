@@ -26,6 +26,10 @@ func newBlameCmd() *cobra.Command {
 				return err
 			}
 
+			if entitySelector != "" && len(args) > 0 {
+				return fmt.Errorf("--entity and positional path argument are mutually exclusive")
+			}
+
 			// Single-entity blame via --entity flag.
 			if entitySelector != "" {
 				result, err := r.BlameEntity(entitySelector, limit)
