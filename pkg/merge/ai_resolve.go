@@ -117,7 +117,8 @@ func (c *ClaudeResolver) Resolve(ctx context.Context, req AIResolveRequest) (*AI
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	// Limit response size to 1MB to prevent unbounded memory allocation.
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("AI resolve: read response: %w", err)
 	}

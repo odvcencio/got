@@ -74,8 +74,24 @@ func (r *Repo) ApplyAIResolution(path, entityName string, resolvedBody []byte) e
 		return fmt.Errorf("conflict markers for %q not found in %s", entityName, path)
 	}
 
-	if err := os.WriteFile(absPath, result, 0o644); err != nil {
+	// Atomic write: temp file + rename to prevent partial writes.
+	tmp, err := os.CreateTemp(filepath.Dir(absPath), ".graft-resolve-*")
+	if err != nil {
+		return fmt.Errorf("write resolved file: create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(result); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
 		return fmt.Errorf("write resolved file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("write resolved file: close: %w", err)
+	}
+	if err := os.Rename(tmpPath, absPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("write resolved file: rename: %w", err)
 	}
 
 	// Check if any conflict markers remain in the file.
