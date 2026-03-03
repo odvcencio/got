@@ -793,6 +793,36 @@ func (r *Repo) readSequencerFile(name string) (string, error) {
 	return r.rebaseSeq().ReadFile(name)
 }
 
+// RebaseStateOnto returns the "onto" hash from the rebase sequencer state.
+// Returns empty hash if not rebasing or the file cannot be read.
+func (r *Repo) RebaseStateOnto() object.Hash {
+	h, err := r.rebaseSeq().ReadHash("onto")
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
+// RebaseStateOrigHead returns the "orig-head" hash from the rebase sequencer state.
+// Returns empty hash if not rebasing or the file cannot be read.
+func (r *Repo) RebaseStateOrigHead() object.Hash {
+	h, err := r.rebaseSeq().ReadHash("orig-head")
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
+// RebaseStateStoppedSHA returns the "stopped-sha" from the rebase sequencer state.
+// Returns empty hash if not rebasing or the file cannot be read.
+func (r *Repo) RebaseStateStoppedSHA() object.Hash {
+	h, err := r.rebaseSeq().ReadHash("stopped-sha")
+	if err != nil {
+		return ""
+	}
+	return h
+}
+
 // readSequencerHash reads a hash from the rebase-merge directory with validation.
 // Used by rebase_interactive.go.
 func (r *Repo) readSequencerHash(name string) (object.Hash, error) {

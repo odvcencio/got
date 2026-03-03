@@ -43,6 +43,10 @@ func (r *Repo) Revert(targetHash object.Hash) (*RevertResult, error) {
 		return nil, fmt.Errorf("revert: target commit is required")
 	}
 
+	if r.IsRevertInProgress() {
+		return nil, fmt.Errorf("revert: a revert is already in progress; use --continue, --abort, or --skip")
+	}
+
 	// Read the target commit.
 	targetCommit, err := r.Store.ReadCommit(targetHash)
 	if err != nil {
@@ -180,6 +184,20 @@ func (r *Repo) RevertContinue() (*RevertResult, error) {
 		return nil, fmt.Errorf("revert continue: HEAD has moved since revert started (expected %s, got %s); abort and retry", headName, currentHead)
 	}
 
+	// Read current staging and check for unresolved conflicts.
+	stg, err := r.ReadStaging()
+	if err != nil {
+		return nil, fmt.Errorf("revert continue: read staging: %w", err)
+	}
+	if len(stg.Entries) == 0 {
+		return nil, fmt.Errorf("revert continue: nothing staged")
+	}
+	for _, entry := range stg.Entries {
+		if entry.Conflict {
+			return nil, fmt.Errorf("revert continue: unresolved conflicts remain; resolve them and stage the files")
+		}
+	}
+
 	headHash, err := r.ResolveRef("HEAD")
 	if err != nil {
 		return nil, fmt.Errorf("revert continue: resolve HEAD: %w", err)
@@ -256,6 +274,8 @@ func (r *Repo) RevertAbort() error {
 	if err := r.checkoutTree(origCommit); err != nil {
 		return fmt.Errorf("revert abort: checkout: %w", err)
 	}
+
+	r.invalidateStatusCache()
 
 	// Clean up sequencer state.
 	if err := seq.Clean(); err != nil {

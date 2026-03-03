@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/odvcencio/graft/pkg/object"
@@ -334,27 +332,15 @@ func countCommits(r *repo.Repo, stop, tip object.Hash) (int, error) {
 
 // readSequencerOnto reads the "onto" hash from the rebase sequencer state.
 func readSequencerOnto(r *repo.Repo) object.Hash {
-	data, err := os.ReadFile(filepath.Join(r.GraftDir, "rebase-merge", "onto"))
-	if err != nil {
-		return ""
-	}
-	return object.Hash(strings.TrimSpace(string(data)))
+	return r.RebaseStateOnto()
 }
 
 // readSequencerOrigHead reads the "orig-head" hash from the rebase sequencer state.
 func readSequencerOrigHead(r *repo.Repo) object.Hash {
-	data, err := os.ReadFile(filepath.Join(r.GraftDir, "rebase-merge", "orig-head"))
-	if err != nil {
-		return ""
-	}
-	return object.Hash(strings.TrimSpace(string(data)))
+	return r.RebaseStateOrigHead()
 }
 
 // readSequencerStopped reads the "stopped-sha" from the rebase sequencer state.
 func readSequencerStopped(r *repo.Repo) object.Hash {
-	data, err := os.ReadFile(filepath.Join(r.GraftDir, "rebase-merge", "stopped-sha"))
-	if err != nil {
-		return ""
-	}
-	return object.Hash(strings.TrimSpace(string(data)))
+	return r.RebaseStateStoppedSHA()
 }

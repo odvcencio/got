@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -83,10 +82,7 @@ func newTagCmd() *cobra.Command {
 				}
 				tagIdentity := strings.TrimSpace(tagger)
 				if tagIdentity == "" {
-					tagIdentity = strings.TrimSpace(os.Getenv("USER"))
-				}
-				if tagIdentity == "" {
-					tagIdentity = "unknown"
+					tagIdentity = r.ResolveAuthor()
 				}
 				_, err := r.CreateAnnotatedTag(name, target, tagIdentity, message, force)
 				return err

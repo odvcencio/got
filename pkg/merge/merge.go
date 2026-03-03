@@ -366,6 +366,12 @@ func resolveTextConflicts(result diff3.Result) ([]byte, int) {
 	return merged.Bytes(), conflictCount
 }
 
+// canResolveParallelInsertion returns true when both sides inserted content
+// into a region that was empty (whitespace-only) in the base. Graft
+// auto-resolves this by concatenating ours then theirs, which is more
+// permissive than Git (which would report a conflict). This is intentional
+// for entity-aware merges where parallel additions to an empty region are
+// common (e.g., both sides adding new functions to an initially empty file).
 func canResolveParallelInsertion(h diff3.Hunk) bool {
 	return len(bytes.TrimSpace(h.Base)) == 0 &&
 		len(bytes.TrimSpace(h.Ours)) > 0 &&

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
@@ -42,10 +41,7 @@ func stashPushRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	author := os.Getenv("USER")
-	if author == "" {
-		author = "unknown"
-	}
+	author := r.ResolveAuthor()
 
 	entry, err := r.Stash(author)
 	if err != nil {
@@ -248,6 +244,9 @@ func parseStashIndex(args []string) (int, error) {
 	index, err := strconv.Atoi(args[0])
 	if err != nil {
 		return 0, fmt.Errorf("invalid stash index %q: %w", args[0], err)
+	}
+	if index < 0 {
+		return 0, fmt.Errorf("stash index must be non-negative, got %d", index)
 	}
 	return index, nil
 }
