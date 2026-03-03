@@ -110,6 +110,8 @@ func printFileReport(out io.Writer, f repo.FileMergeReport) {
 }
 
 // humanConflictType returns a human-readable label for a conflict type string.
+// Conflict type values are defined as merge.ConflictTypeBothModified and
+// merge.ConflictTypeDeleteVsModify in pkg/merge/match.go.
 func humanConflictType(ct string) string {
 	switch ct {
 	case "both_modified":

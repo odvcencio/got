@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/odvcencio/graft/pkg/merge"
 )
 
 // ConflictEntry describes a single entity-level conflict within a file.
@@ -14,7 +16,7 @@ type ConflictEntry struct {
 	EntityKey    string // empty for non-structural conflicts
 	EntityName   string // human-readable name (e.g. "func ProcessOrder")
 	EntityKind   string // entity kind string (e.g. "declaration")
-	ConflictType string // "both_modified", "delete_vs_modify", or "text"
+	ConflictType string // merge.ConflictTypeBothModified, merge.ConflictTypeDeleteVsModify, or "text"
 }
 
 // ListConflicts returns all entity-level conflicts from the current staging area.
@@ -136,7 +138,7 @@ func extractAnnotation(line string) string {
 // type; this is a best-effort parse for ListConflicts().
 func conflictTypeFromAnnotation(annotation string) string {
 	// The annotation itself doesn't encode the conflict type.
-	// Default to "both_modified" -- the most common structural conflict.
+	// Default to both_modified -- the most common structural conflict.
 	_ = annotation
-	return "both_modified"
+	return merge.ConflictTypeBothModified
 }

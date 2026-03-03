@@ -7,7 +7,7 @@ import (
 
 // TestEntityConflictDetail_BothModified verifies that when both sides modify
 // the same function, the MergeResult includes an EntityConflictDetail with
-// Type="both_modified".
+// Type=ConflictTypeBothModified.
 func TestEntityConflictDetail_BothModified(t *testing.T) {
 	base := `package main
 
@@ -43,7 +43,7 @@ func A() {
 
 	found := false
 	for _, ec := range result.EntityConflicts {
-		if ec.Name == "func A" && ec.Type == "both_modified" {
+		if ec.Name == "func A" && ec.Type == ConflictTypeBothModified {
 			found = true
 			if ec.DeclKind != "function_declaration" {
 				t.Errorf("expected DeclKind=function_declaration, got %q", ec.DeclKind)
@@ -57,7 +57,7 @@ func A() {
 }
 
 // TestEntityConflictDetail_DeleteVsModify verifies that when one side deletes
-// and the other modifies, the conflict detail has Type="delete_vs_modify".
+// and the other modifies, the conflict detail has Type=ConflictTypeDeleteVsModify.
 func TestEntityConflictDetail_DeleteVsModify(t *testing.T) {
 	base := `package main
 
@@ -99,7 +99,7 @@ func A() {
 
 	found := false
 	for _, ec := range result.EntityConflicts {
-		if ec.Name == "func B" && ec.Type == "delete_vs_modify" {
+		if ec.Name == "func B" && ec.Type == ConflictTypeDeleteVsModify {
 			found = true
 			break
 		}

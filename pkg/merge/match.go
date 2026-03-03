@@ -48,13 +48,19 @@ func (d Disposition) String() string {
 	return fmt.Sprintf("Disposition(%d)", int(d))
 }
 
+// Conflict type constants used in EntityConflictDetail.Type and across the merge pipeline.
+const (
+	ConflictTypeBothModified   = "both_modified"
+	ConflictTypeDeleteVsModify = "delete_vs_modify"
+)
+
 // EntityConflictDetail describes a single entity-level conflict within a file merge.
 type EntityConflictDetail struct {
 	Key      string            // identity key
 	Name     string            // display name ("func ProcessOrder")
 	Kind     entity.EntityKind // Declaration, ImportBlock, etc.
 	DeclKind string            // "function_definition"
-	Type     string            // "both_modified", "delete_vs_modify"
+	Type     string            // ConflictTypeBothModified or ConflictTypeDeleteVsModify
 }
 
 // MatchedEntity pairs an entity key with its three-way merge disposition.

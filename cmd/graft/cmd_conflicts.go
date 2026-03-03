@@ -42,7 +42,7 @@ that are in conflict and the type of conflict (both modified, delete vs modify).
 					fmt.Fprintf(out, "%s\n", c.Path)
 				}
 				if c.EntityName != "" {
-					fmt.Fprintf(out, "    %s: %s\n", c.EntityName, formatConflictType(c.ConflictType))
+					fmt.Fprintf(out, "    %s: %s\n", c.EntityName, humanConflictType(c.ConflictType))
 				} else {
 					fmt.Fprintf(out, "    (text conflict)\n")
 				}
@@ -50,17 +50,5 @@ that are in conflict and the type of conflict (both modified, delete vs modify).
 
 			return nil
 		},
-	}
-}
-
-// formatConflictType returns a human-readable label for a conflict type.
-func formatConflictType(ct string) string {
-	switch ct {
-	case "both_modified":
-		return "both modified"
-	case "delete_vs_modify":
-		return "delete vs modify"
-	default:
-		return ct
 	}
 }
