@@ -48,6 +48,15 @@ func (d Disposition) String() string {
 	return fmt.Sprintf("Disposition(%d)", int(d))
 }
 
+// EntityConflictDetail describes a single entity-level conflict within a file merge.
+type EntityConflictDetail struct {
+	Key      string            // identity key
+	Name     string            // display name ("func ProcessOrder")
+	Kind     entity.EntityKind // Declaration, ImportBlock, etc.
+	DeclKind string            // "function_definition"
+	Type     string            // "both_modified", "delete_vs_modify"
+}
+
 // MatchedEntity pairs an entity key with its three-way merge disposition.
 type MatchedEntity struct {
 	Key         string

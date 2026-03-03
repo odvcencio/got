@@ -32,6 +32,7 @@ func main() {
 	root.AddCommand(newCheckoutCmd())
 	root.AddCommand(newSwitchCmd())
 	root.AddCommand(newMergeCmd())
+	root.AddCommand(newConflictsCmd())
 	root.AddCommand(newCherryPickCmd())
 	root.AddCommand(newRevertCmd())
 	root.AddCommand(newRemoteCmd())

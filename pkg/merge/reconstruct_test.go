@@ -44,8 +44,9 @@ func TestReconstructOneConflict(t *testing.T) {
 	entities := []ResolvedEntity{
 		{
 			Entity: entity.Entity{
-				Kind: entity.KindDeclaration,
-				Name: "Foo",
+				Kind:     entity.KindDeclaration,
+				Name:     "Foo",
+				DeclKind: "function_declaration",
 			},
 			Conflict:   true,
 			OursBody:   []byte("func Foo() { return 1 }"),
@@ -71,8 +72,8 @@ func TestReconstructOneConflict(t *testing.T) {
 		t.Error("expected theirs body in conflict output")
 	}
 
-	// Verify the exact conflict block structure
-	want := "<<<<<<< ours\nfunc Foo() { return 1 }\n=======\nfunc Foo() { return 2 }\n>>>>>>> theirs\n"
+	// Verify the exact conflict block structure with entity annotation
+	want := "<<<<<<< ours (func Foo)\nfunc Foo() { return 1 }\n=======\nfunc Foo() { return 2 }\n>>>>>>> theirs (func Foo)\n"
 	if got != want {
 		t.Errorf("conflict block structure:\ngot:  %q\nwant: %q", got, want)
 	}
@@ -88,8 +89,9 @@ func TestReconstructMixedCleanAndConflict(t *testing.T) {
 		},
 		{
 			Entity: entity.Entity{
-				Kind: entity.KindDeclaration,
-				Name: "Foo",
+				Kind:     entity.KindDeclaration,
+				Name:     "Foo",
+				DeclKind: "function_declaration",
 			},
 			Conflict:   true,
 			OursBody:   []byte("func Foo() { return 1 }"),
@@ -128,8 +130,8 @@ func TestReconstructMixedCleanAndConflict(t *testing.T) {
 		t.Error("conflict block should come before Bar function")
 	}
 
-	// Verify the full output
-	want := "package main\n<<<<<<< ours\nfunc Foo() { return 1 }\n=======\nfunc Foo() { return 2 }\n>>>>>>> theirs\nfunc Bar() {}\n"
+	// Verify the full output with entity annotation
+	want := "package main\n<<<<<<< ours (func Foo)\nfunc Foo() { return 1 }\n=======\nfunc Foo() { return 2 }\n>>>>>>> theirs (func Foo)\nfunc Bar() {}\n"
 	if got != want {
 		t.Errorf("mixed output:\ngot:  %q\nwant: %q", got, want)
 	}

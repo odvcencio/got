@@ -26,10 +26,11 @@ type MergeStats struct {
 
 // MergeResult holds the output of a structural three-way merge.
 type MergeResult struct {
-	Merged        []byte
-	HasConflicts  bool
-	ConflictCount int
-	Stats         MergeStats
+	Merged          []byte
+	HasConflicts    bool
+	ConflictCount   int
+	Stats           MergeStats
+	EntityConflicts []EntityConflictDetail
 }
 
 // MergeFiles performs a structural three-way merge of source files.
@@ -69,6 +70,7 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 
 	var resolved []ResolvedEntity
 	var stats MergeStats
+	var entityConflicts []EntityConflictDetail
 	stats.TotalEntities = len(matches)
 
 	for _, m := range matches {
@@ -131,6 +133,7 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 			resolved = append(resolved, re)
 			if re.Conflict {
 				stats.Conflicts++
+				entityConflicts = append(entityConflicts, buildConflictDetail(m, "both_modified"))
 			} else {
 				stats.BothModified++
 			}
@@ -139,6 +142,7 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 			re := resolveDeleteVsModify(m)
 			resolved = append(resolved, re)
 			stats.Conflicts++
+			entityConflicts = append(entityConflicts, buildConflictDetail(m, "delete_vs_modify"))
 		}
 	}
 
@@ -152,10 +156,11 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 	}
 
 	return &MergeResult{
-		Merged:        merged,
-		HasConflicts:  conflictCount > 0,
-		ConflictCount: conflictCount,
-		Stats:         stats,
+		Merged:          merged,
+		HasConflicts:    conflictCount > 0,
+		ConflictCount:   conflictCount,
+		Stats:           stats,
+		EntityConflicts: entityConflicts,
 	}, nil
 }
 
@@ -328,6 +333,31 @@ func mergeBinaryFallback(base, ours, theirs []byte) *MergeResult {
 
 func isBinaryContent(data []byte) bool {
 	return bytes.IndexByte(data, 0) >= 0
+}
+
+// buildConflictDetail creates an EntityConflictDetail from a MatchedEntity.
+// It picks the best available entity (ours, theirs, or base) for display name.
+func buildConflictDetail(m MatchedEntity, conflictType string) EntityConflictDetail {
+	e := bestEntityForDisplay(m)
+	return EntityConflictDetail{
+		Key:      m.Key,
+		Name:     entity.EntityDisplayName(e),
+		Kind:     e.Kind,
+		DeclKind: e.DeclKind,
+		Type:     conflictType,
+	}
+}
+
+// bestEntityForDisplay returns the most informative entity from a matched set
+// for display purposes. Prefers ours, then theirs, then base.
+func bestEntityForDisplay(m MatchedEntity) *entity.Entity {
+	if m.Ours != nil {
+		return m.Ours
+	}
+	if m.Theirs != nil {
+		return m.Theirs
+	}
+	return m.Base
 }
 
 func hasDeclaration(el *entity.EntityList) bool {

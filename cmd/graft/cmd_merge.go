@@ -97,11 +97,26 @@ func printFileReport(out io.Writer, f repo.FileMergeReport) {
 			fmt.Fprint(out, "s")
 		}
 		fmt.Fprintln(out)
+		for _, ec := range f.EntityConflicts {
+			fmt.Fprintf(out, "    %s: %s\n", ec.Name, humanConflictType(ec.Type))
+		}
 	case "added":
 		fmt.Fprintf(out, "  %s: %d entities (added)\n", f.Path, f.EntityCount)
 	case "deleted":
 		fmt.Fprintf(out, "  %s: deleted\n", f.Path)
 	default: // "clean"
 		fmt.Fprintf(out, "  %s: clean\n", f.Path)
+	}
+}
+
+// humanConflictType returns a human-readable label for a conflict type string.
+func humanConflictType(ct string) string {
+	switch ct {
+	case "both_modified":
+		return "both modified"
+	case "delete_vs_modify":
+		return "delete vs modify"
+	default:
+		return ct
 	}
 }

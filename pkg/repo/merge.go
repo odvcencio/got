@@ -17,10 +17,11 @@ import (
 
 // FileMergeReport records the merge outcome for a single file.
 type FileMergeReport struct {
-	Path          string
-	Status        string // "clean", "conflict", "added", "deleted"
-	EntityCount   int
-	ConflictCount int
+	Path            string
+	Status          string // "clean", "conflict", "added", "deleted"
+	EntityCount     int
+	ConflictCount   int
+	EntityConflicts []merge.EntityConflictDetail
 }
 
 // MergeReport is the overall result of a repository-level merge.
@@ -583,9 +584,10 @@ func (r *Repo) Merge(branchName string) (*MergeReport, error) {
 			})
 		case "conflict":
 			report.Files = append(report.Files, FileMergeReport{
-				Path:          f.Path,
-				Status:        "conflict",
-				ConflictCount: f.Conflicts,
+				Path:            f.Path,
+				Status:          "conflict",
+				ConflictCount:   f.Conflicts,
+				EntityConflicts: f.EntityConflicts,
 			})
 			mergedFiles = append(mergedFiles, mergedFile{
 				path: f.Path, content: f.Content, mode: f.Mode,
@@ -931,8 +933,9 @@ func (r *Repo) mergeFileContents(path string, base, ours, theirs []byte) (FileMe
 	}
 
 	fr := FileMergeReport{
-		Path:          path,
-		ConflictCount: result.ConflictCount,
+		Path:            path,
+		ConflictCount:   result.ConflictCount,
+		EntityConflicts: result.EntityConflicts,
 	}
 	if result.HasConflicts {
 		fr.Status = "conflict"

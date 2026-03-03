@@ -11,11 +11,12 @@ import (
 
 // ThreeWayFileResult holds the outcome of a three-way merge for a single file.
 type ThreeWayFileResult struct {
-	Path      string
-	Content   []byte
-	Mode      string
-	Status    string // "clean", "conflict", "added", "deleted", "unchanged"
-	Conflicts int
+	Path            string
+	Content         []byte
+	Mode            string
+	Status          string // "clean", "conflict", "added", "deleted", "unchanged"
+	Conflicts       int
+	EntityConflicts []merge.EntityConflictDetail
 }
 
 // ThreeWayMergeResult holds the outcome of a complete three-way tree merge.
@@ -103,11 +104,12 @@ func (r *Repo) threeWayTreeMerge(
 				result.ConflictDetails = append(result.ConflictDetails, path)
 			}
 			result.Files = append(result.Files, ThreeWayFileResult{
-				Path:      path,
-				Content:   mergeResult.Merged,
-				Mode:      normalizeFileMode(oursMap[path].Mode),
-				Status:    status,
-				Conflicts: mergeResult.ConflictCount,
+				Path:            path,
+				Content:         mergeResult.Merged,
+				Mode:            normalizeFileMode(oursMap[path].Mode),
+				Status:          status,
+				Conflicts:       mergeResult.ConflictCount,
+				EntityConflicts: mergeResult.EntityConflicts,
 			})
 
 		case !inBase && !inOurs && inTheirs:
@@ -152,11 +154,12 @@ func (r *Repo) threeWayTreeMerge(
 				result.ConflictDetails = append(result.ConflictDetails, path)
 			}
 			result.Files = append(result.Files, ThreeWayFileResult{
-				Path:      path,
-				Content:   mergeResult.Merged,
-				Mode:      normalizeFileMode(oursMap[path].Mode),
-				Status:    status,
-				Conflicts: mergeResult.ConflictCount,
+				Path:            path,
+				Content:         mergeResult.Merged,
+				Mode:            normalizeFileMode(oursMap[path].Mode),
+				Status:          status,
+				Conflicts:       mergeResult.ConflictCount,
+				EntityConflicts: mergeResult.EntityConflicts,
 			})
 
 		case inBase && inOurs && !inTheirs:
