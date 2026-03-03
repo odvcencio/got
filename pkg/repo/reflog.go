@@ -36,6 +36,10 @@ type ReflogEntryWithEntities struct {
 	Entities []EntityChange
 }
 
+// appendReflog writes a plain reflog entry without entity data.
+// Prefer appendReflogAutoEntities or appendReflogWithEntities for ref-updating
+// operations that involve commit changes, so the audit trail includes
+// entity-level change information.
 func (r *Repo) appendReflog(ref string, oldHash, newHash object.Hash, reason string) error {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
