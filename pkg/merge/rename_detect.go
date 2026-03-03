@@ -61,8 +61,15 @@ func DetectRenames(
 	}
 
 	// Sort by descending similarity so greedy assignment picks best matches first.
+	// Break ties deterministically by lexicographic key order.
 	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].sim > candidates[j].sim
+		if candidates[i].sim != candidates[j].sim {
+			return candidates[i].sim > candidates[j].sim
+		}
+		if candidates[i].delKey != candidates[j].delKey {
+			return candidates[i].delKey < candidates[j].delKey
+		}
+		return candidates[i].addKey < candidates[j].addKey
 	})
 
 	// Greedy 1:1 assignment.

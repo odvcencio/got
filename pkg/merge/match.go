@@ -270,6 +270,15 @@ func applyRenameDetection(matches []MatchedEntity) []MatchedEntity {
 		consumed[r.OldKey] = true
 	}
 
+	// Remove added entries already consumed by Scenarios 1 and 2 so
+	// Scenario 3 does not double-match them.
+	for _, r := range oursRenames {
+		delete(oursAdded, r.NewKey)
+	}
+	for _, r := range theirsRenames {
+		delete(theirsAdded, r.NewKey)
+	}
+
 	// Scenario 3: Both sides renamed the same entity.
 	// Check bothDeleted entities against both AddedOurs and AddedTheirs.
 	oursFromBoth := DetectRenames(bothDeleted, oursAdded, renameThreshold)
