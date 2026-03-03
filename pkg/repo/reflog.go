@@ -280,9 +280,9 @@ func decodeReflogPath(encoded string) string {
 	return reflogPathDecoder.Replace(encoded)
 }
 
-// diffTreeEntities compares two commit trees to find entity-level changes.
+// DiffTreeEntities compares two commit trees to find entity-level changes.
 // It returns a list of creates, modifies, and deletes.
-func diffTreeEntities(r *Repo, oldCommit, newCommit object.Hash) ([]ReflogEntityChange, error) {
+func DiffTreeEntities(r *Repo, oldCommit, newCommit object.Hash) ([]ReflogEntityChange, error) {
 	// Read new commit tree.
 	newCommitObj, err := r.Store.ReadCommit(newCommit)
 	if err != nil {
@@ -422,7 +422,7 @@ func buildEntityKeyMap(r *Repo, entityListHash object.Hash, hasEntities bool) (m
 // and writes an entity-enriched reflog entry. If diffing fails (e.g., old
 // commit doesn't exist for initial commit), falls back to normal appendReflog.
 func (r *Repo) appendReflogAutoEntities(ref string, oldHash, newHash object.Hash, reason string) error {
-	entities, err := diffTreeEntities(r, oldHash, newHash)
+	entities, err := DiffTreeEntities(r, oldHash, newHash)
 	if err != nil {
 		// Fall back to normal reflog on any diff error.
 		return r.appendReflog(ref, oldHash, newHash, reason)

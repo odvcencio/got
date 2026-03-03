@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/odvcencio/graft/pkg/diff"
 	"github.com/odvcencio/graft/pkg/diff3"
@@ -24,9 +25,9 @@ func newDiffCmd() *cobra.Command {
 	var reviewFlag bool
 
 	cmd := &cobra.Command{
-		Use:   "diff",
-		Short: "Show changes between working tree, staging, and HEAD",
-		Args:  cobra.NoArgs,
+		Use:   "diff [ref1..ref2]",
+		Short: "Show changes between working tree, staging, HEAD, or two refs",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := repo.Open(".")
 			if err != nil {
@@ -38,6 +39,25 @@ func newDiffCmd() *cobra.Command {
 			if reviewFlag && jsonFlag {
 				return fmt.Errorf("--review and --json cannot be combined")
 			}
+
+			// Handle ref1..ref2 range argument.
+			if len(args) == 1 {
+				parts := strings.SplitN(args[0], "..", 2)
+				if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+					return fmt.Errorf("invalid ref range %q: expected format ref1..ref2", args[0])
+				}
+				if staged {
+					return fmt.Errorf("--staged cannot be used with ref range")
+				}
+				if jsonFlag {
+					if entity {
+						return fmt.Errorf("--json and --entity cannot be combined")
+					}
+					return diffRefsJSON(cmd, r, parts[0], parts[1])
+				}
+				return diffRefs(cmd, r, parts[0], parts[1], entity, reviewFlag)
+			}
+
 			if jsonFlag {
 				if entity {
 					return fmt.Errorf("--json and --entity cannot be combined")
@@ -573,6 +593,90 @@ func diffStagedJSON(cmd *cobra.Command, r *repo.Repo) error {
 	}
 
 	return writeJSON(cmd.OutOrStdout(), JSONDiffOutput{Files: files})
+}
+
+// diffRefs compares two refs and prints the text diff.
+func diffRefs(cmd *cobra.Command, r *repo.Repo, ref1, ref2 string, entityMode bool, reviewMode bool) error {
+	report, err := r.DiffRefs(ref1, ref2)
+	if err != nil {
+		return err
+	}
+
+	out := cmd.OutOrStdout()
+
+	// In entity-only mode, print entity changes and return.
+	if entityMode {
+		for _, ec := range report.EntityChanges {
+			fmt.Fprintf(out, "%s  %s  %s\n", ec.ChangeType, ec.Path, ec.EntityKey)
+		}
+		return nil
+	}
+
+	// Print file-level diffs.
+	for _, f := range report.Files {
+		var before, after []byte
+		if f.OldBlobHash != "" {
+			blob, err := r.Store.ReadBlob(f.OldBlobHash)
+			if err != nil {
+				return fmt.Errorf("diff: read old blob %s: %w", f.Path, err)
+			}
+			before = blob.Data
+		}
+		if f.NewBlobHash != "" {
+			blob, err := r.Store.ReadBlob(f.NewBlobHash)
+			if err != nil {
+				return fmt.Errorf("diff: read new blob %s: %w", f.Path, err)
+			}
+			after = blob.Data
+		}
+		if err := printDiff(out, f.Path, before, after, false, reviewMode); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// diffRefsJSON compares two refs and writes JSON output.
+func diffRefsJSON(cmd *cobra.Command, r *repo.Repo, ref1, ref2 string) error {
+	report, err := r.DiffRefs(ref1, ref2)
+	if err != nil {
+		return err
+	}
+
+	files := make([]JSONDiffFile, 0, len(report.Files))
+	for _, f := range report.Files {
+		var before, after []byte
+		if f.OldBlobHash != "" {
+			blob, err := r.Store.ReadBlob(f.OldBlobHash)
+			if err != nil {
+				return fmt.Errorf("diff: read old blob %s: %w", f.Path, err)
+			}
+			before = blob.Data
+		}
+		if f.NewBlobHash != "" {
+			blob, err := r.Store.ReadBlob(f.NewBlobHash)
+			if err != nil {
+				return fmt.Errorf("diff: read new blob %s: %w", f.Path, err)
+			}
+			after = blob.Data
+		}
+		files = append(files, buildJSONDiffFile(f.Path, before, after))
+	}
+
+	var entityChanges []JSONDiffEntityChange
+	for _, ec := range report.EntityChanges {
+		entityChanges = append(entityChanges, JSONDiffEntityChange{
+			Path:       ec.Path,
+			EntityKey:  ec.EntityKey,
+			ChangeType: ec.ChangeType,
+		})
+	}
+
+	return writeJSON(cmd.OutOrStdout(), JSONDiffOutput{
+		Files:         files,
+		EntityChanges: entityChanges,
+	})
 }
 
 // buildJSONDiffFile constructs a JSONDiffFile from before/after content.

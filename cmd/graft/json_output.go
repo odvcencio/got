@@ -33,9 +33,17 @@ type JSONStatusEntry struct {
 
 // --- Diff ---
 
+// JSONDiffEntityChange represents a single entity-level change in a diff.
+type JSONDiffEntityChange struct {
+	Path       string `json:"path"`
+	EntityKey  string `json:"entityKey"`
+	ChangeType string `json:"changeType"`
+}
+
 // JSONDiffOutput is the top-level JSON output for "graft diff --json".
 type JSONDiffOutput struct {
-	Files []JSONDiffFile `json:"files"`
+	Files         []JSONDiffFile         `json:"files"`
+	EntityChanges []JSONDiffEntityChange `json:"entityChanges,omitempty"`
 }
 
 // JSONDiffFile represents a single file's diff.

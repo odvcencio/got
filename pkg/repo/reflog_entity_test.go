@@ -301,7 +301,7 @@ func TestDiffTreeEntities_BasicDiff(t *testing.T) {
 		t.Fatalf("Commit(modify): %v", err)
 	}
 
-	changes, err := diffTreeEntities(r, h1, h2)
+	changes, err := DiffTreeEntities(r, h1, h2)
 	if err != nil {
 		t.Fatalf("diffTreeEntities: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestDiffTreeEntities_InitialCommit(t *testing.T) {
 		t.Fatalf("Commit: %v", err)
 	}
 
-	changes, err := diffTreeEntities(r, object.Hash(zeroHash), h)
+	changes, err := DiffTreeEntities(r, object.Hash(zeroHash), h)
 	if err != nil {
 		t.Fatalf("diffTreeEntities: %v", err)
 	}
