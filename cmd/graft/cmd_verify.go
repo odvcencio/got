@@ -10,6 +10,7 @@ import (
 
 func newVerifyCmd() *cobra.Command {
 	var signatures bool
+	var jsonFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "verify",
@@ -22,13 +23,21 @@ func newVerifyCmd() *cobra.Command {
 			}
 
 			if signatures {
-				return verifyBranchSignatures(cmd, r)
+				return verifyBranchSignatures(cmd, r, jsonFlag)
 			}
 
 			// Default: verify object store integrity.
 			report, err := r.Store.Verify()
 			if err != nil {
 				return err
+			}
+
+			if jsonFlag {
+				return writeJSON(cmd.OutOrStdout(), JSONVerifyOutput{
+					LooseObjects: report.LooseObjects,
+					PackFiles:    report.PackFiles,
+					PackObjects:  report.PackObjects,
+				})
 			}
 
 			fmt.Fprintf(
@@ -43,6 +52,7 @@ func newVerifyCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&signatures, "signatures", false, "Verify commit signatures on current branch (up to 100)")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output in JSON format")
 
 	// Add the "commit" subcommand.
 	cmd.AddCommand(newVerifyCommitCmd())
@@ -51,7 +61,9 @@ func newVerifyCmd() *cobra.Command {
 }
 
 func newVerifyCommitCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonFlag bool
+
+	cmd := &cobra.Command{
 		Use:   "commit <hash>",
 		Short: "Verify a single commit's signature",
 		Args:  cobra.ExactArgs(1),
@@ -67,22 +79,53 @@ func newVerifyCommitCmd() *cobra.Command {
 				return err
 			}
 
+			if jsonFlag {
+				return writeJSON(cmd.OutOrStdout(), JSONVerifyOutput{
+					Results: []JSONVerifyResult{verifyResultToJSON(result)},
+				})
+			}
+
 			printVerificationResult(cmd, result)
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "Output in JSON format")
+
+	return cmd
 }
 
-func verifyBranchSignatures(cmd *cobra.Command, r *repo.Repo) error {
+func verifyBranchSignatures(cmd *cobra.Command, r *repo.Repo, jsonFlag bool) error {
 	results, err := r.VerifyBranchSignatures(100)
 	if err != nil {
 		return err
+	}
+
+	if jsonFlag {
+		jsonResults := make([]JSONVerifyResult, len(results))
+		for i := range results {
+			jsonResults[i] = verifyResultToJSON(&results[i])
+		}
+		return writeJSON(cmd.OutOrStdout(), JSONVerifyOutput{
+			Results: jsonResults,
+		})
 	}
 
 	for i := range results {
 		printVerificationResult(cmd, &results[i])
 	}
 	return nil
+}
+
+func verifyResultToJSON(result *repo.VerificationResult) JSONVerifyResult {
+	return JSONVerifyResult{
+		CommitHash: string(result.CommitHash),
+		Valid:      result.Valid,
+		Unsigned:   result.Unsigned,
+		SignerKey:  result.SignerKey,
+		Algorithm:  result.Algorithm,
+		Error:      result.Error,
+	}
 }
 
 func printVerificationResult(cmd *cobra.Command, result *repo.VerificationResult) {

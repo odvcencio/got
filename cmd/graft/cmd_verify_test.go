@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,6 +146,233 @@ func TestVerifyCmdFailsOnCorruptPackIndex(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "verify pack index") {
 		t.Fatalf("verify error = %q, want to contain %q", err.Error(), "verify pack index")
+	}
+}
+
+// TestVerifyCmd_JSON_Integrity tests --json on default integrity mode.
+func TestVerifyCmd_JSON_Integrity(t *testing.T) {
+	dir := t.TempDir()
+	r, err := repo.Init(dir)
+	if err != nil {
+		t.Fatalf("repo.Init: %v", err)
+	}
+
+	writeVerifyCmdFile(t, filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"))
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "tester"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	var out bytes.Buffer
+	cmd := newVerifyCmd()
+	cmd.SilenceUsage = true
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--json"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result JSONVerifyOutput
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nraw: %s", err, out.String())
+	}
+
+	// Should have counts, not results.
+	if len(result.Results) != 0 {
+		t.Errorf("len(results) = %d, want 0 for integrity mode", len(result.Results))
+	}
+	if result.LooseObjects == 0 {
+		t.Error("looseObjects = 0, want > 0")
+	}
+}
+
+// TestVerifyCmd_JSON_Integrity_WithPacks tests --json integrity output after GC packs objects.
+func TestVerifyCmd_JSON_Integrity_WithPacks(t *testing.T) {
+	dir := t.TempDir()
+	r, err := repo.Init(dir)
+	if err != nil {
+		t.Fatalf("repo.Init: %v", err)
+	}
+
+	writeVerifyCmdFile(t, filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"))
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "tester"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	if _, err := r.Store.GC(); err != nil {
+		t.Fatalf("Store.GC: %v", err)
+	}
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	var out bytes.Buffer
+	cmd := newVerifyCmd()
+	cmd.SilenceUsage = true
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--json"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result JSONVerifyOutput
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nraw: %s", err, out.String())
+	}
+
+	if result.PackFiles == 0 {
+		t.Error("packFiles = 0, want > 0 after GC")
+	}
+	if result.PackObjects == 0 {
+		t.Error("packObjects = 0, want > 0 after GC")
+	}
+}
+
+// TestVerifyCmd_JSON_Signatures tests --json --signatures outputs signature results.
+func TestVerifyCmd_JSON_Signatures(t *testing.T) {
+	dir := t.TempDir()
+	r, err := repo.Init(dir)
+	if err != nil {
+		t.Fatalf("repo.Init: %v", err)
+	}
+
+	writeVerifyCmdFile(t, filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"))
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	commitHash, err := r.Commit("initial", "tester")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	var out bytes.Buffer
+	cmd := newVerifyCmd()
+	cmd.SilenceUsage = true
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--signatures", "--json"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result JSONVerifyOutput
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nraw: %s", err, out.String())
+	}
+
+	if len(result.Results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(result.Results))
+	}
+	if result.Results[0].CommitHash != string(commitHash) {
+		t.Errorf("commitHash = %q, want %q", result.Results[0].CommitHash, commitHash)
+	}
+	// Unsigned commit (no signing key configured).
+	if !result.Results[0].Unsigned {
+		t.Error("unsigned = false, want true for unsigned commit")
+	}
+}
+
+// TestVerifyCommitCmd_JSON tests --json on the verify commit subcommand.
+func TestVerifyCommitCmd_JSON(t *testing.T) {
+	dir := t.TempDir()
+	r, err := repo.Init(dir)
+	if err != nil {
+		t.Fatalf("repo.Init: %v", err)
+	}
+
+	writeVerifyCmdFile(t, filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"))
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	commitHash, err := r.Commit("initial", "tester")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	var out bytes.Buffer
+	cmd := newVerifyCmd()
+	cmd.SilenceUsage = true
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"commit", string(commitHash), "--json"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result JSONVerifyOutput
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nraw: %s", err, out.String())
+	}
+
+	if len(result.Results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(result.Results))
+	}
+	if result.Results[0].CommitHash != string(commitHash) {
+		t.Errorf("commitHash = %q, want %q", result.Results[0].CommitHash, commitHash)
+	}
+	if !result.Results[0].Unsigned {
+		t.Error("unsigned = false, want true for unsigned commit")
+	}
+}
+
+// TestVerifyCmd_JSON_NoHumanOutput verifies --json suppresses human-readable output.
+func TestVerifyCmd_JSON_NoHumanOutput(t *testing.T) {
+	dir := t.TempDir()
+	r, err := repo.Init(dir)
+	if err != nil {
+		t.Fatalf("repo.Init: %v", err)
+	}
+
+	writeVerifyCmdFile(t, filepath.Join(dir, "main.go"), []byte("package main\n\nfunc main() {}\n"))
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "tester"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	var out bytes.Buffer
+	cmd := newVerifyCmd()
+	cmd.SilenceUsage = true
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--json"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	raw := out.String()
+	// Should not contain human-readable markers.
+	if strings.Contains(raw, "ok: verified") {
+		t.Errorf("output contains human-readable text: %s", raw)
+	}
+	// Should start with { (JSON object).
+	if !strings.HasPrefix(strings.TrimSpace(raw), "{") {
+		t.Errorf("output does not start with '{': %s", raw)
 	}
 }
 

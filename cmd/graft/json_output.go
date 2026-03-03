@@ -161,3 +161,23 @@ type JSONConflictEntity struct {
 	EntityKind   string `json:"entityKind,omitempty"`
 	ConflictType string `json:"conflictType"`
 }
+
+// --- Verify ---
+
+// JSONVerifyOutput is the top-level JSON output for "graft verify --json".
+type JSONVerifyOutput struct {
+	Results      []JSONVerifyResult `json:"results,omitempty"`
+	LooseObjects int                `json:"looseObjects,omitempty"`
+	PackFiles    int                `json:"packFiles,omitempty"`
+	PackObjects  int                `json:"packObjects,omitempty"`
+}
+
+// JSONVerifyResult represents the signature verification result for a single commit.
+type JSONVerifyResult struct {
+	CommitHash string `json:"commitHash"`
+	Valid      bool   `json:"valid"`
+	Unsigned   bool   `json:"unsigned,omitempty"`
+	SignerKey  string `json:"signerKey,omitempty"`
+	Algorithm  string `json:"algorithm,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
