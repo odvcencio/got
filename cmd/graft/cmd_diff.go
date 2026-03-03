@@ -32,6 +32,9 @@ func newDiffCmd() *cobra.Command {
 				return err
 			}
 			if jsonFlag {
+				if entity {
+					return fmt.Errorf("--json and --entity cannot be combined")
+				}
 				if staged {
 					return diffStagedJSON(cmd, r)
 				}
@@ -396,7 +399,7 @@ func diffUnstagedJSON(cmd *cobra.Command, r *repo.Repo) error {
 	}
 	sort.Strings(paths)
 
-	var files []JSONDiffFile
+	files := make([]JSONDiffFile, 0)
 
 	for _, p := range paths {
 		se := stg.Entries[p]
@@ -479,7 +482,7 @@ func diffStagedJSON(cmd *cobra.Command, r *repo.Repo) error {
 	}
 	sort.Strings(paths)
 
-	var files []JSONDiffFile
+	files := make([]JSONDiffFile, 0)
 
 	for _, p := range paths {
 		se := stg.Entries[p]

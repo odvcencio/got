@@ -193,6 +193,7 @@ func mergeReportToJSON(cmd *cobra.Command, report *repo.MergeReport, action, sou
 		HasConflicts:   report.HasConflicts,
 		TotalConflicts: report.TotalConflicts,
 		MergeCommit:    string(report.MergeCommit),
+		Files:          make([]JSONMergeFile, 0),
 	}
 
 	for _, f := range report.Files {
