@@ -8,7 +8,9 @@ import (
 )
 
 func newConflictsCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonFlag bool
+
+	cmd := &cobra.Command{
 		Use:   "conflicts",
 		Short: "List entity-level conflicts in the working tree",
 		Long: `Show all conflicted files and entities after a merge or rebase.
@@ -25,6 +27,10 @@ that are in conflict and the type of conflict (both modified, delete vs modify).
 			conflicts, err := r.ListConflicts()
 			if err != nil {
 				return err
+			}
+
+			if jsonFlag {
+				return conflictsJSON(cmd, conflicts)
 			}
 
 			out := cmd.OutOrStdout()
@@ -51,4 +57,39 @@ that are in conflict and the type of conflict (both modified, delete vs modify).
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
+
+	return cmd
+}
+
+// conflictsJSON groups conflict entries by file path and writes JSON output.
+func conflictsJSON(cmd *cobra.Command, conflicts []repo.ConflictEntry) error {
+	// Group by path, maintaining order.
+	fileMap := make(map[string]*JSONConflictFile)
+	var fileOrder []string
+
+	for _, c := range conflicts {
+		jf, ok := fileMap[c.Path]
+		if !ok {
+			jf = &JSONConflictFile{Path: c.Path}
+			fileMap[c.Path] = jf
+			fileOrder = append(fileOrder, c.Path)
+		}
+		jf.Entities = append(jf.Entities, JSONConflictEntity{
+			EntityName:   c.EntityName,
+			EntityKey:    c.EntityKey,
+			EntityKind:   c.EntityKind,
+			ConflictType: c.ConflictType,
+		})
+	}
+
+	result := JSONConflictsOutput{
+		Files: make([]JSONConflictFile, 0, len(fileOrder)),
+	}
+	for _, path := range fileOrder {
+		result.Files = append(result.Files, *fileMap[path])
+	}
+
+	return writeJSON(cmd.OutOrStdout(), result)
 }

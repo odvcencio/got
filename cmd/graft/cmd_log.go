@@ -17,6 +17,7 @@ func newLogCmd() *cobra.Command {
 	var entitySelector string
 	var all bool
 	var graph bool
+	var jsonFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "log",
@@ -58,6 +59,11 @@ func newLogCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+
+				if jsonFlag {
+					return logEntriesToJSON(cmd, entries, headHash, branchName, false, nil)
+				}
+
 				if len(entries) == 0 {
 					return nil
 				}
@@ -115,6 +121,10 @@ func newLogCmd() *cobra.Command {
 						entries = append(entries, repo.LogEntry{Hash: hashes[i], Commit: c})
 					}
 				}
+			}
+
+			if jsonFlag {
+				return logEntriesToJSON(cmd, entries, headHash, branchName, all, refDecorations)
 			}
 
 			if len(entries) == 0 {
@@ -183,8 +193,46 @@ func newLogCmd() *cobra.Command {
 	cmd.Flags().StringVar(&entitySelector, "entity", "", "filter commits by entity selector (path::entity_key or entity_key)")
 	cmd.Flags().BoolVar(&all, "all", false, "show commits from all branches and tags")
 	cmd.Flags().BoolVar(&graph, "graph", false, "draw an ASCII commit graph alongside the log")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
 
 	return cmd
+}
+
+// logEntriesToJSON converts log entries to JSON output.
+func logEntriesToJSON(cmd *cobra.Command, entries []repo.LogEntry, headHash object.Hash, branchName string, useAllDecoration bool, refDecorations map[object.Hash][]string) error {
+	result := JSONLogOutput{
+		Commits: make([]JSONLogEntry, 0, len(entries)),
+	}
+
+	for _, entry := range entries {
+		h := entry.Hash
+		c := entry.Commit
+
+		var decoration string
+		if useAllDecoration && refDecorations != nil {
+			decoration = buildAllDecoration(h, headHash, branchName, refDecorations)
+		} else {
+			decoration = buildDecoration(h, headHash, branchName)
+		}
+
+		parents := make([]string, len(c.Parents))
+		for i, p := range c.Parents {
+			parents[i] = string(p)
+		}
+
+		result.Commits = append(result.Commits, JSONLogEntry{
+			Hash:       string(h),
+			ShortHash:  shortHash(h),
+			Author:     c.Author,
+			Date:       time.Unix(c.Timestamp, 0).Format("2006-01-02 15:04:05"),
+			Timestamp:  c.Timestamp,
+			Message:    c.Message,
+			Parents:    parents,
+			Decoration: decoration,
+		})
+	}
+
+	return writeJSON(cmd.OutOrStdout(), result)
 }
 
 // buildDecoration returns a string like "(HEAD -> main)" if the commit is

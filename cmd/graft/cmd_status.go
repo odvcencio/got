@@ -10,7 +10,9 @@ import (
 )
 
 func newStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonFlag bool
+
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show working tree status",
 		Args:  cobra.NoArgs,
@@ -24,8 +26,6 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			out := cmd.OutOrStdout()
 
 			// Determine current branch and whether commits exist.
 			branch := "main"
@@ -41,6 +41,12 @@ func newStatusCmd() *cobra.Command {
 					noCommits = false
 				}
 			}
+
+			if jsonFlag {
+				return statusJSON(cmd, entries, branch, noCommits)
+			}
+
+			out := cmd.OutOrStdout()
 
 			if noCommits {
 				fmt.Fprintf(out, "on %s (no commits yet)\n", branch)
@@ -124,4 +130,67 @@ func newStatusCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
+
+	return cmd
+}
+
+// statusJSON builds and writes the JSON output for the status command.
+func statusJSON(cmd *cobra.Command, entries []repo.StatusEntry, branch string, noCommits bool) error {
+	result := JSONStatusOutput{
+		Branch:    branch,
+		NoCommits: noCommits,
+	}
+
+	for _, e := range entries {
+		p := filepath.ToSlash(e.Path)
+
+		if e.IndexStatus == repo.StatusConflict || e.WorkStatus == repo.StatusConflict {
+			result.Conflicts = append(result.Conflicts, JSONStatusEntry{
+				Path:   p,
+				Status: "conflict",
+			})
+			continue
+		}
+
+		// Staged changes.
+		switch e.IndexStatus {
+		case repo.StatusNew:
+			result.Staged = append(result.Staged, JSONStatusEntry{Path: p, Status: "new"})
+		case repo.StatusModified:
+			result.Staged = append(result.Staged, JSONStatusEntry{Path: p, Status: "modified"})
+		case repo.StatusRenamed:
+			result.Staged = append(result.Staged, JSONStatusEntry{
+				Path:        p,
+				Status:      "renamed",
+				RenamedFrom: filepath.ToSlash(e.RenamedFrom),
+			})
+		case repo.StatusDeleted:
+			result.Staged = append(result.Staged, JSONStatusEntry{Path: p, Status: "deleted"})
+		}
+
+		// Unstaged changes.
+		switch e.WorkStatus {
+		case repo.StatusDirty:
+			result.Unstaged = append(result.Unstaged, JSONStatusEntry{Path: p, Status: "modified"})
+		case repo.StatusRenamed:
+			result.Unstaged = append(result.Unstaged, JSONStatusEntry{
+				Path:        p,
+				Status:      "renamed",
+				RenamedFrom: filepath.ToSlash(e.RenamedFrom),
+			})
+		case repo.StatusDeleted:
+			if e.IndexStatus != repo.StatusUntracked {
+				result.Unstaged = append(result.Unstaged, JSONStatusEntry{Path: p, Status: "deleted"})
+			}
+		}
+
+		// Untracked files.
+		if e.IndexStatus == repo.StatusUntracked && e.WorkStatus != repo.StatusRenamed {
+			result.Untracked = append(result.Untracked, p)
+		}
+	}
+
+	return writeJSON(cmd.OutOrStdout(), result)
 }

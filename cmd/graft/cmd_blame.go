@@ -10,6 +10,7 @@ import (
 func newBlameCmd() *cobra.Command {
 	var entitySelector string
 	var limit int
+	var jsonFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "blame --entity <path::entity_key>",
@@ -30,6 +31,16 @@ func newBlameCmd() *cobra.Command {
 				return err
 			}
 
+			if jsonFlag {
+				return writeJSON(cmd.OutOrStdout(), JSONBlameOutput{
+					Path:       result.Path,
+					EntityKey:  result.EntityKey,
+					Author:     result.Author,
+					CommitHash: string(result.CommitHash),
+					Message:    result.Message,
+				})
+			}
+
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", result.EntityKey, result.Author, result.CommitHash, result.Message)
 			return nil
 		},
@@ -37,6 +48,7 @@ func newBlameCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&entitySelector, "entity", "", "entity selector in the form <path::entity_key>")
 	cmd.Flags().IntVar(&limit, "limit", 200, "maximum number of commits to scan")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
 	_ = cmd.MarkFlagRequired("entity")
 
 	return cmd

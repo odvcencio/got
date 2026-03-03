@@ -13,7 +13,9 @@ import (
 )
 
 func newShowCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonFlag bool
+
+	cmd := &cobra.Command{
 		Use:   "show [commit-ish]",
 		Short: "Show commit metadata and changed files",
 		Args:  cobra.MaximumNArgs(1),
@@ -37,14 +39,6 @@ func newShowCmd() *cobra.Command {
 				return fmt.Errorf("show: read commit %s: %w", h, err)
 			}
 
-			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "commit %s\n", h)
-			fmt.Fprintf(out, "Author: %s\n", commit.Author)
-			fmt.Fprintf(out, "Date:   %s\n", time.Unix(commit.Timestamp, 0).Format("2006-01-02 15:04:05"))
-			fmt.Fprintln(out)
-			fmt.Fprintf(out, "    %s\n", commit.Message)
-			fmt.Fprintln(out)
-
 			before := make(map[string]repo.TreeFileEntry)
 			if len(commit.Parents) > 0 {
 				parent, err := r.Store.ReadCommit(commit.Parents[0])
@@ -67,6 +61,19 @@ func newShowCmd() *cobra.Command {
 			}
 
 			changes := summarizeTreeChanges(before, after)
+
+			if jsonFlag {
+				return showJSON(cmd, h, commit, changes)
+			}
+
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "commit %s\n", h)
+			fmt.Fprintf(out, "Author: %s\n", commit.Author)
+			fmt.Fprintf(out, "Date:   %s\n", time.Unix(commit.Timestamp, 0).Format("2006-01-02 15:04:05"))
+			fmt.Fprintln(out)
+			fmt.Fprintf(out, "    %s\n", commit.Message)
+			fmt.Fprintln(out)
+
 			if len(changes) == 0 {
 				return nil
 			}
@@ -78,6 +85,41 @@ func newShowCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
+
+	return cmd
+}
+
+// showJSON writes JSON output for the show command.
+func showJSON(cmd *cobra.Command, h object.Hash, commit *object.CommitObj, changes []string) error {
+	parents := make([]string, len(commit.Parents))
+	for i, p := range commit.Parents {
+		parents[i] = string(p)
+	}
+
+	var jsonChanges []JSONShowChange
+	for _, line := range changes {
+		if len(line) < 2 {
+			continue
+		}
+		jsonChanges = append(jsonChanges, JSONShowChange{
+			Path:   strings.TrimSpace(line[1:]),
+			Status: string(line[0]),
+		})
+	}
+
+	result := JSONShowOutput{
+		Hash:      string(h),
+		Author:    commit.Author,
+		Date:      time.Unix(commit.Timestamp, 0).Format("2006-01-02 15:04:05"),
+		Timestamp: commit.Timestamp,
+		Message:   commit.Message,
+		Parents:   parents,
+		Changes:   jsonChanges,
+	}
+
+	return writeJSON(cmd.OutOrStdout(), result)
 }
 
 func resolveCommitish(r *repo.Repo, target string) (object.Hash, error) {

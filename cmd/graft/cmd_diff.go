@@ -20,6 +20,7 @@ const lineDiffContextLines = 3
 func newDiffCmd() *cobra.Command {
 	var staged bool
 	var entity bool
+	var jsonFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "diff",
@@ -30,6 +31,12 @@ func newDiffCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if jsonFlag {
+				if staged {
+					return diffStagedJSON(cmd, r)
+				}
+				return diffUnstagedJSON(cmd, r)
+			}
 			if staged {
 				return diffStaged(cmd, r, entity)
 			}
@@ -39,6 +46,7 @@ func newDiffCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&staged, "staged", false, "show staged changes (staging vs HEAD)")
 	cmd.Flags().BoolVar(&entity, "entity", false, "show entity-level structural diff")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
 
 	return cmd
 }
@@ -363,4 +371,228 @@ func printRename(out io.Writer, fromPath, toPath string) {
 	fmt.Fprintf(out, "diff --graft a/%s b/%s\n", fromPath, toPath)
 	fmt.Fprintf(out, "rename from %s\n", fromPath)
 	fmt.Fprintf(out, "rename to %s\n", toPath)
+}
+
+// diffUnstagedJSON collects unstaged diff data and writes JSON output.
+func diffUnstagedJSON(cmd *cobra.Command, r *repo.Repo) error {
+	stg, err := r.ReadStaging()
+	if err != nil {
+		return err
+	}
+	statusEntries, err := r.Status()
+	if err != nil {
+		return err
+	}
+	workRenamedOldToNew := make(map[string]string)
+	for _, e := range statusEntries {
+		if e.WorkStatus == repo.StatusRenamed && e.RenamedFrom != "" {
+			workRenamedOldToNew[e.RenamedFrom] = e.Path
+		}
+	}
+
+	paths := make([]string, 0, len(stg.Entries))
+	for p := range stg.Entries {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	var files []JSONDiffFile
+
+	for _, p := range paths {
+		se := stg.Entries[p]
+
+		absPath := filepath.Join(r.RootDir, filepath.FromSlash(p))
+		workData, err := os.ReadFile(absPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				if newPath, renamed := workRenamedOldToNew[p]; renamed {
+					files = append(files, JSONDiffFile{
+						Path:        newPath,
+						Status:      "renamed",
+						RenamedFrom: p,
+						RenamedTo:   newPath,
+					})
+					continue
+				}
+				stagedBlob, blobErr := r.Store.ReadBlob(se.BlobHash)
+				if blobErr != nil {
+					return fmt.Errorf("diff: read staged blob %s: %w", p, blobErr)
+				}
+				files = append(files, buildJSONDiffFile(p, stagedBlob.Data, nil))
+				continue
+			}
+			return fmt.Errorf("diff: read %s: %w", p, err)
+		}
+
+		workHash := object.HashObject(object.TypeBlob, workData)
+		if workHash == se.BlobHash {
+			continue
+		}
+
+		stagedBlob, err := r.Store.ReadBlob(se.BlobHash)
+		if err != nil {
+			return fmt.Errorf("diff: read staged blob %s: %w", p, err)
+		}
+
+		files = append(files, buildJSONDiffFile(p, stagedBlob.Data, workData))
+	}
+
+	return writeJSON(cmd.OutOrStdout(), JSONDiffOutput{Files: files})
+}
+
+// diffStagedJSON collects staged diff data and writes JSON output.
+func diffStagedJSON(cmd *cobra.Command, r *repo.Repo) error {
+	stg, err := r.ReadStaging()
+	if err != nil {
+		return err
+	}
+	statusEntries, err := r.Status()
+	if err != nil {
+		return err
+	}
+	indexRenamedNewToOld := make(map[string]string)
+	indexRenamedOld := make(map[string]struct{})
+	for _, e := range statusEntries {
+		if e.IndexStatus == repo.StatusRenamed && e.RenamedFrom != "" {
+			indexRenamedNewToOld[e.Path] = e.RenamedFrom
+			indexRenamedOld[e.RenamedFrom] = struct{}{}
+		}
+	}
+
+	headMap := make(map[string]repo.TreeFileEntry)
+	headHash, err := r.ResolveRef("HEAD")
+	if err == nil {
+		commit, err := r.Store.ReadCommit(headHash)
+		if err == nil {
+			entries, err := r.FlattenTree(commit.TreeHash)
+			if err == nil {
+				for _, e := range entries {
+					headMap[e.Path] = e
+				}
+			}
+		}
+	}
+
+	paths := make([]string, 0, len(stg.Entries))
+	for p := range stg.Entries {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+
+	var files []JSONDiffFile
+
+	for _, p := range paths {
+		se := stg.Entries[p]
+		if oldPath, renamed := indexRenamedNewToOld[p]; renamed {
+			files = append(files, JSONDiffFile{
+				Path:        p,
+				Status:      "renamed",
+				RenamedFrom: oldPath,
+				RenamedTo:   p,
+			})
+			continue
+		}
+
+		headEntry, inHead := headMap[p]
+		if inHead && headEntry.BlobHash == se.BlobHash {
+			continue
+		}
+
+		var before []byte
+		if inHead {
+			blob, err := r.Store.ReadBlob(headEntry.BlobHash)
+			if err != nil {
+				return fmt.Errorf("diff: read HEAD blob %s: %w", p, err)
+			}
+			before = blob.Data
+		}
+
+		stagedBlob, err := r.Store.ReadBlob(se.BlobHash)
+		if err != nil {
+			return fmt.Errorf("diff: read staged blob %s: %w", p, err)
+		}
+
+		files = append(files, buildJSONDiffFile(p, before, stagedBlob.Data))
+	}
+
+	// Check for files deleted from staging that exist in HEAD.
+	deletedPaths := make([]string, 0)
+	for p := range headMap {
+		if _, inStaging := stg.Entries[p]; !inStaging {
+			deletedPaths = append(deletedPaths, p)
+		}
+	}
+	sort.Strings(deletedPaths)
+
+	for _, p := range deletedPaths {
+		if _, renamed := indexRenamedOld[p]; renamed {
+			continue
+		}
+		headEntry := headMap[p]
+		blob, err := r.Store.ReadBlob(headEntry.BlobHash)
+		if err != nil {
+			return fmt.Errorf("diff: read HEAD blob %s: %w", p, err)
+		}
+		files = append(files, buildJSONDiffFile(p, blob.Data, nil))
+	}
+
+	return writeJSON(cmd.OutOrStdout(), JSONDiffOutput{Files: files})
+}
+
+// buildJSONDiffFile constructs a JSONDiffFile from before/after content.
+func buildJSONDiffFile(path string, before, after []byte) JSONDiffFile {
+	if before == nil {
+		before = []byte{}
+	}
+	if after == nil {
+		after = []byte{}
+	}
+
+	status := "modified"
+	if len(before) == 0 {
+		status = "added"
+	} else if len(after) == 0 {
+		status = "deleted"
+	}
+
+	if bytes.Equal(before, after) {
+		return JSONDiffFile{Path: path, Status: status}
+	}
+
+	lines := diff3.LineDiff(before, after)
+	hunks := buildLineDiffHunks(lines, lineDiffContextLines)
+
+	var jsonHunks []JSONDiffHunk
+	for _, h := range hunks {
+		oldStart, oldCount, newStart, newCount := h.lineRange(lines)
+		var jsonLines []JSONDiffLine
+		for _, dl := range lines[h.start:h.end] {
+			var lineType string
+			switch dl.Type {
+			case diff3.Equal:
+				lineType = "context"
+			case diff3.Insert:
+				lineType = "add"
+			case diff3.Delete:
+				lineType = "delete"
+			}
+			jsonLines = append(jsonLines, JSONDiffLine{
+				Type:    lineType,
+				Content: dl.Content,
+			})
+		}
+		jsonHunks = append(jsonHunks, JSONDiffHunk{
+			OldStart: oldStart,
+			OldCount: oldCount,
+			NewStart: newStart,
+			NewCount: newCount,
+			Lines:    jsonLines,
+		})
+	}
+
+	return JSONDiffFile{
+		Path:  path,
+		Status: status,
+		Hunks: jsonHunks,
+	}
 }

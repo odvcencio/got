@@ -11,6 +11,7 @@ import (
 func newMergeCmd() *cobra.Command {
 	var abortFlag bool
 	var dryRunFlag bool
+	var jsonFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "merge <branch>",
@@ -34,6 +35,12 @@ func newMergeCmd() *cobra.Command {
 				if err := r.MergeAbort(); err != nil {
 					return err
 				}
+				if jsonFlag {
+					return writeJSON(out, JSONMergeOutput{
+						Action:  "abort",
+						Message: "merge aborted, working tree restored",
+					})
+				}
 				fmt.Fprintln(out, "merge aborted, working tree restored")
 				return nil
 			}
@@ -49,14 +56,23 @@ func newMergeCmd() *cobra.Command {
 			}
 
 			if dryRunFlag {
+				if jsonFlag {
+					return runMergePreviewJSON(r, cmd, branchName, current)
+				}
 				return runMergePreview(r, out, branchName, current)
 			}
 
-			fmt.Fprintf(out, "merging %s into %s...\n", branchName, current)
+			if !jsonFlag {
+				fmt.Fprintf(out, "merging %s into %s...\n", branchName, current)
+			}
 
 			report, err := r.Merge(branchName)
 			if err != nil {
 				return err
+			}
+
+			if jsonFlag {
+				return mergeReportToJSON(cmd, report, "merge", branchName, current)
 			}
 
 			if report.IsFastForward {
@@ -94,6 +110,7 @@ func newMergeCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&abortFlag, "abort", false, "abort the current merge and restore original state")
 	cmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "preview what a merge would do without modifying anything")
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
 
 	return cmd
 }
@@ -164,4 +181,44 @@ func humanConflictType(ct string) string {
 	default:
 		return ct
 	}
+}
+
+// mergeReportToJSON converts a MergeReport to JSON output.
+func mergeReportToJSON(cmd *cobra.Command, report *repo.MergeReport, action, source, target string) error {
+	result := JSONMergeOutput{
+		Action:         action,
+		Source:         source,
+		Target:         target,
+		IsFastForward:  report.IsFastForward,
+		HasConflicts:   report.HasConflicts,
+		TotalConflicts: report.TotalConflicts,
+		MergeCommit:    string(report.MergeCommit),
+	}
+
+	for _, f := range report.Files {
+		jf := JSONMergeFile{
+			Path:          f.Path,
+			Status:        f.Status,
+			EntityCount:   f.EntityCount,
+			ConflictCount: f.ConflictCount,
+		}
+		for _, ec := range f.EntityConflicts {
+			jf.EntityConflicts = append(jf.EntityConflicts, JSONEntityConflict{
+				Name: ec.Name,
+				Type: ec.Type,
+			})
+		}
+		result.Files = append(result.Files, jf)
+	}
+
+	return writeJSON(cmd.OutOrStdout(), result)
+}
+
+// runMergePreviewJSON handles --dry-run --json: runs MergePreview and writes JSON.
+func runMergePreviewJSON(r *repo.Repo, cmd *cobra.Command, branchName, current string) error {
+	report, err := r.MergePreview(branchName)
+	if err != nil {
+		return err
+	}
+	return mergeReportToJSON(cmd, report, "preview", branchName, current)
 }
