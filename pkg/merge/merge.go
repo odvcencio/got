@@ -143,6 +143,26 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 			resolved = append(resolved, re)
 			stats.Conflicts++
 			entityConflicts = append(entityConflicts, buildConflictDetail(m, ConflictTypeDeleteVsModify))
+
+		case RenamedOurs:
+			re := resolveRenamed(m, language, true)
+			resolved = append(resolved, re)
+			if re.Conflict {
+				stats.Conflicts++
+				entityConflicts = append(entityConflicts, buildConflictDetail(m, ConflictTypeBothModified))
+			} else {
+				stats.OursModified++
+			}
+
+		case RenamedTheirs:
+			re := resolveRenamed(m, language, false)
+			resolved = append(resolved, re)
+			if re.Conflict {
+				stats.Conflicts++
+				entityConflicts = append(entityConflicts, buildConflictDetail(m, ConflictTypeBothModified))
+			} else {
+				stats.TheirsModified++
+			}
 		}
 	}
 
@@ -233,6 +253,68 @@ func resolveDeleteVsModify(m MatchedEntity) ResolvedEntity {
 		Conflict:   true,
 		OursBody:   oursBody,
 		TheirsBody: theirsBody,
+	}
+}
+
+// resolveRenamed handles an entity that was renamed by one side.
+// If oursRenamed is true, ours performed the rename; otherwise theirs did.
+//
+// The renamed side provides the new name/key. If the other side also modified
+// the body, a diff3 merge of the bodies is attempted. If that fails, it is
+// a conflict. If only the rename happened (no body modification on the other
+// side), the renamed version is used directly.
+func resolveRenamed(m MatchedEntity, language string, oursRenamed bool) ResolvedEntity {
+	var baseBody []byte
+	if m.Base != nil {
+		baseBody = m.Base.Body
+	}
+
+	if oursRenamed {
+		// Ours renamed. Check if theirs also modified the body.
+		theirsModified := m.Theirs != nil && m.Base != nil && m.Theirs.BodyHash != m.Base.BodyHash
+		if !theirsModified {
+			// Only rename, no body conflict — use ours version.
+			e := *m.Ours
+			return ResolvedEntity{Entity: e}
+		}
+		// Theirs modified body + ours renamed. Try diff3 merge.
+		result := diff3.Merge(baseBody, m.Ours.Body, m.Theirs.Body)
+		if !result.HasConflicts {
+			e := *m.Ours
+			e.Body = normalizeMergedEntityBody(baseBody, m.Ours.Body, m.Theirs.Body, result.Merged)
+			return ResolvedEntity{Entity: e}
+		}
+		// Conflict.
+		e := *m.Ours
+		return ResolvedEntity{
+			Entity:     e,
+			Conflict:   true,
+			OursBody:   m.Ours.Body,
+			TheirsBody: m.Theirs.Body,
+		}
+	}
+
+	// Theirs renamed. Check if ours also modified the body.
+	oursModified := m.Ours != nil && m.Base != nil && m.Ours.BodyHash != m.Base.BodyHash
+	if !oursModified {
+		// Only rename, no body conflict — use theirs version.
+		e := *m.Theirs
+		return ResolvedEntity{Entity: e}
+	}
+	// Ours modified body + theirs renamed. Try diff3 merge.
+	result := diff3.Merge(baseBody, m.Ours.Body, m.Theirs.Body)
+	if !result.HasConflicts {
+		e := *m.Theirs
+		e.Body = normalizeMergedEntityBody(baseBody, m.Ours.Body, m.Theirs.Body, result.Merged)
+		return ResolvedEntity{Entity: e}
+	}
+	// Conflict.
+	e := *m.Theirs
+	return ResolvedEntity{
+		Entity:     e,
+		Conflict:   true,
+		OursBody:   m.Ours.Body,
+		TheirsBody: m.Theirs.Body,
 	}
 }
 

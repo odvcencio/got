@@ -20,6 +20,8 @@ const (
 	DeletedOurs                // deleted by ours
 	DeletedTheirs              // deleted by theirs
 	DeleteVsModify             // one deleted, other modified
+	RenamedOurs                // entity renamed by ours (deleted old key, added new key)
+	RenamedTheirs              // entity renamed by theirs (deleted old key, added new key)
 )
 
 func (d Disposition) String() string {
@@ -44,6 +46,10 @@ func (d Disposition) String() string {
 		return "DeletedTheirs"
 	case DeleteVsModify:
 		return "DeleteVsModify"
+	case RenamedOurs:
+		return "RenamedOurs"
+	case RenamedTheirs:
+		return "RenamedTheirs"
 	}
 	return fmt.Sprintf("Disposition(%d)", int(d))
 }
@@ -52,6 +58,7 @@ func (d Disposition) String() string {
 const (
 	ConflictTypeBothModified   = "both_modified"
 	ConflictTypeDeleteVsModify = "delete_vs_modify"
+	ConflictTypeRenameConflict = "rename_conflict"
 )
 
 // EntityConflictDetail describes a single entity-level conflict within a file merge.
@@ -153,7 +160,7 @@ func MatchEntities(base, ours, theirs *entity.EntityList) []MatchedEntity {
 		result = append(result, m)
 	}
 
-	return result
+	return applyRenameDetection(result)
 }
 
 // collectInsertions finds keys in el that are NOT in baseKeySet and groups them
@@ -177,6 +184,156 @@ func collectInsertions(el *entity.EntityList, baseKeySet map[string]bool) map[st
 		}
 	}
 	return insertions
+}
+
+// renameThreshold is the minimum line similarity required for a non-exact
+// rename detection. Bodies with identical hashes always qualify (similarity 1.0).
+const renameThreshold = 0.80
+
+// applyRenameDetection runs rename detection as a post-processing step on
+// the initial match results. It finds renames among unmatched entities and
+// replaces separate delete+add entries with single renamed entries.
+//
+// Three rename scenarios are handled:
+//  1. Ours renamed: DeletedOurs + AddedOurs => RenamedOurs
+//  2. Theirs renamed: DeletedTheirs + AddedTheirs => RenamedTheirs
+//  3. Both renamed same entity to different names => Conflict
+func applyRenameDetection(matches []MatchedEntity) []MatchedEntity {
+	// Index matches by key for fast lookup.
+	byKey := make(map[string]int, len(matches))
+	for i, m := range matches {
+		byKey[m.Key] = i
+	}
+
+	// Collect candidates for rename detection, grouped by scenario.
+	// Ours side: DeletedOurs base entities paired with AddedOurs entities.
+	oursDeleted := map[string]*entity.Entity{}  // key -> base entity
+	oursAdded := map[string]*entity.Entity{}     // key -> ours entity
+	theirsDeleted := map[string]*entity.Entity{} // key -> base entity
+	theirsAdded := map[string]*entity.Entity{}   // key -> theirs entity
+	bothDeleted := map[string]*entity.Entity{}   // key -> base entity (both sides deleted)
+
+	for _, m := range matches {
+		switch m.Disposition {
+		case DeletedOurs:
+			if m.Base != nil && m.Base.Kind == entity.KindDeclaration {
+				oursDeleted[m.Key] = m.Base
+			}
+		case DeletedTheirs:
+			if m.Base != nil && m.Base.Kind == entity.KindDeclaration {
+				theirsDeleted[m.Key] = m.Base
+			}
+		case AddedOurs:
+			if m.Ours != nil && m.Ours.Kind == entity.KindDeclaration {
+				oursAdded[m.Key] = m.Ours
+			}
+		case AddedTheirs:
+			if m.Theirs != nil && m.Theirs.Kind == entity.KindDeclaration {
+				theirsAdded[m.Key] = m.Theirs
+			}
+		case Unchanged:
+			// Both sides deleted: base exists, ours=nil, theirs=nil.
+			if m.Base != nil && m.Ours == nil && m.Theirs == nil && m.Base.Kind == entity.KindDeclaration {
+				bothDeleted[m.Key] = m.Base
+			}
+		}
+	}
+
+	// Track which keys are consumed by rename detection.
+	consumed := map[string]bool{}
+
+	// Scenario 1: Ours renamed (DeletedOurs + AddedOurs).
+	oursRenames := DetectRenames(oursDeleted, oursAdded, renameThreshold)
+	for _, r := range oursRenames {
+		delIdx := byKey[r.OldKey]
+		addIdx := byKey[r.NewKey]
+		// Replace the added entry with a RenamedOurs entry that carries all three sides.
+		matches[addIdx].Disposition = RenamedOurs
+		matches[addIdx].Base = matches[delIdx].Base
+		// Ours is already set from the AddedOurs entry.
+		// Theirs comes from the deleted entry (theirs still had the old version).
+		matches[addIdx].Theirs = matches[delIdx].Theirs
+		consumed[r.OldKey] = true
+	}
+
+	// Scenario 2: Theirs renamed (DeletedTheirs + AddedTheirs).
+	theirsRenames := DetectRenames(theirsDeleted, theirsAdded, renameThreshold)
+	for _, r := range theirsRenames {
+		delIdx := byKey[r.OldKey]
+		addIdx := byKey[r.NewKey]
+		// Replace the added entry with a RenamedTheirs entry.
+		matches[addIdx].Disposition = RenamedTheirs
+		matches[addIdx].Base = matches[delIdx].Base
+		// Theirs is already set from the AddedTheirs entry.
+		// Ours comes from the deleted entry (ours still had the old version).
+		matches[addIdx].Ours = matches[delIdx].Ours
+		consumed[r.OldKey] = true
+	}
+
+	// Scenario 3: Both sides renamed the same entity.
+	// Check bothDeleted entities against both AddedOurs and AddedTheirs.
+	oursFromBoth := DetectRenames(bothDeleted, oursAdded, renameThreshold)
+	theirsFromBoth := DetectRenames(bothDeleted, theirsAdded, renameThreshold)
+
+	// Build a map of bothDeleted keys to their ours and theirs rename targets.
+	bothOursTarget := map[string]RenameCandidate{}
+	for _, r := range oursFromBoth {
+		bothOursTarget[r.OldKey] = r
+	}
+	bothTheirsTarget := map[string]RenameCandidate{}
+	for _, r := range theirsFromBoth {
+		bothTheirsTarget[r.OldKey] = r
+	}
+
+	for baseKey := range bothDeleted {
+		oursR, hasOurs := bothOursTarget[baseKey]
+		theirsR, hasTheirs := bothTheirsTarget[baseKey]
+
+		switch {
+		case hasOurs && hasTheirs:
+			if oursR.NewKey == theirsR.NewKey {
+				// Both renamed to the same name — BothSame.
+				addIdx := byKey[oursR.NewKey]
+				matches[addIdx].Disposition = BothSame
+				matches[addIdx].Base = matches[byKey[baseKey]].Base
+				consumed[baseKey] = true
+			} else {
+				// Renamed to different names — Conflict.
+				// Place the conflict at the ours rename target position.
+				oursIdx := byKey[oursR.NewKey]
+				theirsIdx := byKey[theirsR.NewKey]
+				matches[oursIdx].Disposition = Conflict
+				matches[oursIdx].Base = matches[byKey[baseKey]].Base
+				// Ours is already set from the AddedOurs entry.
+				matches[oursIdx].Theirs = matches[theirsIdx].Theirs
+				consumed[baseKey] = true
+				consumed[theirsR.NewKey] = true
+			}
+		case hasOurs && !hasTheirs:
+			// Only ours renamed from a both-deleted base — treat as RenamedOurs.
+			addIdx := byKey[oursR.NewKey]
+			matches[addIdx].Disposition = RenamedOurs
+			matches[addIdx].Base = matches[byKey[baseKey]].Base
+			consumed[baseKey] = true
+		case !hasOurs && hasTheirs:
+			// Only theirs renamed from a both-deleted base — treat as RenamedTheirs.
+			addIdx := byKey[theirsR.NewKey]
+			matches[addIdx].Disposition = RenamedTheirs
+			matches[addIdx].Base = matches[byKey[baseKey]].Base
+			consumed[baseKey] = true
+		}
+	}
+
+	// Filter out consumed entries (the old keys that were replaced by renames).
+	filtered := make([]MatchedEntity, 0, len(matches))
+	for _, m := range matches {
+		if consumed[m.Key] {
+			continue
+		}
+		filtered = append(filtered, m)
+	}
+
+	return filtered
 }
 
 // classify determines the Disposition for an entity across three revisions.
