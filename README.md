@@ -90,7 +90,8 @@ graft init [path]                     Create a new repository
 graft add <files...>                  Stage files for commit
 graft commit -m <message>             Record changes
 graft status                          Show working tree status
-graft diff [--staged] [--entity]      Show changes (line-level or entity-level)
+graft diff [ref1..ref2] [--staged] [--entity] [--review] [--json]
+                                      Show changes (line-level, entity-level, or review summary)
 graft log [--oneline] [-n N] [--entity <selector>]  Show commit history
 graft show [commit-ish]               Show commit metadata and changed files
 ```
@@ -119,7 +120,8 @@ graft auth                            Authenticate with Orchard (setup, ssh-logi
 
 **History & Inspection**
 ```
-graft blame <path>                    Show structural blame for a file
+graft blame [<path>] [--entity <path::key>] [--limit N] [--json]
+                                      Structural blame for an entity or every entity in a file
 graft bisect start|good|bad|skip|reset|log|run  Binary search for a bug-introducing commit
 graft reflog                          Show local ref update history
 graft shortlog [-s] [-n]              Summarise commit history by author
@@ -129,7 +131,8 @@ graft tag [name]                      List, create, or delete tags
 **Working Tree**
 ```
 graft clean [-n] [-f] [-d]            Remove untracked files from the working tree
-graft grep [-i] [-F] <pattern>        Search tracked files for a pattern
+graft grep [-i] [-F] [--entity] [--kind <kind>] [--json] <pattern>
+                                      Search file content or entity names for a pattern
 graft stash [push|pop|apply|list|drop|show]  Stash and restore working directory changes
 graft reset [paths...]                Unstage paths (restore index from HEAD)
 graft rm [--cached] <paths...>        Remove paths from index and/or working tree
@@ -159,7 +162,7 @@ graft lfs status                      Show LFS status for tracked files
 ```
 graft archive [--format=tar|zip] <tree-ish>  Create an archive of files from a commit
 graft gc                              Pack loose objects and prune unreachable data
-graft verify                          Verify repository object integrity
+graft verify [--signatures] [--json]  Verify object integrity and commit signatures
 graft version                         Print version
 ```
 
@@ -228,6 +231,17 @@ graft diff
 
 # Entity-level diff — shows which functions/types changed
 graft diff --entity
+
+# Review summary — declaration-level changes only, good for PR review
+graft diff --review
+
+# Diff between two branches or commits
+graft diff main..feature
+graft diff main..feature --entity
+
+# JSON output for tooling (pairs with --entity or ref range)
+graft diff --json
+graft diff main..feature --json
 ```
 
 ## Architecture
@@ -278,8 +292,9 @@ What exists:
 - Entity extraction via tree-sitter (205 languages)
 - Three-way structural merge with entity-level resolution
 - Set-union import merging
-- Entity-level and line-level diff
-- Pack files with delta support (`graft gc`) and repository verification (`graft verify`)
+- Entity-level, line-level, and review-summary diff (`--entity`, `--review`)
+- Branch-to-branch diff (`graft diff ref1..ref2`) with entity and JSON output
+- Pack files with delta support (`graft gc`) and repository verification (`graft verify --json`)
 - Full CLI: 39 commands covering core workflows, branching, remotes, history, working tree, modules, LFS, and maintenance
 - Stash workflow (push, pop, apply, list, drop, show)
 - Rebase (standard, `--onto`, interactive, `--autostash`, conflict resolution with `--continue`/`--abort`/`--skip`)
@@ -287,7 +302,9 @@ What exists:
 - Revert with conflict resolution (`--continue`/`--abort`)
 - Bisect with automated script runner (`bisect run`)
 - Modules (`.graftmodules` + `.graftmodules.lock`) with branch tracking, shared object store, bidirectional development, merge-aware version resolution, and recursive fetch
-- Multiple worktrees, sparse checkout, grep, clean, shortlog, archive
+- Multiple worktrees, sparse checkout, clean, shortlog, archive
+- Batch blame: `graft blame <path>` attributes every entity in a file (`--json` for tooling)
+- Entity search: `graft grep --entity <pattern>` finds entities by name across the repo (`--kind`, `--json`)
 - SSH challenge/response auth for Orchard remotes
 - Git forge clone support (GitHub, GitLab, Bitbucket shorthand)
 - Large file storage (LFS) with pattern-based tracking
