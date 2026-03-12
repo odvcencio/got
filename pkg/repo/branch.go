@@ -17,8 +17,11 @@ var ErrBranchAlreadyExists = errors.New("branch already exists")
 
 // CreateBranch creates a new branch pointing at the given target hash.
 // It writes the hash to .graft/refs/heads/<name>. Returns an error if the
-// branch already exists.
+// branch already exists or if the name uses the reserved coord/ namespace.
 func (r *Repo) CreateBranch(name string, target object.Hash) error {
+	if strings.HasPrefix(name, "coord/") {
+		return fmt.Errorf("refs/coord/ namespace is reserved for coordination")
+	}
 	refName := filepath.ToSlash(filepath.Join("refs", "heads", name))
 	if err := r.UpdateRefCAS(refName, target, ""); err != nil {
 		if errors.Is(err, ErrRefCASMismatch) {

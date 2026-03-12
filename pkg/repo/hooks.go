@@ -7,6 +7,15 @@ import (
 	"path/filepath"
 )
 
+// AddEntityHook is called during Add after entity extraction for each file.
+// It receives the relative file path and the identity keys of all entities
+// found in that file. The CLI layer can set this hook to integrate with
+// coordination (e.g., acquiring claims on changed entities).
+//
+// If the hook returns an error, the Add operation logs a warning but
+// continues (coordination errors should not block staging).
+type AddEntityHook func(path string, entityKeys []string) error
+
 // HookName identifies a client-side hook trigger point.
 type HookName string
 

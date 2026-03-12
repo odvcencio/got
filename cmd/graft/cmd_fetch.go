@@ -13,6 +13,7 @@ import (
 func newFetchCmd() *cobra.Command {
 	var depth int
 	var deepen int
+	var coordFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "fetch [remote]",
@@ -54,6 +55,27 @@ func newFetchCmd() *cobra.Command {
 
 			fmt.Fprintf(cmd.OutOrStdout(), "fetched %d objects from %s\n", result.ObjectCount, result.RemoteName)
 
+			// If --coord is set, also fetch coord refs from the remote.
+			if coordFlag {
+				remoteURL, urlErr := r.RemoteURL(remoteName)
+				if urlErr == nil {
+					if client, clientErr := remote.NewClient(remoteURL); clientErr == nil {
+						remoteRefs, listErr := client.ListRefs(cmd.Context())
+						if listErr == nil {
+							for refName, h := range remoteRefs {
+								if strings.HasPrefix(refName, "refs/coord/") || strings.HasPrefix(refName, "coord/") {
+									localRef := refName
+									if !strings.HasPrefix(localRef, "refs/") {
+										localRef = "refs/" + localRef
+									}
+									_ = r.UpdateRef(localRef, h)
+								}
+							}
+						}
+					}
+				}
+			}
+
 			// Fetch any LFS objects referenced by the staging index.
 			remoteURL, urlErr := r.RemoteURL(remoteName)
 			if urlErr == nil {
@@ -74,6 +96,7 @@ func newFetchCmd() *cobra.Command {
 
 	cmd.Flags().IntVar(&depth, "depth", 0, "limit fetching to the specified number of commits from tip")
 	cmd.Flags().IntVar(&deepen, "deepen", 0, "deepen a shallow clone by the specified number of commits")
+	cmd.Flags().BoolVar(&coordFlag, "coord", false, "also fetch refs/coord/ coordination refs from the remote")
 
 	return cmd
 }

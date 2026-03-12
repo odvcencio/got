@@ -3,9 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/odvcencio/graft/pkg/coord"
+	"github.com/odvcencio/graft/pkg/object"
 	"github.com/odvcencio/graft/pkg/repo"
+	"github.com/odvcencio/graft/pkg/userconfig"
 	"github.com/spf13/cobra"
 )
 
@@ -124,6 +128,24 @@ func newCommitCmd() *cobra.Command {
 			if shouldSign {
 				fmt.Fprintf(cmd.OutOrStdout(), "signed with %s\n", signedWith)
 			}
+
+			// If coordination is active, run OnCommit hook.
+			agentIDPath := filepath.Join(r.GraftDir, "coord", "agent-id")
+			if agentIDData, readErr := os.ReadFile(agentIDPath); readErr == nil {
+				agentID := strings.TrimSpace(string(agentIDData))
+				if agentID != "" {
+					c := coord.New(r, coord.DefaultConfig)
+					c.AgentID = agentID
+					workspaces := make(map[string]string)
+					if cfg, cfgErr := userconfig.Load(); cfgErr == nil && cfg.Workspaces != nil {
+						workspaces = cfg.Workspaces
+					}
+					if coordErr := c.OnCommit(object.Hash(h), workspaces); coordErr != nil {
+						fmt.Fprintf(cmd.ErrOrStderr(), "warning: coordination hook failed: %v\n", coordErr)
+					}
+				}
+			}
+
 			return nil
 		},
 	}

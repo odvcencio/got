@@ -329,6 +329,17 @@ func (r *Repo) prepareAddEntry(relPath string) (*StagingEntry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("write entities %q: %w", relPath, err)
 		}
+
+		// Call the coordination hook with entity identity keys.
+		if r.AddHook != nil {
+			keys := make([]string, 0, len(el.Entities))
+			for i := range el.Entities {
+				keys = append(keys, el.Entities[i].IdentityKey())
+			}
+			// Errors from the hook are non-fatal; coordination should
+			// not block staging.
+			_ = r.AddHook(relPath, keys)
+		}
 	}
 
 	entry := &StagingEntry{

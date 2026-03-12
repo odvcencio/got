@@ -57,6 +57,10 @@ func main() {
 	root.AddCommand(newShortlogCmd())
 	root.AddCommand(newArchiveCmd())
 	root.AddCommand(newModuleCmd())
+	root.AddCommand(newWorkonCmd())
+	root.AddCommand(newCoordCmd())
+	root.AddCommand(newWorkspaceCmd())
+	root.AddCommand(newMCPCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

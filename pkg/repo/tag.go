@@ -14,6 +14,9 @@ import (
 // CreateTag creates or updates a lightweight tag ref under refs/tags/.
 func (r *Repo) CreateTag(name string, target object.Hash, force bool) error {
 	name = strings.TrimSpace(name)
+	if strings.HasPrefix(name, "coord/") {
+		return fmt.Errorf("refs/coord/ namespace is reserved for coordination")
+	}
 	if err := validateTagName(name); err != nil {
 		return fmt.Errorf("create tag: %w", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/odvcencio/graft/pkg/coord"
 	"github.com/odvcencio/graft/pkg/diff"
 	"github.com/odvcencio/graft/pkg/diff3"
 	"github.com/odvcencio/graft/pkg/object"
@@ -23,6 +24,7 @@ func newDiffCmd() *cobra.Command {
 	var entity bool
 	var jsonFlag bool
 	var reviewFlag bool
+	var coordFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "diff [ref1..ref2]",
@@ -67,10 +69,22 @@ func newDiffCmd() *cobra.Command {
 				}
 				return diffUnstagedJSON(cmd, r)
 			}
+
+			var result error
 			if staged {
-				return diffStaged(cmd, r, entity, reviewFlag)
+				result = diffStaged(cmd, r, entity, reviewFlag)
+			} else {
+				result = diffUnstaged(cmd, r, entity, reviewFlag)
 			}
-			return diffUnstaged(cmd, r, entity, reviewFlag)
+
+			// If --coord is set, annotate with claim info for changed files
+			if coordFlag && result == nil {
+				if err := printCoordAnnotations(cmd, r, staged); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "coord: %v\n", err)
+				}
+			}
+
+			return result
 		},
 	}
 
@@ -78,8 +92,84 @@ func newDiffCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&entity, "entity", false, "show entity-level structural diff")
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
 	cmd.Flags().BoolVar(&reviewFlag, "review", false, "show structural code review format")
+	cmd.Flags().BoolVar(&coordFlag, "coord", false, "annotate diff with coordination claim info")
 
 	return cmd
+}
+
+// printCoordAnnotations shows active coordination claims for files that have changes.
+func printCoordAnnotations(cmd *cobra.Command, r *repo.Repo, staged bool) error {
+	c := coord.New(r, coord.DefaultConfig)
+	out := cmd.OutOrStdout()
+
+	// Collect changed file paths
+	var changedFiles []string
+	if staged {
+		stg, err := r.ReadStaging()
+		if err != nil {
+			return err
+		}
+		headMap := make(map[string]repo.TreeFileEntry)
+		headHash, err := r.ResolveRef("HEAD")
+		if err == nil {
+			commit, err := r.Store.ReadCommit(headHash)
+			if err == nil {
+				entries, err := r.FlattenTree(commit.TreeHash)
+				if err == nil {
+					for _, e := range entries {
+						headMap[e.Path] = e
+					}
+				}
+			}
+		}
+		for p, se := range stg.Entries {
+			headEntry, inHead := headMap[p]
+			if !inHead || headEntry.BlobHash != se.BlobHash {
+				changedFiles = append(changedFiles, p)
+			}
+		}
+	} else {
+		stg, err := r.ReadStaging()
+		if err != nil {
+			return err
+		}
+		for p, se := range stg.Entries {
+			absPath := filepath.Join(r.RootDir, filepath.FromSlash(p))
+			workData, err := os.ReadFile(absPath)
+			if err != nil {
+				changedFiles = append(changedFiles, p)
+				continue
+			}
+			workHash := object.HashObject(object.TypeBlob, workData)
+			if workHash != se.BlobHash {
+				changedFiles = append(changedFiles, p)
+			}
+		}
+	}
+
+	if len(changedFiles) == 0 {
+		return nil
+	}
+
+	sort.Strings(changedFiles)
+
+	// Print claim annotations
+	var anyPrinted bool
+	for _, path := range changedFiles {
+		claims, err := c.ClaimsForFile(path)
+		if err != nil || len(claims) == 0 {
+			continue
+		}
+		if !anyPrinted {
+			fmt.Fprintln(out, "\n--- Coordination Claims ---")
+			anyPrinted = true
+		}
+		for _, cl := range claims {
+			fmt.Fprintf(out, "  %s: %s (%s, %s)\n", path, cl.EntityKey, cl.AgentName, cl.Mode)
+		}
+	}
+
+	return nil
 }
 
 // diffUnstaged compares the working tree against the staging area.

@@ -3,6 +3,7 @@ package repo
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -173,7 +174,43 @@ func TestBranch_ListHierarchical(t *testing.T) {
 	}
 }
 
-// Test 8: CreateBranch writes the correct hash to the ref file.
+// Test 8: CreateBranch rejects coord/ namespace.
+func TestCreateBranch_RejectsCoordNamespace(t *testing.T) {
+	r := initRepoWithFile(t, "main.go", []byte("package main\n\nfunc main() {}\n"))
+
+	h, err := r.Commit("initial commit", "test-author")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	err = r.CreateBranch("coord/test", h)
+	if err == nil {
+		t.Fatal("expected rejection of coord/ namespace")
+	}
+	if !strings.Contains(err.Error(), "reserved for coordination") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// Test 9: CreateTag rejects coord/ namespace.
+func TestCreateTag_RejectsCoordNamespace(t *testing.T) {
+	r := initRepoWithFile(t, "main.go", []byte("package main\n\nfunc main() {}\n"))
+
+	h, err := r.Commit("initial commit", "test-author")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	err = r.CreateTag("coord/test", h, false)
+	if err == nil {
+		t.Fatal("expected rejection of coord/ namespace")
+	}
+	if !strings.Contains(err.Error(), "reserved for coordination") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// Test 10: CreateBranch writes the correct hash to the ref file.
 func TestBranch_CreateWritesCorrectHash(t *testing.T) {
 	r := initRepoWithFile(t, "main.go", []byte("package main\n\nfunc main() {}\n"))
 

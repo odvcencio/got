@@ -98,6 +98,60 @@ func TestDefaultOrchardURLFallsBackToSingleProfile(t *testing.T) {
 	}
 }
 
+func TestConfigWorkspacesRoundTrip(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	in := &Config{
+		Workspaces: map[string]string{
+			"default": "/home/draco/work/myproject",
+			"scratch": "/tmp/scratch-area",
+		},
+		Coord: CoordConfig{
+			HeartbeatInterval:   "30s",
+			StaleThreshold:      "5m",
+			AutoPushCoord:       true,
+			FeedRetention:       "72h",
+			DefaultConflictMode: "manual",
+		},
+	}
+	if err := Save(in); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	out, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	// Verify Workspaces round-trip
+	if len(out.Workspaces) != len(in.Workspaces) {
+		t.Fatalf("Workspaces length = %d, want %d", len(out.Workspaces), len(in.Workspaces))
+	}
+	for k, want := range in.Workspaces {
+		if got := out.Workspaces[k]; got != want {
+			t.Fatalf("Workspaces[%q] = %q, want %q", k, got, want)
+		}
+	}
+
+	// Verify Coord round-trip
+	if out.Coord.HeartbeatInterval != in.Coord.HeartbeatInterval {
+		t.Fatalf("Coord.HeartbeatInterval = %q, want %q", out.Coord.HeartbeatInterval, in.Coord.HeartbeatInterval)
+	}
+	if out.Coord.StaleThreshold != in.Coord.StaleThreshold {
+		t.Fatalf("Coord.StaleThreshold = %q, want %q", out.Coord.StaleThreshold, in.Coord.StaleThreshold)
+	}
+	if out.Coord.AutoPushCoord != in.Coord.AutoPushCoord {
+		t.Fatalf("Coord.AutoPushCoord = %v, want %v", out.Coord.AutoPushCoord, in.Coord.AutoPushCoord)
+	}
+	if out.Coord.FeedRetention != in.Coord.FeedRetention {
+		t.Fatalf("Coord.FeedRetention = %q, want %q", out.Coord.FeedRetention, in.Coord.FeedRetention)
+	}
+	if out.Coord.DefaultConflictMode != in.Coord.DefaultConflictMode {
+		t.Fatalf("Coord.DefaultConflictMode = %q, want %q", out.Coord.DefaultConflictMode, in.Coord.DefaultConflictMode)
+	}
+}
+
 func TestOrchardProfileDoesNotLeakAcrossHosts(t *testing.T) {
 	cfg := &Config{
 		OrchardURL: "https://orchard.example.com",

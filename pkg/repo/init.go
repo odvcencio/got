@@ -410,6 +410,62 @@ func (r *Repo) UpdateRefCAS(name string, h object.Hash, expectedOld ...object.Ha
 	return nil
 }
 
+// DeleteRefCAS removes a ref atomically, only if its current value matches expectedOld.
+// Follows the same lock pattern as UpdateRefCAS: acquireRefLock on lockPath,
+// readRefHash under lock, remove ref file, then clean up lock.
+func (r *Repo) DeleteRefCAS(name string, expectedOld object.Hash) error {
+	baseDir := r.refsBaseDir()
+	refPath := filepath.Join(baseDir, name)
+	lockPath := refPath + ".lock"
+
+	lockFile, err := acquireRefLock(lockPath)
+	if err != nil {
+		return fmt.Errorf("delete ref %q: lock: %w", name, err)
+	}
+	defer func() {
+		if lockFile != nil {
+			_ = lockFile.Close()
+		}
+		_ = os.Remove(lockPath)
+	}()
+
+	// Read under lock — authoritative check
+	oldHash, err := readRefHash(refPath)
+	if err != nil {
+		return fmt.Errorf("delete ref %q: read: %w", name, err)
+	}
+	if oldHash == "" {
+		return fmt.Errorf("delete ref %q: not found", name)
+	}
+	if oldHash != expectedOld {
+		return fmt.Errorf(
+			"delete ref %q: %w (expected %s, found %s)",
+			name, ErrRefCASMismatch, expectedOld, oldHash,
+		)
+	}
+
+	if err := os.Remove(refPath); err != nil {
+		return fmt.Errorf("delete ref %q: remove: %w", name, err)
+	}
+
+	_ = lockFile.Close()
+	lockFile = nil
+
+	// Clean up empty parent directories up to refs/
+	dir := filepath.Dir(refPath)
+	refsDir := filepath.Join(baseDir, "refs")
+	for dir != refsDir && dir != baseDir {
+		entries, _ := os.ReadDir(dir)
+		if len(entries) > 0 {
+			break
+		}
+		os.Remove(dir)
+		dir = filepath.Dir(dir)
+	}
+
+	return nil
+}
+
 func acquireRefLock(lockPath string) (*os.File, error) {
 	deadline := time.Now().Add(refLockWaitLimit)
 	for {

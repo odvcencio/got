@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -545,6 +546,62 @@ func TestResolveTreeish_TagTakesPriorityOverBranch(t *testing.T) {
 	}
 	if resolved != h1 {
 		t.Fatalf("ResolveTreeish(ambiguous) = %q, want tag hash %q", resolved, h1)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DeleteRefCAS
+// ---------------------------------------------------------------------------
+
+func TestDeleteRefCAS_Success(t *testing.T) {
+	r, err := Init(t.TempDir())
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	// Create a ref
+	h := object.Hash("abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234")
+	if err := r.UpdateRef("refs/coord/test/ref1", h); err != nil {
+		t.Fatalf("UpdateRef: %v", err)
+	}
+	// Delete with correct expected old
+	if err := r.DeleteRefCAS("refs/coord/test/ref1", h); err != nil {
+		t.Fatalf("DeleteRefCAS: %v", err)
+	}
+	// Verify ref is gone
+	_, err = r.ResolveRef("refs/coord/test/ref1")
+	if err == nil {
+		t.Fatal("expected error resolving deleted ref")
+	}
+}
+
+func TestDeleteRefCAS_Mismatch(t *testing.T) {
+	r, err := Init(t.TempDir())
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	h := object.Hash("abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234")
+	if err := r.UpdateRef("refs/coord/test/ref1", h); err != nil {
+		t.Fatalf("UpdateRef: %v", err)
+	}
+	wrong := object.Hash("0000000000000000000000000000000000000000000000000000000000000000")
+	err = r.DeleteRefCAS("refs/coord/test/ref1", wrong)
+	if err == nil {
+		t.Fatal("expected CAS mismatch error")
+	}
+	if !errors.Is(err, ErrRefCASMismatch) {
+		t.Fatalf("expected ErrRefCASMismatch, got: %v", err)
+	}
+}
+
+func TestDeleteRefCAS_NotFound(t *testing.T) {
+	r, err := Init(t.TempDir())
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	h := object.Hash("abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234")
+	err = r.DeleteRefCAS("refs/coord/nonexistent", h)
+	if err == nil {
+		t.Fatal("expected error deleting non-existent ref")
 	}
 }
 

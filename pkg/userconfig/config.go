@@ -26,6 +26,14 @@ type OrchardProfile struct {
 	Owner    string `json:"owner,omitempty"`
 }
 
+type CoordConfig struct {
+	HeartbeatInterval   string `json:"heartbeat_interval,omitempty"`
+	StaleThreshold      string `json:"stale_threshold,omitempty"`
+	AutoPushCoord       bool   `json:"auto_push_coord,omitempty"`
+	FeedRetention       string `json:"feed_retention,omitempty"`
+	DefaultConflictMode string `json:"default_conflict_mode,omitempty"`
+}
+
 type Config struct {
 	Version         int                       `json:"version"`
 	Name            string                    `json:"name,omitempty"`
@@ -37,9 +45,8 @@ type Config struct {
 	OrchardProfiles map[string]OrchardProfile `json:"orchard_profiles,omitempty"`
 	SigningKeyPath  string                    `json:"signing_key_path,omitempty"`
 	AutoSign        bool                      `json:"auto_sign,omitempty"`
-	AIProvider      string                    `json:"ai_provider,omitempty"` // "claude" (default) or future providers
-	AIAPIKey        string                    `json:"ai_api_key,omitempty"`  // API key for AI provider
-	AIModel         string                    `json:"ai_model,omitempty"`    // model override (e.g. "claude-opus-4-20250514")
+	Workspaces      map[string]string         `json:"workspaces,omitempty"`
+	Coord           CoordConfig               `json:"coord,omitempty"`
 }
 
 // Load reads ~/.graftconfig. Missing file returns an empty config.
@@ -229,9 +236,6 @@ func (c *Config) normalize() {
 	c.Username = strings.TrimSpace(c.Username)
 	c.Owner = strings.TrimSpace(c.Owner)
 	c.SigningKeyPath = strings.TrimSpace(c.SigningKeyPath)
-	c.AIProvider = strings.TrimSpace(c.AIProvider)
-	c.AIAPIKey = strings.TrimSpace(c.AIAPIKey)
-	c.AIModel = strings.TrimSpace(c.AIModel)
 
 	if len(c.OrchardProfiles) > 0 {
 		normalized := make(map[string]OrchardProfile, len(c.OrchardProfiles))

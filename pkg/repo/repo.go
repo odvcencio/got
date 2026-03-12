@@ -27,6 +27,11 @@ type Repo struct {
 	shallowOnce  sync.Once
 	shallowState *remote.ShallowState
 	shallowErr   error
+
+	// AddHook, if set, is called during Add after entity extraction for each
+	// file. It receives the relative path and the identity keys of entities
+	// found in the file. Errors are logged as warnings but do not block staging.
+	AddHook AddEntityHook
 }
 
 func (r *Repo) getMergeTraversalState() *mergeBaseTraversalState {
