@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -163,6 +164,93 @@ func TestStoreGCReachablePacksOnlyReachableObjectsAndIsIdempotent(t *testing.T) 
 	}
 	if _, err := os.Stat(s.objectPath(unreachableBlob)); err != nil {
 		t.Fatalf("expected unreachable loose object to remain after second GCReachable, stat err=%v", err)
+	}
+}
+
+func TestStoreGCDeterministicPackAndIndexOutput(t *testing.T) {
+	prevProcs := runtime.GOMAXPROCS(4)
+	defer runtime.GOMAXPROCS(prevProcs)
+
+	stores := []*Store{tempStore(t), tempStore(t)}
+	for i, s := range stores {
+		blobHash, err := s.Write(TypeBlob, []byte("alpha blob"))
+		if err != nil {
+			t.Fatalf("store[%d] Write(blob): %v", i, err)
+		}
+		if _, err := s.WriteEntity(&EntityObj{
+			Kind:     "decl",
+			Name:     "Shared",
+			DeclKind: "function",
+			Body:     []byte("func Shared() {}"),
+			BodyHash: HashObject(TypeBlob, []byte("func Shared() {}")),
+		}); err != nil {
+			t.Fatalf("store[%d] WriteEntity: %v", i, err)
+		}
+		treeHash, err := s.WriteTree(&TreeObj{
+			Entries: []TreeEntry{
+				{
+					Name:     "alpha.txt",
+					Mode:     TreeModeFile,
+					BlobHash: blobHash,
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("store[%d] WriteTree: %v", i, err)
+		}
+		if _, err := s.WriteCommit(&CommitObj{
+			TreeHash:  treeHash,
+			Author:    "tester",
+			Timestamp: 1,
+			Message:   "initial",
+		}); err != nil {
+			t.Fatalf("store[%d] WriteCommit: %v", i, err)
+		}
+		for n := 0; n < 24; n++ {
+			payload := bytes.Repeat([]byte{byte('a' + (n % 26))}, 256+n*17)
+			if _, err := s.Write(TypeBlob, payload); err != nil {
+				t.Fatalf("store[%d] Write(extra blob %d): %v", i, n, err)
+			}
+		}
+	}
+
+	summaryA, err := stores[0].GC()
+	if err != nil {
+		t.Fatalf("store[0] GC: %v", err)
+	}
+	summaryB, err := stores[1].GC()
+	if err != nil {
+		t.Fatalf("store[1] GC: %v", err)
+	}
+	if summaryA.PackFile != summaryB.PackFile {
+		t.Fatalf("pack file names differ: %s vs %s", summaryA.PackFile, summaryB.PackFile)
+	}
+	if summaryA.IndexFile != summaryB.IndexFile {
+		t.Fatalf("index file names differ: %s vs %s", summaryA.IndexFile, summaryB.IndexFile)
+	}
+
+	packA, err := os.ReadFile(filepath.Join(stores[0].root, "objects", "pack", summaryA.PackFile))
+	if err != nil {
+		t.Fatalf("ReadFile(packA): %v", err)
+	}
+	packB, err := os.ReadFile(filepath.Join(stores[1].root, "objects", "pack", summaryB.PackFile))
+	if err != nil {
+		t.Fatalf("ReadFile(packB): %v", err)
+	}
+	if !bytes.Equal(packA, packB) {
+		t.Fatalf("pack output differs across identical stores")
+	}
+
+	idxA, err := os.ReadFile(filepath.Join(stores[0].root, "objects", "pack", summaryA.IndexFile))
+	if err != nil {
+		t.Fatalf("ReadFile(idxA): %v", err)
+	}
+	idxB, err := os.ReadFile(filepath.Join(stores[1].root, "objects", "pack", summaryB.IndexFile))
+	if err != nil {
+		t.Fatalf("ReadFile(idxB): %v", err)
+	}
+	if !bytes.Equal(idxA, idxB) {
+		t.Fatalf("index output differs across identical stores")
 	}
 }
 

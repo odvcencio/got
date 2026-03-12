@@ -212,10 +212,24 @@ func pushObjectsChunked(ctx context.Context, client *remote.Client, objects []re
 	chunk := make([]remote.ObjectRecord, 0, maxChunkObjects)
 	chunkBytes := 0
 	uploaded := 0
+	usePack := shouldUsePackPush(client)
 
 	flush := func() error {
 		if len(chunk) == 0 {
 			return nil
+		}
+		if usePack {
+			if err := client.PushObjectsPack(ctx, chunk); err != nil {
+				if !remote.IsPackUploadUnsupported(err) {
+					return err
+				}
+				usePack = false
+			} else {
+				uploaded += len(chunk)
+				chunk = chunk[:0]
+				chunkBytes = 0
+				return nil
+			}
 		}
 		if err := client.PushObjects(ctx, chunk); err != nil {
 			return err
@@ -243,4 +257,15 @@ func pushObjectsChunked(ctx context.Context, client *remote.Client, objects []re
 		return uploaded, err
 	}
 	return uploaded, nil
+}
+
+func shouldUsePackPush(client *remote.Client) bool {
+	if client == nil {
+		return false
+	}
+	caps := client.ServerCapabilities()
+	if caps == nil {
+		return true
+	}
+	return caps.Has(remote.CapPack) && caps.Has(remote.CapZstd)
 }

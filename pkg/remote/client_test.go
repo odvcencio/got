@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/odvcencio/graft/pkg/object"
+	"github.com/odvcencio/graft/pkg/userconfig"
 )
 
 func TestParseEndpoint(t *testing.T) {
@@ -72,6 +73,88 @@ func TestParseEndpoint(t *testing.T) {
 				t.Fatalf("Repo = %q, want %q", ep.Repo, tc.wantRepo)
 			}
 		})
+	}
+}
+
+func TestEndpointOrchardBaseURL(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "root mounted orchard",
+			in:   "https://example.com/graft/alice/proj",
+			want: "https://example.com",
+		},
+		{
+			name: "api prefix orchard",
+			in:   "https://example.com/api/v1/graft/alice/proj",
+			want: "https://example.com/api/v1",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ep, err := ParseEndpoint(tc.in)
+			if err != nil {
+				t.Fatalf("ParseEndpoint: %v", err)
+			}
+			if got := ep.OrchardBaseURL(); got != tc.want {
+				t.Fatalf("OrchardBaseURL() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewClientUsesHostScopedConfigToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := userconfig.Save(&userconfig.Config{
+		OrchardURL: "https://orchard.example.com",
+		Token:      "default-token",
+		Username:   "default-user",
+		Owner:      "default-owner",
+		OrchardProfiles: map[string]userconfig.OrchardProfile{
+			"https://code.example.com/api/v1": {
+				Token:    "code-token",
+				Username: "code-user",
+				Owner:    "code-owner",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	client, err := NewClient("https://code.example.com/api/v1/graft/alice/repo")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if client.token != "code-token" {
+		t.Fatalf("client.token = %q, want code-token", client.token)
+	}
+}
+
+func TestNewClientDoesNotReuseOtherHostToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := userconfig.Save(&userconfig.Config{
+		OrchardURL: "https://orchard.example.com",
+		Token:      "default-token",
+		Username:   "default-user",
+		Owner:      "default-owner",
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	client, err := NewClient("https://code.example.com/api/v1/graft/alice/repo")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if client.token != "" {
+		t.Fatalf("client.token = %q, want empty for unmatched host", client.token)
 	}
 }
 
@@ -428,6 +511,58 @@ func TestPushObjectsPackRoundTrip(t *testing.T) {
 	}
 	if rec.Type != object.TypeBlob {
 		t.Fatalf("type = %s, want blob", rec.Type)
+	}
+}
+
+func TestPushObjectsPackReturnsUnsupportedErrorForLegacyServer(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	blobData := object.MarshalBlob(&object.Blob{Data: []byte("pack-push-test\n")})
+	err = client.PushObjectsPack(t.Context(), []ObjectRecord{
+		{Type: object.TypeBlob, Data: blobData},
+	})
+	if err == nil {
+		t.Fatal("expected pack upload unsupported error")
+	}
+	if !IsPackUploadUnsupported(err) {
+		t.Fatalf("expected IsPackUploadUnsupported(err) = true, got %v", err)
+	}
+}
+
+func TestClientCachesServerCapabilities(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Graft-Capabilities", "pack,zstd")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"heads/main": strings.Repeat("a", 64),
+		})
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(ts.URL + "/graft/alice/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.ServerCapabilities() != nil {
+		t.Fatal("expected nil capabilities before any request")
+	}
+	if _, err := client.ListRefs(t.Context()); err != nil {
+		t.Fatalf("ListRefs: %v", err)
+	}
+	caps := client.ServerCapabilities()
+	if caps == nil {
+		t.Fatal("expected capabilities to be cached after request")
+	}
+	if !caps.Has(CapPack) || !caps.Has(CapZstd) {
+		t.Fatalf("unexpected capabilities: %s", caps.String())
 	}
 }
 

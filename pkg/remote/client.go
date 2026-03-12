@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -160,13 +161,17 @@ type Client struct {
 	pass         string
 	maxAttempts  int
 	serverLimits *ServerLimits
+	serverCaps   *Capabilities
 }
+
+// ErrPackUploadUnsupported indicates the remote does not accept pack uploads.
+var ErrPackUploadUnsupported = errors.New("pack upload unsupported")
 
 // NewClient creates a remote protocol client with default options.
 //
 // Auth resolution order:
 // 1) GRAFT_TOKEN (Bearer)
-// 2) ~/.graftconfig token (Bearer)
+// 2) ~/.graftconfig host-matching Orchard profile token (Bearer)
 // 3) GRAFT_USERNAME + GRAFT_PASSWORD (Basic)
 // 4) URL userinfo (Basic)
 func NewClient(remoteURL string) (*Client, error) {
@@ -193,7 +198,7 @@ func NewClientWithOptions(remoteURL string, opts ClientOptions) (*Client, error)
 	pass := os.Getenv("GRAFT_PASSWORD")
 	if token == "" {
 		if cfg, err := userconfig.Load(); err == nil {
-			token = strings.TrimSpace(cfg.Token)
+			token = strings.TrimSpace(cfg.OrchardProfile(endpoint.OrchardBaseURL()).Token)
 		}
 	}
 	if token == "" && user == "" && endpoint.user != "" {
@@ -218,9 +223,47 @@ func (c *Client) Endpoint() Endpoint {
 	return c.endpoint
 }
 
+// OrchardBaseURL returns the Orchard server base URL for this endpoint, with the
+// trailing /graft/{owner}/{repo} path removed.
+func (e Endpoint) OrchardBaseURL() string {
+	u, err := url.Parse(e.BaseURL)
+	if err != nil {
+		return ""
+	}
+	segments := splitPathSegments(u.Path)
+	for i := 0; i+2 < len(segments); i++ {
+		if segments[i] != "graft" {
+			continue
+		}
+		segments = segments[:i]
+		break
+	}
+	if len(segments) == 0 {
+		u.Path = ""
+	} else {
+		u.Path = "/" + strings.Join(segments, "/")
+	}
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.User = nil
+	return strings.TrimRight(u.String(), "/")
+}
+
 // ServerLimits returns the cached server-advertised limits, or nil if not yet received.
 func (c *Client) ServerLimits() *ServerLimits {
 	return c.serverLimits
+}
+
+// ServerCapabilities returns the cached server-advertised capabilities, or nil
+// if the server has not advertised any yet.
+func (c *Client) ServerCapabilities() *Capabilities {
+	return c.serverCaps
+}
+
+func (c *Client) cacheServerMetadata(resp *http.Response) {
+	c.cacheServerLimits(resp)
+	c.cacheServerCapabilities(resp)
 }
 
 func (c *Client) cacheServerLimits(resp *http.Response) {
@@ -233,6 +276,18 @@ func (c *Client) cacheServerLimits(resp *http.Response) {
 	}
 	limits := ParseLimits(raw)
 	c.serverLimits = &limits
+}
+
+func (c *Client) cacheServerCapabilities(resp *http.Response) {
+	if c.serverCaps != nil {
+		return
+	}
+	raw := strings.TrimSpace(resp.Header.Get(headerCapabilities))
+	if raw == "" {
+		return
+	}
+	caps := ParseCapabilities(raw)
+	c.serverCaps = &caps
 }
 
 // ListRefs returns all remote refs (e.g. heads/main, tags/v1).
@@ -511,9 +566,9 @@ func (c *Client) BatchObjectsPackShallow(ctx context.Context, wants, haves []obj
 	// JSON fallback: server returned application/json.
 	var jsonResp struct {
 		Objects []struct {
-			Hash    string `json:"hash"`
-			Type    string `json:"type"`
-			Data    []byte `json:"data"`
+			Hash string `json:"hash"`
+			Type string `json:"type"`
+			Data []byte `json:"data"`
 		} `json:"objects"`
 		Truncated bool     `json:"truncated"`
 		Shallow   []string `json:"shallow"`
@@ -673,6 +728,7 @@ func (c *Client) PushObjectsPack(ctx context.Context, objects []ObjectRecord) er
 		return err
 	}
 	defer resp.Body.Close()
+	c.cacheServerMetadata(resp)
 
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if readErr != nil {
@@ -681,11 +737,17 @@ func (c *Client) PushObjectsPack(ctx context.Context, objects []ObjectRecord) er
 
 	if resp.StatusCode != http.StatusOK {
 		if re := tryParseRemoteError(body); re != nil {
+			if isPackUploadUnsupportedResponse(resp.StatusCode, re.Error()) {
+				return fmt.Errorf("%w: %v", ErrPackUploadUnsupported, re)
+			}
 			return re
 		}
 		msg := strings.TrimSpace(string(body))
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
+		}
+		if isPackUploadUnsupportedResponse(resp.StatusCode, msg) {
+			return fmt.Errorf("%w: remote request failed (%s %s): %s", ErrPackUploadUnsupported, req.Method, req.URL.Path, msg)
 		}
 		return fmt.Errorf("remote request failed (%s %s): %s", req.Method, req.URL.Path, msg)
 	}
@@ -769,7 +831,7 @@ func (c *Client) doWithLimit(req *http.Request, expectedStatus int, maxBytes int
 		return nil, err
 	}
 	defer resp.Body.Close()
-	c.cacheServerLimits(resp)
+	c.cacheServerMetadata(resp)
 
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
 	if readErr != nil {
@@ -823,4 +885,28 @@ func parseObjectType(raw string) (object.ObjectType, error) {
 	default:
 		return "", fmt.Errorf("unsupported object type %q", raw)
 	}
+}
+
+// IsPackUploadUnsupported reports whether err indicates the remote rejected
+// pack upload transport and the caller should fall back to compatibility mode.
+func IsPackUploadUnsupported(err error) bool {
+	return errors.Is(err, ErrPackUploadUnsupported)
+}
+
+func isPackUploadUnsupportedResponse(status int, msg string) bool {
+	switch status {
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusUnsupportedMediaType, http.StatusNotImplemented:
+		return true
+	}
+	msg = strings.ToLower(strings.TrimSpace(msg))
+	if msg == "" {
+		return false
+	}
+	if strings.Contains(msg, "unsupported media type") || strings.Contains(msg, "not implemented") {
+		return true
+	}
+	if strings.Contains(msg, "application/x-graft-pack") || strings.Contains(msg, "content-encoding") || strings.Contains(msg, "zstd") {
+		return true
+	}
+	return strings.Contains(msg, "unsupported") && strings.Contains(msg, "pack")
 }

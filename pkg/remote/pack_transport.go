@@ -2,8 +2,11 @@ package remote
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"runtime"
+	"sync"
 
 	"github.com/odvcencio/graft/pkg/object"
 )
@@ -42,28 +45,23 @@ func packTypeToObjectType(t object.PackObjectType) (object.ObjectType, bool) {
 
 // EncodePackTransport encodes ObjectRecords into a pack stream.
 func EncodePackTransport(w io.Writer, records []ObjectRecord) error {
+	prepared, err := preparePackTransportEntries(records)
+	if err != nil {
+		return err
+	}
+
 	pw, err := object.NewPackWriter(w, uint32(len(records)))
 	if err != nil {
 		return fmt.Errorf("create pack writer: %w", err)
 	}
 
-	var entityEntries []object.PackEntityTrailerEntry
-
-	for _, rec := range records {
-		packType, ok := objectTypeToPackType(rec.Type)
-		if !ok {
-			return fmt.Errorf("unsupported object type %q", rec.Type)
+	entityEntries := make([]object.PackEntityTrailerEntry, 0, len(prepared))
+	for _, entry := range prepared {
+		if entry.entityTrailer != nil {
+			entityEntries = append(entityEntries, *entry.entityTrailer)
 		}
-
-		if rec.Type == object.TypeEntity || rec.Type == object.TypeEntityList {
-			entityEntries = append(entityEntries, object.PackEntityTrailerEntry{
-				ObjectHash: rec.Hash,
-				StableID:   "type:" + string(rec.Type),
-			})
-		}
-
-		if err := pw.WriteEntry(packType, rec.Data); err != nil {
-			return fmt.Errorf("write pack entry for %s: %w", rec.Hash, err)
+		if err := pw.WriteCompressedEntry(entry.packType, entry.rawSize, entry.compressed); err != nil {
+			return fmt.Errorf("write pack entry for %s: %w", entry.hash, err)
 		}
 	}
 
@@ -78,6 +76,121 @@ func EncodePackTransport(w io.Writer, records []ObjectRecord) error {
 	}
 
 	return nil
+}
+
+type preparedPackTransportEntry struct {
+	hash          object.Hash
+	packType      object.PackObjectType
+	rawSize       uint64
+	compressed    []byte
+	entityTrailer *object.PackEntityTrailerEntry
+}
+
+func preparePackTransportEntries(records []ObjectRecord) ([]preparedPackTransportEntry, error) {
+	if len(records) == 0 {
+		return nil, nil
+	}
+
+	prepared := make([]preparedPackTransportEntry, len(records))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	var setErr sync.Once
+	var firstErr error
+
+	setFirstErr := func(err error) {
+		setErr.Do(func() {
+			firstErr = err
+			cancel()
+		})
+	}
+
+	for worker := 0; worker < packTransportWorkerCount(len(records)); worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case idx, ok := <-jobs:
+					if !ok {
+						return
+					}
+					entry, err := preparePackTransportEntry(records[idx])
+					if err != nil {
+						setFirstErr(fmt.Errorf("prepare pack object %d: %w", idx, err))
+						return
+					}
+					prepared[idx] = entry
+				}
+			}
+		}()
+	}
+
+enqueueLoop:
+	for idx := range records {
+		select {
+		case <-ctx.Done():
+			break enqueueLoop
+		case jobs <- idx:
+		}
+	}
+	close(jobs)
+	workers.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return prepared, nil
+}
+
+func preparePackTransportEntry(rec ObjectRecord) (preparedPackTransportEntry, error) {
+	packType, ok := objectTypeToPackType(rec.Type)
+	if !ok {
+		return preparedPackTransportEntry{}, fmt.Errorf("unsupported object type %q", rec.Type)
+	}
+
+	compressed, err := object.CompressPackPayload(rec.Data)
+	if err != nil {
+		return preparedPackTransportEntry{}, fmt.Errorf("compress pack entry: %w", err)
+	}
+
+	hash := rec.Hash
+	if hash == "" {
+		hash = object.HashObject(rec.Type, rec.Data)
+	}
+
+	entry := preparedPackTransportEntry{
+		hash:       hash,
+		packType:   packType,
+		rawSize:    uint64(len(rec.Data)),
+		compressed: compressed,
+	}
+	if rec.Type == object.TypeEntity || rec.Type == object.TypeEntityList {
+		entityEntry := object.PackEntityTrailerEntry{
+			ObjectHash: hash,
+			StableID:   "type:" + string(rec.Type),
+		}
+		entry.entityTrailer = &entityEntry
+	}
+	return entry, nil
+}
+
+func packTransportWorkerCount(total int) int {
+	if total <= 1 {
+		return total
+	}
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > total {
+		return total
+	}
+	return workers
 }
 
 // DecodePackTransport decodes a pack stream into ObjectRecords.

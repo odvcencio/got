@@ -1,0 +1,266 @@
+# name repo_url [subdir] [ext1,ext2,...]
+# Use with:
+#   go run ./cmd/ts2go -manifest grammars/languages.manifest -outdir ./grammars -package grammars
+
+bash https://github.com/tree-sitter/tree-sitter-bash src .sh
+c https://github.com/tree-sitter/tree-sitter-c src .c,.h
+cpp https://github.com/tree-sitter/tree-sitter-cpp src .cc,.cpp,.cxx,.hpp,.hh,.hxx,.h
+css https://github.com/tree-sitter/tree-sitter-css src .css
+go https://github.com/tree-sitter/tree-sitter-go src .go
+html https://github.com/tree-sitter/tree-sitter-html src .html,.htm
+java https://github.com/tree-sitter/tree-sitter-java src .java
+javascript https://github.com/tree-sitter/tree-sitter-javascript src .js,.mjs,.cjs
+json https://github.com/tree-sitter/tree-sitter-json src .json
+kotlin https://github.com/fwcd/tree-sitter-kotlin src .kt,.kts
+lua https://github.com/tree-sitter-grammars/tree-sitter-lua src .lua
+php https://github.com/tree-sitter/tree-sitter-php php/src .php
+python https://github.com/tree-sitter/tree-sitter-python src .py
+ruby https://github.com/tree-sitter/tree-sitter-ruby src .rb
+rust https://github.com/tree-sitter/tree-sitter-rust src .rs
+sql https://github.com/m-novikov/tree-sitter-sql src .sql
+swift https://github.com/tree-sitter/tree-sitter-swift src .swift
+toml https://github.com/tree-sitter/tree-sitter-toml src .toml
+tsx https://github.com/tree-sitter/tree-sitter-typescript tsx/src .tsx
+typescript https://github.com/tree-sitter/tree-sitter-typescript typescript/src .ts
+yaml https://github.com/tree-sitter-grammars/tree-sitter-yaml src .yaml,.yml
+zig https://github.com/maxxnino/tree-sitter-zig src .zig
+scala https://github.com/tree-sitter/tree-sitter-scala src .scala
+elixir https://github.com/elixir-lang/tree-sitter-elixir src .ex,.exs
+graphql https://github.com/bkegley/tree-sitter-graphql src .graphql,.gql
+hcl https://github.com/tree-sitter-grammars/tree-sitter-hcl src .hcl,.tf,.tfvars
+nix https://github.com/nix-community/tree-sitter-nix src .nix
+
+# === tree-sitter org (official) ===
+c_sharp https://github.com/tree-sitter/tree-sitter-c-sharp src .cs
+haskell https://github.com/tree-sitter/tree-sitter-haskell src .hs,.lhs
+julia https://github.com/tree-sitter/tree-sitter-julia src .jl
+ocaml https://github.com/tree-sitter/tree-sitter-ocaml grammars/ocaml/src .ml,.mli
+regex https://github.com/tree-sitter/tree-sitter-regex src .regex
+agda https://github.com/tree-sitter/tree-sitter-agda src .agda
+embedded_template https://github.com/tree-sitter/tree-sitter-embedded-template src .erb,.ejs
+verilog https://github.com/tree-sitter/tree-sitter-verilog src .v,.sv,.svh
+
+# === expansion batch (ts2go probe-verified) ===
+ada https://github.com/briot/tree-sitter-ada src
+angular https://github.com/dlvandenberg/tree-sitter-angular src
+apex https://github.com/aheber/tree-sitter-sfapex apex/src
+arduino https://github.com/ObserverOfTime/tree-sitter-arduino src
+asm https://github.com/RubixDev/tree-sitter-asm src .s,.asm
+astro https://github.com/virchau13/tree-sitter-astro src
+authzed https://github.com/mleonidas/tree-sitter-authzed src
+awk https://github.com/Beaglefoot/tree-sitter-awk src
+bass https://github.com/vito/tree-sitter-bass src
+beancount https://github.com/polarmutex/tree-sitter-beancount src
+bibtex https://github.com/latex-lsp/tree-sitter-bibtex src
+bicep https://github.com/amaanq/tree-sitter-bicep src
+bitbake https://github.com/amaanq/tree-sitter-bitbake src
+blade https://github.com/EmranMR/tree-sitter-blade src
+brightscript https://github.com/ajdelcimmuto/tree-sitter-brightscript a59e5bd5151d37a95c7e9544957be94b905a10f3 src
+caddy https://github.com/opa-oz/tree-sitter-caddy src
+cairo https://github.com/amaanq/tree-sitter-cairo src
+capnp https://github.com/amaanq/tree-sitter-capnp src
+chatito https://github.com/ObserverOfTime/tree-sitter-chatito src
+circom https://github.com/Decurity/tree-sitter-circom src
+cmake https://github.com/uyha/tree-sitter-cmake src
+comment https://github.com/stsewd/tree-sitter-comment src
+commonlisp https://github.com/theHamsta/tree-sitter-commonlisp src
+cooklang https://github.com/addcninblue/tree-sitter-cooklang src
+corn https://github.com/jakestanger/tree-sitter-corn src
+cpon https://github.com/amaanq/tree-sitter-cpon src
+csv https://github.com/amaanq/tree-sitter-csv csv/src
+cuda https://github.com/theHamsta/tree-sitter-cuda src
+cue https://github.com/eonpatapon/tree-sitter-cue src
+cylc https://github.com/elliotfontaine/tree-sitter-cylc src
+d https://github.com/gdamore/tree-sitter-d src
+dart https://github.com/UserNobody14/tree-sitter-dart src
+desktop https://github.com/ValdezFOmar/tree-sitter-desktop src
+devicetree https://github.com/joelspadin/tree-sitter-devicetree src
+diff https://github.com/the-mikedavis/tree-sitter-diff src
+disassembly https://github.com/ColinKennedy/tree-sitter-disassembly src .dis,.dump
+djot https://github.com/treeman/tree-sitter-djot src
+dockerfile https://github.com/camdencheek/tree-sitter-dockerfile src
+doxygen https://github.com/amaanq/tree-sitter-doxygen src
+dtd https://github.com/tree-sitter-grammars/tree-sitter-xml dtd/src
+earthfile https://github.com/glehmann/tree-sitter-earthfile src
+ebnf https://github.com/RubixDev/ebnf crates/tree-sitter-ebnf/src
+editorconfig https://github.com/ValdezFOmar/tree-sitter-editorconfig src
+eds https://github.com/uyha/tree-sitter-eds src
+eex https://github.com/connorlay/tree-sitter-eex src
+elm https://github.com/elm-tooling/tree-sitter-elm src
+elsa https://github.com/glapa-grossklag/tree-sitter-elsa src
+enforce https://github.com/simonvic/tree-sitter-enforce src
+erlang https://github.com/WhatsApp/tree-sitter-erlang src
+facility https://github.com/FacilityApi/tree-sitter-facility src
+faust https://github.com/khiner/tree-sitter-faust src
+fennel https://github.com/alexmozaidze/tree-sitter-fennel src
+fidl https://github.com/google/tree-sitter-fidl src
+firrtl https://github.com/amaanq/tree-sitter-firrtl src
+foam https://github.com/FoamScience/tree-sitter-foam src
+
+# === new expansion batch ===
+
+# Markup & Documentation
+markdown https://github.com/tree-sitter-grammars/tree-sitter-markdown tree-sitter-markdown/src .md
+xml https://github.com/tree-sitter-grammars/tree-sitter-xml xml/src .xml
+jsdoc https://github.com/tree-sitter/tree-sitter-jsdoc src
+
+# Web Frameworks
+svelte https://github.com/tree-sitter-grammars/tree-sitter-svelte src .svelte
+vue https://github.com/tree-sitter-grammars/tree-sitter-vue src .vue
+scss https://github.com/tree-sitter-grammars/tree-sitter-scss src .scss
+
+# Programming Languages
+r https://github.com/r-lib/tree-sitter-r src .r,.R
+gleam https://github.com/gleam-lang/tree-sitter-gleam src .gleam
+objc https://github.com/tree-sitter-grammars/tree-sitter-objc src .m
+odin https://github.com/tree-sitter-grammars/tree-sitter-odin src .odin
+fortran https://github.com/stadelmanma/tree-sitter-fortran src .f,.f90,.f95,.f03,.f08
+pascal https://github.com/Isopod/tree-sitter-pascal src .pas,.pp,.inc
+clojure https://github.com/sogaiu/tree-sitter-clojure src .clj,.cljs,.cljc,.edn
+scheme https://github.com/6cdh/tree-sitter-scheme src .scm,.ss
+racket https://github.com/6cdh/tree-sitter-racket src .rkt
+solidity https://github.com/JoranHonig/tree-sitter-solidity src .sol
+powershell https://github.com/airbus-cert/tree-sitter-powershell src .ps1,.psm1,.psd1
+fish https://github.com/ram02z/tree-sitter-fish src .fish
+hack https://github.com/slackhq/tree-sitter-hack src .hack,.hh
+purescript https://github.com/postsolar/tree-sitter-purescript src .purs
+rescript https://github.com/rescript-lang/tree-sitter-rescript src .res,.resi
+v https://github.com/vlang/v-analyzer tree_sitter_v/src .v,.vsh
+
+# Config & Data
+proto https://github.com/treywood/tree-sitter-proto src .proto
+make https://github.com/tree-sitter-grammars/tree-sitter-make src
+kdl https://github.com/tree-sitter-grammars/tree-sitter-kdl src .kdl
+meson https://github.com/tree-sitter-grammars/tree-sitter-meson src
+properties https://github.com/tree-sitter-grammars/tree-sitter-properties src .properties
+jsonnet https://github.com/sourcegraph/tree-sitter-jsonnet src .jsonnet,.libsonnet
+json5 https://github.com/Joakker/tree-sitter-json5 src .json5
+just https://github.com/IndianBoy42/tree-sitter-just src
+ini https://github.com/justinmk/tree-sitter-ini src .ini,.cfg,.conf
+ninja https://github.com/alemuller/tree-sitter-ninja src .ninja
+starlark https://github.com/tree-sitter-grammars/tree-sitter-starlark src .star,.bzl
+requirements https://github.com/tree-sitter-grammars/tree-sitter-requirements src
+dot https://github.com/rydesun/tree-sitter-dot src .dot,.gv
+mermaid https://github.com/monaqa/tree-sitter-mermaid src .mmd,.mermaid
+rst https://github.com/stsewd/tree-sitter-rst src .rst
+org https://github.com/emiasims/tree-sitter-org src .org
+robot https://github.com/Hubro/tree-sitter-robot src .robot
+
+# GPU/Shader/Hardware
+glsl https://github.com/tree-sitter-grammars/tree-sitter-glsl src .glsl,.vert,.frag
+hlsl https://github.com/tree-sitter-grammars/tree-sitter-hlsl src .hlsl,.fx
+wgsl https://github.com/szebniok/tree-sitter-wgsl src .wgsl
+vhdl https://github.com/jpt13653903/tree-sitter-vhdl src .vhd,.vhdl
+llvm https://github.com/benwilliamgraham/tree-sitter-llvm src .ll
+
+# Git-related
+gitcommit https://github.com/gbprod/tree-sitter-gitcommit src
+git_rebase https://github.com/the-mikedavis/tree-sitter-git-rebase src
+gitignore https://github.com/shunsambongi/tree-sitter-gitignore src .gitignore
+git_config https://github.com/the-mikedavis/tree-sitter-git-config src .gitconfig
+gitattributes https://github.com/tree-sitter-grammars/tree-sitter-gitattributes src .gitattributes
+
+# Server & Web Config
+http https://github.com/rest-nvim/tree-sitter-http src .http
+nginx https://github.com/opa-oz/tree-sitter-nginx src
+tmux https://github.com/Freed-Wu/tree-sitter-tmux src
+
+# Other
+vimdoc https://github.com/neovim/tree-sitter-vimdoc src
+ssh_config https://github.com/tree-sitter-grammars/tree-sitter-ssh-config src
+puppet https://github.com/tree-sitter-grammars/tree-sitter-puppet src .pp
+gn https://github.com/tree-sitter-grammars/tree-sitter-gn src .gn,.gni
+move https://github.com/tree-sitter-grammars/tree-sitter-move src .move
+twig https://github.com/gbprod/tree-sitter-twig src .twig
+pug https://github.com/zealot128/tree-sitter-pug src .pug,.jade
+less https://github.com/rhino1998/tree-sitter-less src .less
+tcl https://github.com/tree-sitter-grammars/tree-sitter-tcl src .tcl
+
+# === Phase 5 expansion ===
+
+# Document & Markup
+typst https://github.com/uben0/tree-sitter-typst src .typ
+markdown_inline https://github.com/tree-sitter-grammars/tree-sitter-markdown tree-sitter-markdown-inline/src
+norg https://github.com/nvim-neorg/tree-sitter-norg src .norg
+todotxt https://github.com/arnarg/tree-sitter-todotxt src
+
+# Functional Languages
+nim https://github.com/alaviss/tree-sitter-nim src .nim,.nims
+janet https://github.com/sogaiu/tree-sitter-janet-simple src .janet
+dhall https://github.com/jbellerb/tree-sitter-dhall src .dhall
+
+# Systems/Low-level
+tablegen https://github.com/amaanq/tree-sitter-tablegen src .td
+kconfig https://github.com/amaanq/tree-sitter-kconfig src
+linkerscript https://github.com/amaanq/tree-sitter-linkerscript src .ld,.lds
+luau https://github.com/tree-sitter-grammars/tree-sitter-luau src .luau
+hare https://github.com/tree-sitter-grammars/tree-sitter-hare src .ha
+
+# Game Development
+gdscript https://github.com/PrestonKnopp/tree-sitter-gdscript src .gd
+godot_resource https://github.com/PrestonKnopp/tree-sitter-godot-resource src .tres,.tscn
+
+# Data & Config
+nickel https://github.com/nickel-lang/tree-sitter-nickel src .ncl
+pkl https://github.com/apple/tree-sitter-pkl src .pkl
+ron https://github.com/amaanq/tree-sitter-ron src .ron
+rego https://github.com/FallenAngel97/tree-sitter-rego src .rego
+ledger https://github.com/cbarrete/tree-sitter-ledger src .ledger,.journal
+
+# Web
+liquid https://github.com/hankthetank27/tree-sitter-liquid src .liquid
+
+# Scripting
+nushell https://github.com/nushell/tree-sitter-nu src .nu
+
+# API & Schema
+thrift https://github.com/duskmoon314/tree-sitter-thrift src .thrift
+prisma https://github.com/victorhqc/tree-sitter-prisma src .prisma
+ql https://github.com/tree-sitter/tree-sitter-ql src .ql
+promql https://github.com/MichaHoffmann/tree-sitter-promql src .promql
+
+# Other Languages
+uxntal https://github.com/amaanq/tree-sitter-uxntal src .tal
+squirrel https://github.com/amaanq/tree-sitter-squirrel src .nut
+groovy https://github.com/murtaza64/tree-sitter-groovy src .groovy,.gvy
+yuck https://github.com/Philipp-M/tree-sitter-yuck src .yuck
+hurl https://github.com/pfeiferj/tree-sitter-hurl src .hurl
+hyprlang https://github.com/tree-sitter-grammars/tree-sitter-hyprlang src .conf
+pem https://github.com/ObserverOfTime/tree-sitter-pem src .pem
+
+# === Phase 6 expansion ===
+
+# Programming Languages
+crystal https://github.com/keidax/tree-sitter-crystal src .cr
+elisp https://github.com/Wilfred/tree-sitter-elisp src .el
+fsharp https://github.com/ionide/tree-sitter-fsharp fsharp/src .fs,.fsi,.fsx
+haxe https://github.com/vantreeseba/tree-sitter-haxe src .hx
+teal https://github.com/euclidianAce/tree-sitter-teal src .tl
+forth https://github.com/AlexanderBrevig/tree-sitter-forth src .fs,.fth,.4th
+cobol https://github.com/yutaro-sakamoto/tree-sitter-cobol src .cob,.cbl,.cpy
+
+# Web & Templating
+heex https://github.com/phoenixframework/tree-sitter-heex src .heex
+templ https://github.com/vrischmann/tree-sitter-templ src .templ
+jinja2 https://github.com/dbt-labs/tree-sitter-jinja2 src .j2,.jinja2,.jinja
+
+# Data & Config
+gomod https://github.com/camdencheek/tree-sitter-go-mod src
+jq https://github.com/nverno/tree-sitter-jq src .jq
+smithy https://github.com/indoorvivants/tree-sitter-smithy src .smithy
+textproto https://github.com/PorterAtGoogle/tree-sitter-textproto src .textproto,.txtpb,.pbtxt
+
+# Formal & Scientific
+tlaplus https://github.com/tlaplus-community/tree-sitter-tlaplus src .tla
+matlab https://github.com/acristoffers/tree-sitter-matlab src .m,.mat
+sparql https://github.com/GordianDziwis/tree-sitter-sparql src .rq,.sparql
+turtle https://github.com/GordianDziwis/tree-sitter-turtle src .ttl
+
+# WebAssembly
+wat https://github.com/wasm-lsp/tree-sitter-wasm wat/src .wat,.wast
+
+# Phase 7: Missing popular languages
+perl https://github.com/tree-sitter-perl/tree-sitter-perl 0c24d001dd1921e418fb933d208a7bd7dd3f923a src .pl,.pm
+prolog https://github.com/Rukiza/tree-sitter-prolog src .pl,.pro
+mojo https://github.com/HerringtonDarkholme/tree-sitter-mojo src .mojo,.🔥
+wolfram https://github.com/bostick/tree-sitter-wolfram src .wl,.m,.nb

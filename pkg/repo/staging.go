@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/odvcencio/graft/pkg/entity"
 	"github.com/odvcencio/graft/pkg/object"
@@ -54,6 +57,11 @@ type AddProgress struct {
 }
 
 type AddProgressFunc func(AddProgress)
+
+type preparedAddEntry struct {
+	entry *StagingEntry
+	err   error
+}
 
 // indexPath returns the filesystem path to the staging index file.
 func (r *Repo) indexPath() string {
@@ -161,6 +169,39 @@ func (r *Repo) add(paths []string, progress AddProgressFunc) error {
 		Total: len(toAdd),
 	})
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	workersCount := addWorkerCount(len(toAdd))
+	jobs := orderedIndexJobs(ctx, toAdd)
+	preparedResults := make(chan indexedResult[preparedAddEntry], workersCount)
+	var workers sync.WaitGroup
+	for worker := 0; worker < workersCount; worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for job := range jobs {
+				entry, err := r.prepareAddEntry(job.value)
+				select {
+				case preparedResults <- indexedResult[preparedAddEntry]{
+					index: job.index,
+					value: preparedAddEntry{entry: entry, err: err},
+				}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		workers.Wait()
+		close(preparedResults)
+		close(done)
+	}()
+
+	pending := make(map[int]preparedAddEntry, workersCount)
 	for i, relPath := range toAdd {
 		emitAddProgress(progress, AddProgress{
 			Phase:   AddProgressPhaseStageFile,
@@ -168,52 +209,15 @@ func (r *Repo) add(paths []string, progress AddProgressFunc) error {
 			Current: i + 1,
 			Total:   len(toAdd),
 		})
-		absPath := filepath.Join(r.RootDir, filepath.FromSlash(relPath))
-		content, err := os.ReadFile(absPath)
+		prepared, err := awaitOrderedResult(ctx, preparedResults, pending, i)
 		if err != nil {
-			return fmt.Errorf("add: read %q: %w", relPath, err)
+			cancel()
+			<-done
+			return fmt.Errorf("add: %w", err)
 		}
-
-		info, err := os.Stat(absPath)
-		if err != nil {
-			return fmt.Errorf("add: stat %q: %w", relPath, err)
-		}
-
-		// LFS: if file is tracked via .graftattributes filter=lfs,
-		// store actual content in LFS and replace with pointer.
-		if r.IsLFSTracked(relPath) {
-			oid, err := r.StoreLFSObject(content)
-			if err != nil {
-				return fmt.Errorf("add: lfs store %q: %w", relPath, err)
-			}
-			content = WriteLFSPointer(oid, int64(len(content)))
-		}
-
-		// Write blob.
-		blobHash, err := r.Store.WriteBlob(&object.Blob{Data: content})
-		if err != nil {
-			return fmt.Errorf("add: write blob %q: %w", relPath, err)
-		}
-
-		// Try entity extraction.
-		var entityListHash object.Hash
-		el, extractErr := entity.Extract(relPath, content)
-		if extractErr == nil && len(el.Entities) > 0 {
-			entityListHash, err = r.writeEntityList(relPath, el)
-			if err != nil {
-				return fmt.Errorf("add: write entities %q: %w", relPath, err)
-			}
-		}
-		// If extraction fails (unsupported file type), entityListHash stays empty.
-
-		entry := &StagingEntry{
-			Path:           relPath,
-			BlobHash:       blobHash,
-			EntityListHash: entityListHash,
-		}
-		setStagingEntryStat(entry, info, modeFromFileInfo(info))
-		stg.Entries[relPath] = entry
+		stg.Entries[relPath] = prepared.entry
 	}
+	<-done
 
 	emitAddProgress(progress, AddProgress{
 		Phase:   AddProgressPhaseWriteIndex,
@@ -231,6 +235,109 @@ func emitAddProgress(progress AddProgressFunc, event AddProgress) {
 		return
 	}
 	progress(event)
+}
+
+type indexedResult[T any] struct {
+	index int
+	value T
+}
+
+func orderedIndexJobs[T any](ctx context.Context, values []T) <-chan indexedResult[T] {
+	jobs := make(chan indexedResult[T])
+	go func() {
+		defer close(jobs)
+		for idx, value := range values {
+			select {
+			case jobs <- indexedResult[T]{index: idx, value: value}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return jobs
+}
+
+func awaitOrderedResult(
+	ctx context.Context,
+	results <-chan indexedResult[preparedAddEntry],
+	pending map[int]preparedAddEntry,
+	index int,
+) (preparedAddEntry, error) {
+	for {
+		if prepared, ok := pending[index]; ok {
+			delete(pending, index)
+			return prepared, prepared.err
+		}
+
+		select {
+		case result, ok := <-results:
+			if !ok {
+				return preparedAddEntry{}, fmt.Errorf("parallel add preparation ended early for index %d", index)
+			}
+			pending[result.index] = result.value
+		case <-ctx.Done():
+			return preparedAddEntry{}, ctx.Err()
+		}
+	}
+}
+
+func addWorkerCount(total int) int {
+	if total <= 1 {
+		return total
+	}
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > total {
+		return total
+	}
+	return workers
+}
+
+func (r *Repo) prepareAddEntry(relPath string) (*StagingEntry, error) {
+	absPath := filepath.Join(r.RootDir, filepath.FromSlash(relPath))
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("read %q: %w", relPath, err)
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("stat %q: %w", relPath, err)
+	}
+
+	// LFS: if file is tracked via .graftattributes filter=lfs,
+	// store actual content in LFS and replace with pointer.
+	if r.IsLFSTracked(relPath) {
+		oid, err := r.StoreLFSObject(content)
+		if err != nil {
+			return nil, fmt.Errorf("lfs store %q: %w", relPath, err)
+		}
+		content = WriteLFSPointer(oid, int64(len(content)))
+	}
+
+	blobHash, err := r.Store.WriteBlob(&object.Blob{Data: content})
+	if err != nil {
+		return nil, fmt.Errorf("write blob %q: %w", relPath, err)
+	}
+
+	var entityListHash object.Hash
+	el, extractErr := entity.Extract(relPath, content)
+	if extractErr == nil && len(el.Entities) > 0 {
+		entityListHash, err = r.writeEntityList(relPath, el)
+		if err != nil {
+			return nil, fmt.Errorf("write entities %q: %w", relPath, err)
+		}
+	}
+
+	entry := &StagingEntry{
+		Path:           relPath,
+		BlobHash:       blobHash,
+		EntityListHash: entityListHash,
+	}
+	setStagingEntryStat(entry, info, modeFromFileInfo(info))
+	return entry, nil
 }
 
 // Remove stages file deletions and optionally removes files from disk.

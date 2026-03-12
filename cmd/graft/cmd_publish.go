@@ -45,15 +45,16 @@ func newPublishCmd() *cobra.Command {
 				return err
 			}
 
-			owner, repoName, err := resolvePublishTarget(args, r.RootDir)
-			if err != nil {
-				return err
-			}
-
 			baseURL, err := normalizeBaseURL(host, defaultOrchardBaseURL)
 			if err != nil {
 				return err
 			}
+
+			owner, repoName, err := resolvePublishTarget(args, r.RootDir, baseURL)
+			if err != nil {
+				return err
+			}
+
 			remoteURL := joinGotEndpoint(baseURL, owner, repoName)
 
 			if !noCreate {
@@ -98,13 +99,13 @@ func newPublishCmd() *cobra.Command {
 	return cmd
 }
 
-func resolvePublishTarget(args []string, rootDir string) (string, string, error) {
+func resolvePublishTarget(args []string, rootDir, baseURL string) (string, string, error) {
 	target := ""
 	if len(args) > 0 {
 		target = strings.TrimSpace(args[0])
 	}
 	if target == "" {
-		owner := configuredOwner()
+		owner := configuredOwnerForHost(baseURL)
 		if owner == "" {
 			return "", "", fmt.Errorf("owner is required (pass owner/repo, set GRAFT_OWNER, or run `graft auth setup`)")
 		}
@@ -134,7 +135,7 @@ func createRemoteRepository(cmd *cobra.Command, baseURL, name, description strin
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	token := configuredToken("")
+	token := configuredTokenForHost(baseURL, "")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

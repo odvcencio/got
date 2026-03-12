@@ -2,6 +2,7 @@ package object
 
 import (
 	"compress/zlib"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -9,8 +10,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // GCSummary reports the outcome of Store.GC.
@@ -103,24 +106,58 @@ func (s *Store) gcWithReachableSet(reachable map[Hash]struct{}) (*GCSummary, err
 	}
 
 	indexEntries := make([]PackIndexEntry, 0, len(toPack))
-	for _, h := range toPack {
-		objType, content, err := s.readLoose(h)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	workersCount := packWorkerCount(len(toPack))
+	jobs := orderedPackJobs(ctx, toPack)
+	preparedResults := make(chan indexedPackResult, workersCount)
+	var workers sync.WaitGroup
+	for worker := 0; worker < workersCount; worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for job := range jobs {
+				prepared := s.preparePackEntry(job.index, job.hash)
+				select {
+				case preparedResults <- prepared:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		workers.Wait()
+		close(preparedResults)
+		close(done)
+	}()
+
+	pending := make(map[int]preparedPackEntry, workersCount)
+	for i := range toPack {
+		prepared, err := awaitPreparedPackEntry(ctx, preparedResults, pending, i)
 		if err != nil {
+			cancel()
+			<-done
 			_ = packTmp.Close()
-			return nil, fmt.Errorf("gc: read loose object %s: %w", h, err)
+			return nil, fmt.Errorf("gc: %w", err)
 		}
+
 		offset := pw.CurrentOffset()
-		envelope := makeObjectEnvelope(objType, content)
-		packType := objectTypeToPackType(objType)
-		if err := pw.WriteEntry(packType, envelope); err != nil {
+		if err := pw.writeCompressedEntry(prepared.packType, prepared.rawSize, prepared.compressed); err != nil {
+			cancel()
+			<-done
 			_ = packTmp.Close()
-			return nil, fmt.Errorf("gc: write pack entry %s: %w", h, err)
+			return nil, fmt.Errorf("gc: write pack entry %s: %w", prepared.hash, err)
 		}
 		indexEntries = append(indexEntries, PackIndexEntry{
-			Hash:   h,
+			Hash:   prepared.hash,
 			Offset: offset,
 		})
 	}
+	<-done
 
 	packChecksum, err := pw.Finish()
 	if err != nil {
@@ -455,7 +492,7 @@ func readPackEntryAt(packPath string, offset uint64) (PackEntry, error) {
 		Size:         size,
 		Data:         raw,
 		Offset:       offset,
-		BaseDistance:  baseDistance,
+		BaseDistance: baseDistance,
 		BaseRef:      baseRef,
 	}, nil
 }
@@ -612,6 +649,104 @@ func (s *Store) packedHashSet() (map[Hash]struct{}, error) {
 		}
 	}
 	return out, nil
+}
+
+type orderedPackJob struct {
+	index int
+	hash  Hash
+}
+
+type preparedPackEntry struct {
+	index      int
+	hash       Hash
+	packType   PackObjectType
+	rawSize    uint64
+	compressed []byte
+	err        error
+}
+
+type indexedPackResult = preparedPackEntry
+
+func orderedPackJobs(ctx context.Context, hashes []Hash) <-chan orderedPackJob {
+	jobs := make(chan orderedPackJob)
+	go func() {
+		defer close(jobs)
+		for idx, hash := range hashes {
+			select {
+			case jobs <- orderedPackJob{index: idx, hash: hash}:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return jobs
+}
+
+func packWorkerCount(total int) int {
+	if total <= 1 {
+		return total
+	}
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > total {
+		return total
+	}
+	return workers
+}
+
+func (s *Store) preparePackEntry(index int, h Hash) preparedPackEntry {
+	objType, content, err := s.readLoose(h)
+	if err != nil {
+		return preparedPackEntry{
+			index: index,
+			hash:  h,
+			err:   fmt.Errorf("read loose object %s: %w", h, err),
+		}
+	}
+
+	envelope := makeObjectEnvelope(objType, content)
+	compressed, err := compressPackPayload(envelope)
+	if err != nil {
+		return preparedPackEntry{
+			index: index,
+			hash:  h,
+			err:   fmt.Errorf("compress pack entry %s: %w", h, err),
+		}
+	}
+
+	return preparedPackEntry{
+		index:      index,
+		hash:       h,
+		packType:   objectTypeToPackType(objType),
+		rawSize:    uint64(len(envelope)),
+		compressed: compressed,
+	}
+}
+
+func awaitPreparedPackEntry(
+	ctx context.Context,
+	results <-chan indexedPackResult,
+	pending map[int]preparedPackEntry,
+	index int,
+) (preparedPackEntry, error) {
+	for {
+		if prepared, ok := pending[index]; ok {
+			delete(pending, index)
+			return prepared, prepared.err
+		}
+
+		select {
+		case prepared, ok := <-results:
+			if !ok {
+				return preparedPackEntry{}, fmt.Errorf("pack preparation ended early for index %d", index)
+			}
+			pending[prepared.index] = prepared
+		case <-ctx.Done():
+			return preparedPackEntry{}, ctx.Err()
+		}
+	}
 }
 
 func (s *Store) listPackIndexPaths() ([]string, error) {

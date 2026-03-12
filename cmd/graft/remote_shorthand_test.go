@@ -9,6 +9,7 @@ import (
 func TestCanonicalizeRemoteSpec(t *testing.T) {
 	t.Run("orchard shorthand uses default host", func(t *testing.T) {
 		t.Setenv("GRAFT_ORCHARD_URL", "")
+		t.Setenv("HOME", t.TempDir())
 		got, err := canonicalizeRemoteSpec("orchard:alice/repo")
 		if err != nil {
 			t.Fatalf("canonicalizeRemoteSpec: %v", err)
@@ -21,6 +22,7 @@ func TestCanonicalizeRemoteSpec(t *testing.T) {
 
 	t.Run("orchard shorthand uses configured host", func(t *testing.T) {
 		t.Setenv("GRAFT_ORCHARD_URL", "https://code.example.com/base")
+		t.Setenv("HOME", t.TempDir())
 		got, err := canonicalizeRemoteSpec("orchard:alice/repo")
 		if err != nil {
 			t.Fatalf("canonicalizeRemoteSpec: %v", err)

@@ -129,6 +129,16 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 		}
 		nodes = append(nodes, classifiedNode{node: child, kind: kind})
 	}
+	hasStructuralNode := false
+	for _, node := range nodes {
+		if node.kind != KindInterstitial {
+			hasStructuralNode = true
+			break
+		}
+	}
+	if !hasStructuralNode {
+		return nil, fmt.Errorf("unsupported file type: %s", filename)
+	}
 	sort.Slice(nodes, func(i, j int) bool {
 		li, _ := classifiedNodeRange(nodes[i])
 		lj, _ := classifiedNodeRange(nodes[j])

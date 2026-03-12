@@ -31,9 +31,9 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 
 	in := &Config{
 		OrchardURL: "https://code.example.com",
-		Token:     "abc123",
-		Username:  "draco",
-		Owner:     "draco",
+		Token:      "abc123",
+		Username:   "draco",
+		Owner:      "draco",
 	}
 	if err := Save(in); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -66,5 +66,65 @@ func TestSaveAndLoadRoundTrip(t *testing.T) {
 	}
 	if out.Version <= 0 {
 		t.Fatalf("Version = %d, want > 0", out.Version)
+	}
+
+	profile := out.OrchardProfile(in.OrchardURL)
+	if profile.Token != in.Token {
+		t.Fatalf("OrchardProfile(%q).Token = %q, want %q", in.OrchardURL, profile.Token, in.Token)
+	}
+	if profile.Username != in.Username {
+		t.Fatalf("OrchardProfile(%q).Username = %q, want %q", in.OrchardURL, profile.Username, in.Username)
+	}
+	if profile.Owner != in.Owner {
+		t.Fatalf("OrchardProfile(%q).Owner = %q, want %q", in.OrchardURL, profile.Owner, in.Owner)
+	}
+}
+
+func TestDefaultOrchardURLFallsBackToSingleProfile(t *testing.T) {
+	cfg := &Config{
+		OrchardProfiles: map[string]OrchardProfile{
+			"https://Code.Example.com/": {
+				Token:    "abc123",
+				Username: "draco",
+				Owner:    "draco",
+			},
+		},
+	}
+
+	cfg.normalize()
+
+	if got := cfg.DefaultOrchardURL(); got != "https://code.example.com" {
+		t.Fatalf("DefaultOrchardURL() = %q, want https://code.example.com", got)
+	}
+}
+
+func TestOrchardProfileDoesNotLeakAcrossHosts(t *testing.T) {
+	cfg := &Config{
+		OrchardURL: "https://orchard.example.com",
+		Token:      "default-token",
+		Username:   "default-user",
+		Owner:      "default-owner",
+		OrchardProfiles: map[string]OrchardProfile{
+			"https://code.example.com/api/v1": {
+				Token:    "code-token",
+				Username: "code-user",
+				Owner:    "code-owner",
+			},
+		},
+	}
+
+	cfg.normalize()
+
+	defaultProfile := cfg.OrchardProfile("https://orchard.example.com")
+	if defaultProfile.Token != "default-token" {
+		t.Fatalf("default token = %q, want default-token", defaultProfile.Token)
+	}
+
+	codeProfile := cfg.OrchardProfile("https://code.example.com/api/v1")
+	if codeProfile.Token != "code-token" {
+		t.Fatalf("code token = %q, want code-token", codeProfile.Token)
+	}
+	if leaked := cfg.OrchardProfile("https://other.example.com"); !leaked.isZero() {
+		t.Fatalf("unexpected profile leak: %+v", leaked)
 	}
 }

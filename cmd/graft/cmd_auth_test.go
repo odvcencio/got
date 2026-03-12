@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/odvcencio/graft/pkg/userconfig"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
@@ -194,5 +195,122 @@ func TestMintBootstrapTokenMissingTokenInResponse(t *testing.T) {
 	_, err := mintBootstrapToken(cmd, server.URL, "test-token", 0)
 	if err == nil {
 		t.Fatal("expected error when bootstrap token missing in response")
+	}
+}
+
+func TestWriteAuthConfigStoresHostProfiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := writeAuthConfig("https://orchard.example.com", "orchard-token", authUser{Username: "orchard-user"}); err != nil {
+		t.Fatalf("writeAuthConfig orchard: %v", err)
+	}
+	if err := writeAuthConfig("https://code.example.com/api/v1", "code-token", authUser{Username: "code-user"}); err != nil {
+		t.Fatalf("writeAuthConfig code: %v", err)
+	}
+
+	cfg, err := userconfig.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got := cfg.DefaultOrchardURL(); got != "https://code.example.com/api/v1" {
+		t.Fatalf("DefaultOrchardURL() = %q, want https://code.example.com/api/v1", got)
+	}
+	if cfg.Token != "code-token" {
+		t.Fatalf("cfg.Token = %q, want code-token", cfg.Token)
+	}
+	if cfg.Username != "code-user" {
+		t.Fatalf("cfg.Username = %q, want code-user", cfg.Username)
+	}
+	if cfg.Owner != "code-user" {
+		t.Fatalf("cfg.Owner = %q, want code-user", cfg.Owner)
+	}
+
+	orchardProfile := cfg.OrchardProfile("https://orchard.example.com")
+	if orchardProfile.Token != "orchard-token" {
+		t.Fatalf("orchard profile token = %q, want orchard-token", orchardProfile.Token)
+	}
+	if orchardProfile.Username != "orchard-user" {
+		t.Fatalf("orchard profile username = %q, want orchard-user", orchardProfile.Username)
+	}
+
+	codeProfile := cfg.OrchardProfile("https://code.example.com/api/v1")
+	if codeProfile.Token != "code-token" {
+		t.Fatalf("code profile token = %q, want code-token", codeProfile.Token)
+	}
+	if codeProfile.Username != "code-user" {
+		t.Fatalf("code profile username = %q, want code-user", codeProfile.Username)
+	}
+}
+
+func TestFormatAuthStatusLinesAllHosts(t *testing.T) {
+	cfg := &userconfig.Config{
+		OrchardURL: "https://orchard.example.com",
+		Token:      "orchard-token",
+		Username:   "orchard-user",
+		Owner:      "orchard-owner",
+		OrchardProfiles: map[string]userconfig.OrchardProfile{
+			"https://code.example.com/api/v1": {
+				Token:    "code-token",
+				Username: "code-user",
+				Owner:    "code-owner",
+			},
+		},
+	}
+
+	lines := formatAuthStatusLines(cfg, "/tmp/.graftconfig", "https://code.example.com/api/v1", true)
+	out := strings.Join(lines, "\n")
+	for _, want := range []string{
+		"config: /tmp/.graftconfig",
+		"host: https://code.example.com/api/v1 (selected, token:set)",
+		"username: code-user",
+		"owner: code-owner",
+		"host: https://orchard.example.com (default, token:set)",
+		"username: orchard-user",
+		"owner: orchard-owner",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("status output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestClearAllStoredAuthTokensPreservesProfiles(t *testing.T) {
+	cfg := &userconfig.Config{
+		OrchardURL: "https://orchard.example.com",
+		Token:      "orchard-token",
+		Username:   "orchard-user",
+		Owner:      "orchard-owner",
+		OrchardProfiles: map[string]userconfig.OrchardProfile{
+			"https://orchard.example.com": {
+				Token:    "orchard-token",
+				Username: "orchard-user",
+				Owner:    "orchard-owner",
+			},
+			"https://code.example.com/api/v1": {
+				Token:    "code-token",
+				Username: "code-user",
+				Owner:    "code-owner",
+			},
+		},
+	}
+
+	clearAllStoredAuthTokens(cfg)
+
+	if cfg.Token != "" {
+		t.Fatalf("cfg.Token = %q, want empty", cfg.Token)
+	}
+	for host, wantUser := range map[string]string{
+		"https://orchard.example.com":     "orchard-user",
+		"https://code.example.com/api/v1": "code-user",
+	} {
+		profile := cfg.OrchardProfile(host)
+		if profile.Token != "" {
+			t.Fatalf("%s token = %q, want empty", host, profile.Token)
+		}
+		if profile.Username != wantUser {
+			t.Fatalf("%s username = %q, want %q", host, profile.Username, wantUser)
+		}
 	}
 }

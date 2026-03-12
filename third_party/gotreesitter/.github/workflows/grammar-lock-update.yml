@@ -1,0 +1,84 @@
+name: grammar-lock-update
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_updates:
+        description: "Max grammar updates to apply in one PR"
+        required: false
+        default: "10"
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Refresh lockfile pins
+        id: refresh
+        run: |
+          set -euo pipefail
+          MAX_UPDATES="${{ github.event.inputs.max_updates }}"
+          if [ -z "${MAX_UPDATES}" ]; then
+            MAX_UPDATES="10"
+          fi
+
+          go run ./cmd/grammar_updater \
+            -lock grammars/languages.lock \
+            -allow-list grammars/update_tier1_core100.txt \
+            -max-updates "${MAX_UPDATES}" \
+            -workers 8 \
+            -write \
+            -report grammars/grammar_updates.json \
+            -fail-on-error=true
+
+          if git diff --quiet -- grammars/languages.lock; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Validate lock update
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          go test ./grammars -run '^TestTop50ParseSmokeNoErrors$|^TestSupportedLanguagesParseSmoke$' -count=1
+          go run ./cmd/parity_report > parity.log
+
+      - name: Upload update artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grammar-lock-update-artifacts
+          path: |
+            grammars/grammar_updates.json
+            parity.log
+
+      - name: Create pull request
+        if: steps.refresh.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/grammar-lock-update
+          title: "chore(grammars): refresh pinned lock refs"
+          commit-message: "chore(grammars): refresh pinned lock refs"
+          body: |
+            Automated grammar lock refresh.
+
+            ## What changed
+            - Updated `grammars/languages.lock` refs using `cmd/grammar_updater`
+            - Scope limited by `grammars/update_tier1_core100.txt`
+            - Batched with `max_updates` limit
+
+            ## Artifacts
+            - `grammars/grammar_updates.json` (machine-readable delta)
+            - `parity.log` (parse support summary)

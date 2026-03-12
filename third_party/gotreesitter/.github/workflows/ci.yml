@@ -1,0 +1,288 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -race -count=1
+
+      - name: Run Parity Report (External Blob Mode)
+        run: |
+          GOTREESITTER_GRAMMAR_BLOB_DIR=grammars/grammar_blobs \
+          go run -tags grammar_blobs_external ./cmd/parity_report > parity.log
+
+      - name: Upload Parity Log
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-log
+          path: parity.log
+
+  freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check linguist_gen.go freshness
+        run: |
+          set -euo pipefail
+          # Regenerate using the vendored languages.yml to keep the check
+          # deterministic (not affected by upstream linguist changes).
+          go run ./cmd/gen_linguist \
+            -manifest grammars/languages.manifest \
+            -languages-yml grammars/languages.yml \
+            -out grammars/linguist_gen.go
+          if ! git diff --exit-code grammars/linguist_gen.go; then
+            echo "::error::grammars/linguist_gen.go is stale. Regenerate:"
+            echo "::error::  go run ./cmd/gen_linguist -manifest grammars/languages.manifest -languages-yml grammars/languages.yml"
+            exit 1
+          fi
+
+      - name: Check grammar blob coverage matches lock
+        run: |
+          set -euo pipefail
+
+          # Extract grammar names from lock (skip comments and blanks).
+          lock_names=$(grep -v '^#' grammars/languages.lock | grep -v '^$' | awk '{print $1}' | sort)
+          lock_count=$(echo "$lock_names" | wc -l)
+
+          # Extract grammar names from .bin files.
+          blob_names=$(ls grammars/grammar_blobs/*.bin 2>/dev/null | xargs -I{} basename {} .bin | sort)
+          blob_count=$(echo "$blob_names" | wc -l)
+
+          # Extract grammar names from embedded_grammars_gen.go (blob references).
+          gen_names=$(grep -oP 'loadEmbeddedLanguage\("\K[^"]+(?=\.bin"\))' grammars/embedded_grammars_gen.go | sort)
+          gen_count=$(echo "$gen_names" | wc -l)
+
+          echo "lock: $lock_count | blobs: $blob_count | gen functions: $gen_count"
+
+          # Three-way consistency: lock ↔ blobs ↔ gen functions.
+          missing_blobs=$(comm -23 <(echo "$lock_names") <(echo "$blob_names"))
+          if [ -n "$missing_blobs" ]; then
+            echo "::error::Grammar blobs missing for lock entries: $missing_blobs"
+            echo "Run: go run ./cmd/ts2go -manifest grammars/languages.lock -outdir ./grammars -package grammars"
+            exit 1
+          fi
+
+          orphan_blobs=$(comm -13 <(echo "$lock_names") <(echo "$blob_names"))
+          if [ -n "$orphan_blobs" ]; then
+            echo "::warning::Orphan blobs not in lock file: $orphan_blobs"
+          fi
+
+          missing_gen=$(comm -23 <(echo "$lock_names") <(echo "$gen_names"))
+          if [ -n "$missing_gen" ]; then
+            echo "::error::embedded_grammars_gen.go missing functions for: $missing_gen"
+            echo "Run: go run ./cmd/ts2go -manifest grammars/languages.lock -outdir ./grammars -package grammars"
+            exit 1
+          fi
+
+          if [ "$blob_count" -ne "$lock_count" ] || [ "$gen_count" -ne "$lock_count" ]; then
+            echo "::error::Count mismatch — lock: $lock_count, blobs: $blob_count, gen: $gen_count"
+            exit 1
+          fi
+
+  parity-cgo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: CGo Structural Parity Gate (Fresh + No Errors + Issue3)
+        run: |
+          cd cgo_harness
+          go test . -tags treesitter_c_parity \
+            -run '^TestParityFreshParse$|^TestParityHasNoErrors$|^TestParityIssue3Repros$' \
+            -count=1 -v
+
+      - name: CGo Structural Parity Gate (Incremental + GLR)
+        run: |
+          cd cgo_harness
+          go test . -tags treesitter_c_parity \
+            -run '^TestParityIncrementalParse$|^TestParityGLRCanaryGo$|^TestParityGLRCanarySet$|^TestParityGLRCapPressureTopLanguages$|^TestParityGateCoverageRatchet$' \
+            -count=1 -v
+
+      - name: CGo Structural Parity Gate (Corpus)
+        run: |
+          cd cgo_harness
+          go test . -tags treesitter_c_parity \
+            -run '^TestParityCorpusFreshParse$' \
+            -count=1 -v
+
+      - name: CGo Highlight + YAML Parity Gate
+        run: |
+          cd cgo_harness
+          go test . -tags treesitter_c_parity \
+            -run '^TestParityHighlight$|^TestParityHighlightAllGrammars$|^TestParityYAMLCorpus$|^TestParityYAMLCorpusStructural$|^TestParityYAMLCorpusSummary$' \
+            -count=1 -v
+
+  perf-regression:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Benchmark Base vs Head
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PERF_CORRECTNESS_BASE_SHA: 7a29f591d7fcc54b3d0639b3e38a1bacd8fcb386
+        run: |
+          set -euo pipefail
+
+          BENCH_RE='^(BenchmarkGoParseFullDFA|BenchmarkGoParseIncrementalSingleByteEditDFA|BenchmarkGoParseIncrementalNoEditDFA)$'
+          OUT_DIR="${RUNNER_TEMP}/bench-gate"
+          BASE_TREE="${RUNNER_TEMP}/bench-base"
+          mkdir -p "${OUT_DIR}"
+
+          GATE_BASE_SHA="${BASE_SHA}"
+          if git fetch --no-tags origin "${PERF_CORRECTNESS_BASE_SHA}" >/dev/null 2>&1; then
+            if ! git merge-base --is-ancestor "${PERF_CORRECTNESS_BASE_SHA}" "${BASE_SHA}"; then
+              GATE_BASE_SHA="${PERF_CORRECTNESS_BASE_SHA}"
+            fi
+          fi
+          echo "perf gate base: ${GATE_BASE_SHA} (pr base: ${BASE_SHA})"
+
+          # Legacy perf-correctness baseline can truncate full-parse benchmarks at
+          # default node budget. Keep base/head benchmark settings aligned.
+          BENCH_NODE_SCALE=""
+          if [ "${GATE_BASE_SHA}" = "${PERF_CORRECTNESS_BASE_SHA}" ]; then
+            BENCH_NODE_SCALE="3"
+            echo "perf gate: using GOT_PARSE_NODE_LIMIT_SCALE=${BENCH_NODE_SCALE} for benchmark comparability"
+          fi
+
+          git fetch --no-tags origin "${BASE_SHA}" "${GATE_BASE_SHA}"
+          git worktree add "${BASE_TREE}" "${GATE_BASE_SHA}"
+          trap 'git worktree remove --force "${BASE_TREE}"' EXIT
+
+          export GOMAXPROCS=1
+          if [ -n "${BENCH_NODE_SCALE}" ]; then
+            (cd "${BASE_TREE}" && GOT_PARSE_NODE_LIMIT_SCALE="${BENCH_NODE_SCALE}" go test -run '^$' -bench "${BENCH_RE}" -benchmem -count=10 -benchtime=750ms .) > "${OUT_DIR}/base.txt"
+            GOT_PARSE_NODE_LIMIT_SCALE="${BENCH_NODE_SCALE}" go test -run '^$' -bench "${BENCH_RE}" -benchmem -count=10 -benchtime=750ms . > "${OUT_DIR}/head.txt"
+          else
+            (cd "${BASE_TREE}" && go test -run '^$' -bench "${BENCH_RE}" -benchmem -count=10 -benchtime=750ms .) > "${OUT_DIR}/base.txt"
+            go test -run '^$' -bench "${BENCH_RE}" -benchmem -count=10 -benchtime=750ms . > "${OUT_DIR}/head.txt"
+          fi
+          if [ "${GATE_BASE_SHA}" != "${BASE_SHA}" ]; then
+            PR_BASE_TREE="${RUNNER_TEMP}/bench-pr-base"
+            git worktree add "${PR_BASE_TREE}" "${BASE_SHA}"
+            if [ -n "${BENCH_NODE_SCALE}" ]; then
+              (cd "${PR_BASE_TREE}" && GOT_PARSE_NODE_LIMIT_SCALE="${BENCH_NODE_SCALE}" go test -run '^$' -bench "${BENCH_RE}" -benchmem -count=10 -benchtime=750ms .) > "${OUT_DIR}/pr_base.txt"
+            else
+              (cd "${PR_BASE_TREE}" && go test -run '^$' -bench "${BENCH_RE}" -benchmem -count=10 -benchtime=750ms .) > "${OUT_DIR}/pr_base.txt"
+            fi
+            git worktree remove --force "${PR_BASE_TREE}"
+            echo "informational compare vs PR base (non-blocking):"
+            if ! go run ./cmd/benchgate \
+              -base "${OUT_DIR}/pr_base.txt" \
+              -head "${OUT_DIR}/head.txt" \
+              -max-ns-regression 10 \
+              -max-bytes-regression 10 \
+              -max-allocs-regression 10; then
+              echo "informational compare vs PR base unavailable (missing benchmarks/metrics)"
+            fi
+          fi
+
+          if [ -n "${BENCH_NODE_SCALE}" ]; then
+            (
+              cd "${BASE_TREE}" && \
+              GOT_BENCH_FUNC_COUNT=5000 GOT_PARSE_NODE_LIMIT_SCALE="${BENCH_NODE_SCALE}" /usr/bin/time -v \
+              go test -run '^$' -bench '^BenchmarkGoParseFullDFA$' -benchmem -count=1 -benchtime=3x . \
+              > "${OUT_DIR}/base_rss_bench.txt" 2> "${OUT_DIR}/base_rss_time.txt"
+            )
+            GOT_BENCH_FUNC_COUNT=5000 GOT_PARSE_NODE_LIMIT_SCALE="${BENCH_NODE_SCALE}" /usr/bin/time -v \
+              go test -run '^$' -bench '^BenchmarkGoParseFullDFA$' -benchmem -count=1 -benchtime=3x . \
+              > "${OUT_DIR}/head_rss_bench.txt" 2> "${OUT_DIR}/head_rss_time.txt"
+          else
+            (
+              cd "${BASE_TREE}" && \
+              GOT_BENCH_FUNC_COUNT=5000 /usr/bin/time -v \
+              go test -run '^$' -bench '^BenchmarkGoParseFullDFA$' -benchmem -count=1 -benchtime=3x . \
+              > "${OUT_DIR}/base_rss_bench.txt" 2> "${OUT_DIR}/base_rss_time.txt"
+            )
+            GOT_BENCH_FUNC_COUNT=5000 /usr/bin/time -v \
+              go test -run '^$' -bench '^BenchmarkGoParseFullDFA$' -benchmem -count=1 -benchtime=3x . \
+              > "${OUT_DIR}/head_rss_bench.txt" 2> "${OUT_DIR}/head_rss_time.txt"
+          fi
+
+          # benchgate applies a minimum +1 alloc/op floor for low-allocation
+          # benches, so we can keep strict ratio thresholds.
+          go run ./cmd/benchgate \
+            -base "${OUT_DIR}/base.txt" \
+            -head "${OUT_DIR}/head.txt" \
+            -base-rss "${OUT_DIR}/base_rss_time.txt" \
+            -head-rss "${OUT_DIR}/head_rss_time.txt" \
+            -max-ns-regression 0.08 \
+            -max-bytes-regression 0.05 \
+            -max-allocs-regression 0.05 \
+            -max-rss-regression 0.10
+
+      - name: Perf Definitive Outcome Summary
+        if: always()
+        run: |
+          set -euo pipefail
+          OUT_DIR="${RUNNER_TEMP}/bench-gate"
+          if [ ! -f "${OUT_DIR}/base.txt" ] || [ ! -f "${OUT_DIR}/head.txt" ]; then
+            {
+              echo "### Perf Definitive Outcome"
+              echo ""
+              echo "- outcome: \`INCONCLUSIVE\`"
+              echo "- reason: benchmark artifacts missing"
+            } >> "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          go run ./cmd/benchgate \
+            -base "${OUT_DIR}/base.txt" \
+            -head "${OUT_DIR}/head.txt" \
+            -max-ns-regression 0.08 \
+            -max-bytes-regression 0.05 \
+            -max-allocs-regression 0.05 \
+            -exit-on-fail=false \
+            -post-definitive \
+            -definitive-output "${OUT_DIR}/definitive.md" || true
+
+          if [ -f "${OUT_DIR}/definitive.md" ]; then
+            cat "${OUT_DIR}/definitive.md" >> "${GITHUB_STEP_SUMMARY}"
+          else
+            {
+              echo "### Perf Definitive Outcome"
+              echo ""
+              echo "- outcome: \`INCONCLUSIVE\`"
+              echo "- reason: no definitive win/loss from current thresholds"
+            } >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Upload Perf Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-gate-artifacts
+          path: ${{ runner.temp }}/bench-gate

@@ -1,0 +1,210 @@
+# name repo_url commit [subdir] [ext1,ext2,...]
+# generated from grammars/languages.manifest
+bash https://github.com/tree-sitter/tree-sitter-bash a06c2e4415e9bc0346c6b86d401879ffb44058f7 src .sh
+c https://github.com/tree-sitter/tree-sitter-c ae19b676b13bdcc13b7665397e6d9b14975473dd src .c,.h
+cpp https://github.com/tree-sitter/tree-sitter-cpp 8b5b49eb196bec7040441bee33b2c9a4838d6967 src .cc,.cpp,.cxx,.hpp,.hh,.hxx,.h
+css https://github.com/tree-sitter/tree-sitter-css dda5cfc5722c429eaba1c910ca32c2c0c5bb1a3f src .css
+go https://github.com/tree-sitter/tree-sitter-go 2346a3ab1bb3857b48b29d779a1ef9799a248cd7 src .go
+html https://github.com/tree-sitter/tree-sitter-html 73a3947324f6efddf9e17c0ea58d454843590cc0 src .html,.htm
+java https://github.com/tree-sitter/tree-sitter-java e10607b45ff745f5f876bfa3e94fbcc6b44bdc11 src .java
+javascript https://github.com/tree-sitter/tree-sitter-javascript 58404d8cf191d69f2674a8fd507bd5776f46cb11 src .js,.mjs,.cjs
+json https://github.com/tree-sitter/tree-sitter-json 001c28d7a29832b06b0e831ec77845553c89b56d src .json
+kotlin https://github.com/fwcd/tree-sitter-kotlin cbed96ab13dbc082eeeb2e8333c342a62829c29d src .kt,.kts
+lua https://github.com/tree-sitter-grammars/tree-sitter-lua 10fe0054734eec83049514ea2e718b2a56acd0c9 src .lua
+php https://github.com/tree-sitter/tree-sitter-php 015ce839db5ae9ceda763bf12e071867fbe8cc89 php/src .php
+python https://github.com/tree-sitter/tree-sitter-python 26855eabccb19c6abf499fbc5b8dc7cc9ab8bc64 src .py
+ruby https://github.com/tree-sitter/tree-sitter-ruby ab6dca77a8184abc94af6e3e82538741b5078d63 src .rb
+rust https://github.com/tree-sitter/tree-sitter-rust 261b20226c04ef601adbdf185a800512a5f66291 src .rs
+sql https://github.com/m-novikov/tree-sitter-sql 587f30d184b058450be2a2330878210c5f33b3f9 src .sql
+swift https://github.com/tree-sitter/tree-sitter-swift db675450dcc1478ee128c96ecc61c13272431aab src .swift
+toml https://github.com/tree-sitter/tree-sitter-toml 342d9be207c2dba869b9967124c679b5e6fd0ebe src .toml
+tsx https://github.com/tree-sitter/tree-sitter-typescript 75b3874edb2dc714fb1fd77a32013d0f8699989f tsx/src .tsx
+typescript https://github.com/tree-sitter/tree-sitter-typescript 75b3874edb2dc714fb1fd77a32013d0f8699989f typescript/src .ts
+yaml https://github.com/tree-sitter-grammars/tree-sitter-yaml 4463985dfccc640f3d6991e3396a2047610cf5f8 src .yaml,.yml
+zig https://github.com/maxxnino/tree-sitter-zig a80a6e9be81b33b182ce6305ae4ea28e29211bd5 src .zig
+scala https://github.com/tree-sitter/tree-sitter-scala 97aead18d97708190a51d4f551ea9b05b60641c9 src .scala
+elixir https://github.com/elixir-lang/tree-sitter-elixir d24cecee673c4c770f797bac6f87ae4b6d7ddec5 src .ex,.exs
+graphql https://github.com/bkegley/tree-sitter-graphql 5e66e961eee421786bdda8495ed1db045e06b5fe src .graphql,.gql
+hcl https://github.com/tree-sitter-grammars/tree-sitter-hcl 64ad62785d442eb4d45df3a1764962dafd5bc98b src .hcl,.tf,.tfvars
+nix https://github.com/nix-community/tree-sitter-nix eabf96807ea4ab6d6c7f09b671a88cd483542840 src .nix
+
+# === top50 correctness lock expansion ===
+c_sharp https://github.com/tree-sitter/tree-sitter-c-sharp 88366631d598ce6595ec655ce1591b315cffb14c src .cs
+cmake https://github.com/uyha/tree-sitter-cmake c7b2a71e7f8ecb167fad4c97227c838439280175 src
+dart https://github.com/UserNobody14/tree-sitter-dart 81638dbbdb76a0e88ea8c31b95ec76b9625ddb84 src
+elm https://github.com/elm-tooling/tree-sitter-elm 6d9511c28181db66daee4e883f811f6251220943 src
+erlang https://github.com/WhatsApp/tree-sitter-erlang f21023bbd6cd30cadbc793d80ae4d990d9be86fc src
+gomod https://github.com/camdencheek/tree-sitter-go-mod 2e886870578eeba1927a2dc4bd2e2b3f598c5f9a src
+haskell https://github.com/tree-sitter/tree-sitter-haskell 0975ef72fc3c47b530309ca93937d7d143523628 src .hs,.lhs
+ini https://github.com/justinmk/tree-sitter-ini e4018b5176132b4f3c5d6e61cea383f42288d0f5 src .ini,.cfg,.conf
+json5 https://github.com/Joakker/tree-sitter-json5 aa630ef48903ab99e406a8acd2e2933077cc34e1 src .json5
+julia https://github.com/tree-sitter/tree-sitter-julia e0f9dcd180fdcfcfa8d79a3531e11d99e79321d3 src .jl
+make https://github.com/tree-sitter-grammars/tree-sitter-make 70613f3d812cbabbd7f38d104d60a409c4008b43 src
+markdown https://github.com/tree-sitter-grammars/tree-sitter-markdown f969cd3ae3f9fbd4e43205431d0ae286014c05b5 tree-sitter-markdown/src .md
+objc https://github.com/tree-sitter-grammars/tree-sitter-objc 181a81b8f23a2d593e7ab4259981f50122909fda src .m
+ocaml https://github.com/tree-sitter/tree-sitter-ocaml 3ef7c00b29e41e3a0c1d18e82ea37c64d72b93fc grammars/ocaml/src .ml,.mli
+perl https://github.com/tree-sitter-perl/tree-sitter-perl ad74e6db234c35d537de9358799a8e0cc4f5dee0 src .pl,.pm
+powershell https://github.com/airbus-cert/tree-sitter-powershell da65ba3acc93777255781b447f5e7448245df4bf src .ps1,.psm1,.psd1
+r https://github.com/r-lib/tree-sitter-r 0e6ef7741712c09dc3ee6e81c42e919820cc65ef src .r,.R
+scss https://github.com/tree-sitter-grammars/tree-sitter-scss bca847c1410f7dd97e13fbe7838b3c2c203fb473 src .scss
+svelte https://github.com/tree-sitter-grammars/tree-sitter-svelte ae5199db47757f785e43a14b332118a5474de1a2 src .svelte
+xml https://github.com/tree-sitter-grammars/tree-sitter-xml 5000ae8f22d11fbe93939b05c1e37cf21117162d xml/src .xml
+awk https://github.com/Beaglefoot/tree-sitter-awk 34bbdc7cce8e803096f47b625979e34c1be38127 src
+clojure https://github.com/sogaiu/tree-sitter-clojure e43eff80d17cf34852dcd92ca5e6986d23a7040f src .clj,.cljs,.cljc,.edn
+d https://github.com/gdamore/tree-sitter-d fb028c8f14f4188286c2eef143f105def6fbf24f src
+regex https://github.com/tree-sitter/tree-sitter-regex b2ac15e27fce703d2f37a79ccd94a5c0cbe9720b src .regex
+agda https://github.com/tree-sitter/tree-sitter-agda e8d47a6987effe34d5595baf321d82d3519a8527 src .agda
+embedded_template https://github.com/tree-sitter/tree-sitter-embedded-template 3499d85f0a0d937c507a4a65368f2f63772786e1 src .erb,.ejs
+verilog https://github.com/tree-sitter/tree-sitter-verilog 227d277b6a1a5e2bf818d6206935722a7503de08 src .v,.sv,.svh
+ada https://github.com/briot/tree-sitter-ada 6b58259a08b1a22ba0247a7ce30be384db618da6 src
+angular https://github.com/dlvandenberg/tree-sitter-angular f0d0685701b70883fa2dfe94ee7dc27965cab841 src
+apex https://github.com/aheber/tree-sitter-sfapex 3597575a429766dd7ecce9f5bb97f6fec4419d5d apex/src
+arduino https://github.com/ObserverOfTime/tree-sitter-arduino 53eb391da4c6c5857f8defa2c583c46c2594f565 src
+asm https://github.com/RubixDev/tree-sitter-asm 839741fef4dab5128952334624905c82b40c7133 src .s,.asm
+astro https://github.com/virchau13/tree-sitter-astro 213f6e6973d9b456c6e50e86f19f66877e7ef0ee src
+authzed https://github.com/mleonidas/tree-sitter-authzed 83e5c26a8687eb4688fe91d690c735cc3d21ad81 src
+bass https://github.com/vito/tree-sitter-bass 28dc7059722be090d04cd751aed915b2fee2f89a src
+beancount https://github.com/polarmutex/tree-sitter-beancount d7a03a7506fbbbc4b16a9a2054ff7c2b337744b8 src
+bibtex https://github.com/latex-lsp/tree-sitter-bibtex 8d04ed27b3bc7929f14b7df9236797dab9f3fa66 src
+bicep https://github.com/amaanq/tree-sitter-bicep bff59884307c0ab009bd5e81afd9324b46a6c0f9 src
+bitbake https://github.com/amaanq/tree-sitter-bitbake a5d04fdb5a69a02b8fa8eb5525a60dfb5309b73b src
+blade https://github.com/EmranMR/tree-sitter-blade 42b3c5a06bc29fbd2c2cbd52b96113365fbed646 src
+brightscript https://github.com/ajdelcimmuto/tree-sitter-brightscript 253fdfaa23814cb46c2d5fc19049fa0f2f62c6da src
+caddy https://github.com/opa-oz/tree-sitter-caddy 9b3fde99d3d74345b85b655a6d8065e004fbe26f src
+cairo https://github.com/amaanq/tree-sitter-cairo 6238f609bea233040fe927858156dee5515a0745 src
+capnp https://github.com/amaanq/tree-sitter-capnp 7b0883c03e5edd34ef7bcf703194204299d7099f src
+chatito https://github.com/ObserverOfTime/tree-sitter-chatito c0ed82c665b732395073f635c74c300f09530a7f src
+circom https://github.com/Decurity/tree-sitter-circom 02150524228b1e6afef96949f2d6b7cc0aaf999e src
+comment https://github.com/stsewd/tree-sitter-comment 66272d2b6c73fb61157541b69dd0a7ce7b42a5ad src
+commonlisp https://github.com/theHamsta/tree-sitter-commonlisp 32323509b3d9fe96607d151c2da2c9009eb13a2f src
+cooklang https://github.com/addcninblue/tree-sitter-cooklang 4ebe237c1cf64cf3826fc249e9ec0988fe07e58e src
+corn https://github.com/jakestanger/tree-sitter-corn 464654742cbfd3a3de560aba120998f1d5dfa844 src
+cpon https://github.com/amaanq/tree-sitter-cpon 594289eadfec719198e560f9d7fd243c4db678d5 src
+csv https://github.com/amaanq/tree-sitter-csv f6bf6e35eb0b95fbadea4bb39cb9709507fcb181 csv/src
+cuda https://github.com/theHamsta/tree-sitter-cuda 48b066f334f4cf2174e05a50218ce2ed98b6fd01 src
+cue https://github.com/eonpatapon/tree-sitter-cue be0f609c73cc2929811a9bce0ed90ca71ea87604 src
+cylc https://github.com/elliotfontaine/tree-sitter-cylc 6d1d81137112299324b526477ce1db989ab58fb8 src
+desktop https://github.com/ValdezFOmar/tree-sitter-desktop 58e2ae16828d20889a36e657d728d901b4de47ec src
+devicetree https://github.com/joelspadin/tree-sitter-devicetree e685f1f6ac1702b046415efb476444167d63e41a src
+diff https://github.com/the-mikedavis/tree-sitter-diff 2520c3f934b3179bb540d23e0ef45f75304b5fed src
+disassembly https://github.com/ColinKennedy/tree-sitter-disassembly 0229c0211dba909c5d45129ac784a3f4d49c243a src .dis,.dump
+djot https://github.com/treeman/tree-sitter-djot 74fac1f53c6d52aeac104b6874e5506be6d0cfe6 src
+dockerfile https://github.com/camdencheek/tree-sitter-dockerfile 971acdd908568b4531b0ba28a445bf0bb720aba5 src
+doxygen https://github.com/amaanq/tree-sitter-doxygen ccd998f378c3f9345ea4eeb223f56d7b84d16687 src
+dtd https://github.com/tree-sitter-grammars/tree-sitter-xml 5000ae8f22d11fbe93939b05c1e37cf21117162d dtd/src
+earthfile https://github.com/glehmann/tree-sitter-earthfile 5baef88717ad0156fd29a8b12d0d8245bb1096a8 src
+ebnf https://github.com/RubixDev/ebnf 8e635b0b723c620774dfb8abf382a7f531894b40 crates/tree-sitter-ebnf/src
+editorconfig https://github.com/ValdezFOmar/tree-sitter-editorconfig 63f104dab268a25237f773323c172a4a380a00e1 src
+eds https://github.com/uyha/tree-sitter-eds 26d529e6cfecde391a03c21d1474eb51e0285805 src
+eex https://github.com/connorlay/tree-sitter-eex f742f2fe327463335e8671a87c0b9b396905d1d1 src
+elsa https://github.com/glapa-grossklag/tree-sitter-elsa 0a66b2b3f3c1915e67ad2ef9f7dbd2a84820d9d7 src
+enforce https://github.com/simonvic/tree-sitter-enforce eb2796871d966264cdb041b797416ef1757c8b4f src
+facility https://github.com/FacilityApi/tree-sitter-facility e4bfd3e960de9f4b4648acb1c92e9b95b47d8cfb src
+faust https://github.com/khiner/tree-sitter-faust 122dd101919289ea809bad643712fcb483a1bed0 src
+fennel https://github.com/alexmozaidze/tree-sitter-fennel 3f0f6b24d599e92460b969aabc4f4c5a914d15a0 src
+fidl https://github.com/google/tree-sitter-fidl 0a8910f293268e27ff554357c229ba172b0eaed2 src
+firrtl https://github.com/amaanq/tree-sitter-firrtl 8503d3a0fe0f9e427863cb0055699ff2d29ae5f5 src
+foam https://github.com/FoamScience/tree-sitter-foam 472c24f11a547820327fb1be565bcfff98ea96a4 src
+jsdoc https://github.com/tree-sitter/tree-sitter-jsdoc 658d18dcdddb75c760363faa4963427a7c6b52db src
+vue https://github.com/tree-sitter-grammars/tree-sitter-vue ce8011a414fdf8091f4e4071752efc376f4afb08 src .vue
+gleam https://github.com/gleam-lang/tree-sitter-gleam 6ea757f7eb8d391dbf24dbb9461990757946dd5e src .gleam
+odin https://github.com/tree-sitter-grammars/tree-sitter-odin d2ca8efb4487e156a60d5bd6db2598b872629403 src .odin
+fortran https://github.com/stadelmanma/tree-sitter-fortran 2880b7aab4fb7cc618de1ef3d4c6d93b2396c031 src .f,.f90,.f95,.f03,.f08
+pascal https://github.com/Isopod/tree-sitter-pascal 042119eca2e18a60e56317fb06ee3ba5c32cb447 src .pas,.pp,.inc
+scheme https://github.com/6cdh/tree-sitter-scheme b5c701148501fa056302827442b5b4956f1edc03 src .scm,.ss
+racket https://github.com/6cdh/tree-sitter-racket 56b57807f86aa4ddb14892572b318edd4bc90ebe src .rkt
+solidity https://github.com/JoranHonig/tree-sitter-solidity 048fe686cb1fde267243739b8bdbec8fc3a55272 src .sol
+fish https://github.com/ram02z/tree-sitter-fish fa2143f5d66a9eb6c007ba9173525ea7aaafe788 src .fish
+hack https://github.com/slackhq/tree-sitter-hack 1a7ded90288189746c54861ac144ede97df95081 src .hack,.hh
+purescript https://github.com/postsolar/tree-sitter-purescript f541f95ffd6852fbbe88636317c613285bc105af src .purs
+rescript https://github.com/rescript-lang/tree-sitter-rescript 43c2f1f35024918d415dc933d4cc534d6419fedf src .res,.resi
+v https://github.com/vlang/v-analyzer 9cf6a37689f06b17d170dec644ace81eb8eab280 tree_sitter_v/src .v,.vsh
+proto https://github.com/treywood/tree-sitter-proto e9f6b43f6844bd2189b50a422d4e2094313f6aa3 src .proto
+kdl https://github.com/tree-sitter-grammars/tree-sitter-kdl b37e3d58e5c5cf8d739b315d6114e02d42e66664 src .kdl
+meson https://github.com/tree-sitter-grammars/tree-sitter-meson c84f3540624b81fc44067030afce2ff78d6ede05 src
+properties https://github.com/tree-sitter-grammars/tree-sitter-properties 6310671b24d4e04b803577b1c675d765cbd5773b src .properties
+jsonnet https://github.com/sourcegraph/tree-sitter-jsonnet ddd075f1939aed8147b7aa67f042eda3fce22790 src .jsonnet,.libsonnet
+just https://github.com/IndianBoy42/tree-sitter-just 60df3d5b3fda2a22fdb3621226cafab50b763663 src
+ninja https://github.com/alemuller/tree-sitter-ninja 0a95cfdc0745b6ae82f60d3a339b37f19b7b9267 src .ninja
+starlark https://github.com/tree-sitter-grammars/tree-sitter-starlark a453dbf3ba433db0e5ec621a38a7e59d72e4dc69 src .star,.bzl
+requirements https://github.com/tree-sitter-grammars/tree-sitter-requirements caeb2ba854dea55931f76034978de1fd79362939 src
+dot https://github.com/rydesun/tree-sitter-dot 80327abbba6f47530edeb0df9f11bd5d5c93c14d src .dot,.gv
+mermaid https://github.com/monaqa/tree-sitter-mermaid 90ae195b31933ceb9d079abfa8a3ad0a36fee4cc src .mmd,.mermaid
+rst https://github.com/stsewd/tree-sitter-rst 4e562e1598b95b93db4f3f64fe40ddefbc677a15 src .rst
+org https://github.com/emiasims/tree-sitter-org 64cfbc213f5a83da17632c95382a5a0a2f3357c1 src .org
+robot https://github.com/Hubro/tree-sitter-robot 278958ff2fc44732833f717ee864c9fe4dae6e11 src .robot
+glsl https://github.com/tree-sitter-grammars/tree-sitter-glsl 24a6c8ef698e4480fecf8340d771fbcb5de8fbb4 src .glsl,.vert,.frag
+hlsl https://github.com/tree-sitter-grammars/tree-sitter-hlsl bab9111922d53d43668fabb61869bec51bbcb915 src .hlsl,.fx
+wgsl https://github.com/szebniok/tree-sitter-wgsl 40259f3c77ea856841a4e0c4c807705f3e4a2b65 src .wgsl
+vhdl https://github.com/jpt13653903/tree-sitter-vhdl a09b8dc58b59abf959e798849f12bc473b07bbb2 src .vhd,.vhdl
+llvm https://github.com/benwilliamgraham/tree-sitter-llvm 2914786ae6774d4c4e25a230f4afe16aa68fe1c1 src .ll
+gitcommit https://github.com/gbprod/tree-sitter-gitcommit a716678c0f00645fed1e6f1d0eb221481dbd6f6d src
+git_rebase https://github.com/the-mikedavis/tree-sitter-git-rebase bff4b66b44b020d918d67e2828eada1974a966aa src
+gitignore https://github.com/shunsambongi/tree-sitter-gitignore f4685bf11ac466dd278449bcfe5fd014e94aa504 src .gitignore
+git_config https://github.com/the-mikedavis/tree-sitter-git-config 0fbc9f99d5a28865f9de8427fb0672d66f9d83a5 src .gitconfig
+gitattributes https://github.com/tree-sitter-grammars/tree-sitter-gitattributes 1b7af09d45b579f9f288453b95ad555f1f431645 src .gitattributes
+http https://github.com/rest-nvim/tree-sitter-http db8b4398de90b6d0b6c780aba96aaa2cd8e9202c src .http
+nginx https://github.com/opa-oz/tree-sitter-nginx 47ade644d754cce57974aac44d2c9450e823d4f4 src
+tmux https://github.com/Freed-Wu/tree-sitter-tmux 75d1b995b0c23400ac8e49db757a2e0386f9fa8f src
+vimdoc https://github.com/neovim/tree-sitter-vimdoc f061895a0eff1d5b90e4fb60d21d87be3267031a src
+ssh_config https://github.com/tree-sitter-grammars/tree-sitter-ssh-config 71d2693deadaca8cdc09e38ba41d2f6042da1616 src
+puppet https://github.com/tree-sitter-grammars/tree-sitter-puppet 15f192929b7d317f5914de2b4accd37b349182a6 src .pp
+gn https://github.com/tree-sitter-grammars/tree-sitter-gn bc06955bc1e3c9ff8e9b2b2a55b38b94da923c05 src .gn,.gni
+move https://github.com/tree-sitter-grammars/tree-sitter-move b8ca25518749be10562455fd081a3dab30b93b8b src .move
+twig https://github.com/gbprod/tree-sitter-twig 7195ee573ab5c3b3bb0e91b042e6f83ac1b11104 src .twig
+pug https://github.com/zealot128/tree-sitter-pug 13e9195370172c86a8b88184cc358b23b677cc46 src .pug,.jade
+less https://github.com/rhino1998/tree-sitter-less 2bd739e106a3485bca210cf7b6d25ba09fd10dff src .less
+tcl https://github.com/tree-sitter-grammars/tree-sitter-tcl 8f11ac7206a54ed11210491cee1e0657e2962c47 src .tcl
+typst https://github.com/uben0/tree-sitter-typst 46cf4ded12ee974a70bf8457263b67ad7ee0379d src .typ
+markdown_inline https://github.com/tree-sitter-grammars/tree-sitter-markdown f969cd3ae3f9fbd4e43205431d0ae286014c05b5 tree-sitter-markdown-inline/src
+norg https://github.com/nvim-neorg/tree-sitter-norg d89d95af13d409f30a6c7676387bde311ec4a2c8 src .norg
+todotxt https://github.com/arnarg/tree-sitter-todotxt 3937c5cd105ec4127448651a21aef45f52d19609 src
+nim https://github.com/alaviss/tree-sitter-nim 9b4ede21a6ca866d29263f6b66c070961bc622b4 src .nim,.nims
+janet https://github.com/sogaiu/tree-sitter-janet-simple d183186995204314700be3e9e0a48053ea16b350 src .janet
+dhall https://github.com/jbellerb/tree-sitter-dhall 62013259b26ac210d5de1abf64cf1b047ef88000 src .dhall
+tablegen https://github.com/amaanq/tree-sitter-tablegen b1170880c61355aaf38fc06f4af7d3c55abdabc4 src .td
+kconfig https://github.com/amaanq/tree-sitter-kconfig 9ac99fe4c0c27a35dc6f757cef534c646e944881 src
+linkerscript https://github.com/amaanq/tree-sitter-linkerscript f99011a3554213b654985a4b0a65b3b032ec4621 src .ld,.lds
+luau https://github.com/tree-sitter-grammars/tree-sitter-luau a8914d6c1fc5131f8e1c13f769fa704c9f5eb02f src .luau
+hare https://github.com/tree-sitter-grammars/tree-sitter-hare eed7ddf6a66b596906aa8ca3d40521b8278adc6f src .ha
+gdscript https://github.com/PrestonKnopp/tree-sitter-gdscript 89e66b6bdc002ab976283f277cbb48b780c5d0e9 src .gd
+godot_resource https://github.com/PrestonKnopp/tree-sitter-godot-resource 302c1895f54bf74d53a08572f7b26a6614209adc src .tres,.tscn
+nickel https://github.com/nickel-lang/tree-sitter-nickel b5b6cc3bc7b9ea19f78fed264190685419cd17a8 src .ncl
+pkl https://github.com/apple/tree-sitter-pkl a02fc36f6001a22e7fdf35eaabbadb7b39c74ba5 src .pkl
+ron https://github.com/amaanq/tree-sitter-ron 78938553b93075e638035f624973083451b29055 src .ron
+rego https://github.com/FallenAngel97/tree-sitter-rego ddd39af81fe8b0288102a7cb97959dfce723e0f3 src .rego
+ledger https://github.com/cbarrete/tree-sitter-ledger 96c92d4908a836bf8f661166721c98439f8afb80 src .ledger,.journal
+liquid https://github.com/hankthetank27/tree-sitter-liquid fa11c7ba45038b61e03a8a00ad667fb5f3d72088 src .liquid
+nushell https://github.com/nushell/tree-sitter-nu bb3f533e5792260291945e1f329e1f0a779def6e src .nu
+thrift https://github.com/duskmoon314/tree-sitter-thrift 68fd0d80943a828d9e6f49c58a74be1e9ca142cf src .thrift
+prisma https://github.com/victorhqc/tree-sitter-prisma 3556b2c1f20ec9ac91e92d32c43d9d2a0ca3cc49 src .prisma
+ql https://github.com/tree-sitter/tree-sitter-ql 1fd627a4e8bff8c24c11987474bd33112bead857 src .ql
+promql https://github.com/MichaHoffmann/tree-sitter-promql 77625d78eebc3ffc44d114a07b2f348dff3061b0 src .promql
+uxntal https://github.com/amaanq/tree-sitter-uxntal ad9b638b914095320de85d59c49ab271603af048 src .tal
+squirrel https://github.com/amaanq/tree-sitter-squirrel 072c969749e66f000dba35a33c387650e203e96e src .nut
+groovy https://github.com/murtaza64/tree-sitter-groovy a88865a3301a538e2060af5b401f4f431f71406e src .groovy,.gvy
+yuck https://github.com/Philipp-M/tree-sitter-yuck e877f6ade4b77d5ef8787075141053631ba12318 src .yuck
+hurl https://github.com/pfeiferj/tree-sitter-hurl 597efbd7ce9a814bb058f48eabd055b1d1e12145 src .hurl
+hyprlang https://github.com/tree-sitter-grammars/tree-sitter-hyprlang 22723f25f3faf329863d952c9601b492afd971c9 src .conf
+pem https://github.com/ObserverOfTime/tree-sitter-pem e525b177a229b1154fd81bc0691f943028d9e685 src .pem
+crystal https://github.com/keidax/tree-sitter-crystal 51ad1411de9414b4600227553bb70953c352a627 src .cr
+elisp https://github.com/Wilfred/tree-sitter-elisp 29b4e49275f4a947ce17c8533bc20a1f97768c70 src .el
+fsharp https://github.com/ionide/tree-sitter-fsharp 5141851c278a99958469eb1736c7afc4ec738e47 fsharp/src .fs,.fsi,.fsx
+haxe https://github.com/vantreeseba/tree-sitter-haxe a55f3e2cf1e4449200fd089a80d3af642bcf5f94 src .hx
+teal https://github.com/euclidianAce/tree-sitter-teal 05d276e737055e6f77a21335b7573c9d3c091e2f src .tl
+forth https://github.com/AlexanderBrevig/tree-sitter-forth 360ef13f8c609ec6d2e80782af69958b84e36cd0 src .fs,.fth,.4th
+cobol https://github.com/yutaro-sakamoto/tree-sitter-cobol e99dbdc3d800d5fa2796476efd60af91f6b43d93 src .cob,.cbl,.cpy
+heex https://github.com/phoenixframework/tree-sitter-heex b5a7cb5f74dc695a9ff5f04919f872ebc7a895e9 src .heex
+templ https://github.com/vrischmann/tree-sitter-templ 1c6db04effbcd7773c826bded9783cbc3061bd55 src .templ
+jinja2 https://github.com/dbt-labs/tree-sitter-jinja2 a82ed374f4cb58a1358dd6b26a7157bde1bca3b7 src .j2,.jinja2,.jinja
+jq https://github.com/nverno/tree-sitter-jq 1e139eba1fd3a9c34a36f0f0f47ed8b73c9b4636 src .jq
+smithy https://github.com/indoorvivants/tree-sitter-smithy ec4fe14586f2b0a1bc65d6db17f8d8acd8a90433 src .smithy
+textproto https://github.com/PorterAtGoogle/tree-sitter-textproto 568471b80fd8793d37ed01865d8c2208a9fefd1b src .textproto,.txtpb,.pbtxt
+tlaplus https://github.com/tlaplus-community/tree-sitter-tlaplus add40814fda369f6efd989977b2c498aaddde984 src .tla
+matlab https://github.com/acristoffers/tree-sitter-matlab 574dde565caddf8cf44eec7df3cb89eb96053ed7 src .m,.mat
+sparql https://github.com/GordianDziwis/tree-sitter-sparql 1ef52d35a73a2a5f2e433ecfd1c751c1360a923b src .rq,.sparql
+turtle https://github.com/GordianDziwis/tree-sitter-turtle 7f789ea7ef765080f71a298fc96b7c957fa24422 src .ttl
+wat https://github.com/wasm-lsp/tree-sitter-wasm 2ca28a9f9d709847bf7a3de0942a84e912f59088 wat/src .wat,.wast
+prolog https://github.com/Rukiza/tree-sitter-prolog c246cf2bf36590a3cb4de380205376d3c46208e8 src .pl,.pro
+mojo https://github.com/HerringtonDarkholme/tree-sitter-mojo 99fe918e69f087f910ef3b11eba31eb0d7e54edf src .mojo,.🔥
+wolfram https://github.com/bostick/tree-sitter-wolfram 63ebdac6f040d9082d3d8fa88be96ce24549adc5 src .wl,.m,.nb

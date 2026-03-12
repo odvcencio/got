@@ -5,6 +5,8 @@ github.com/klauspost/compress v1.18.4 h1:RPhnKRAQ4Fh8zU2FY/6ZFDwTVTxgJ/EMydqSTzE
 github.com/klauspost/compress v1.18.4/go.mod h1:R0h/fSBs8DE4ENlcrlib3PsXS61voFxhIs2DeRhCvJ4=
 github.com/odvcencio/gotreesitter v0.6.0 h1:ENWx9c9pj/HadusA9Rdig5KvxyKBDKQXq7pX5k1h62o=
 github.com/odvcencio/gotreesitter v0.6.0/go.mod h1:CEjhRXmfP38AHqxwWxNcLaMsLQ3YoGMrwNGle1huZdU=
+github.com/odvcencio/gotreesitter v0.6.1-0.20260311120359-68e85114acc0 h1:ufpazJ6Xk2xuoiZjXnweG+4jyem3boqKY+I66/hbULQ=
+github.com/odvcencio/gotreesitter v0.6.1-0.20260311120359-68e85114acc0/go.mod h1:4HnA6/TfJ9WKjJNN4V7sQK0LrfjFxcBcFVFz9Mg+XeQ=
 github.com/odvcencio/gts-suite v0.5.0 h1:Q++knO355x+T54vTN+88XlhHBhDq15QYH4zmO6Mr/8A=
 github.com/odvcencio/gts-suite v0.5.0/go.mod h1:LkjVxU9aXZMTkMt6jclV2+Iefx6ytbdrTkHCXoMYVNY=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=

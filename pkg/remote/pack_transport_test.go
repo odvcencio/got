@@ -2,6 +2,7 @@ package remote
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/odvcencio/graft/pkg/object"
@@ -91,5 +92,54 @@ func TestPackTransportCommitAndTree(t *testing.T) {
 	}
 	if types[object.TypeCommit] != 1 || types[object.TypeTree] != 1 || types[object.TypeBlob] != 1 {
 		t.Fatalf("type distribution: %v", types)
+	}
+}
+
+func TestPackTransportPreservesOrderWithParallelPreparation(t *testing.T) {
+	records := make([]ObjectRecord, 0, 32)
+	for i := 0; i < 16; i++ {
+		blobData := object.MarshalBlob(&object.Blob{Data: bytes.Repeat([]byte{byte('a' + i)}, 2048+i*17)})
+		records = append(records, ObjectRecord{
+			Hash: object.HashObject(object.TypeBlob, blobData),
+			Type: object.TypeBlob,
+			Data: blobData,
+		})
+	}
+	for i := 0; i < 4; i++ {
+		entityData := object.MarshalEntity(&object.EntityObj{
+			Kind: "function_definition",
+			Name: fmt.Sprintf("fn_%d", i),
+			Body: bytes.Repeat([]byte("body\n"), 128+i*9),
+		})
+		records = append(records, ObjectRecord{
+			Hash: object.HashObject(object.TypeEntity, entityData),
+			Type: object.TypeEntity,
+			Data: entityData,
+		})
+	}
+
+	var buf bytes.Buffer
+	if err := EncodePackTransport(&buf, records); err != nil {
+		t.Fatalf("EncodePackTransport: %v", err)
+	}
+
+	decoded, err := DecodePackTransport(buf.Bytes())
+	if err != nil {
+		t.Fatalf("DecodePackTransport: %v", err)
+	}
+	if len(decoded) != len(records) {
+		t.Fatalf("decoded %d records, want %d", len(decoded), len(records))
+	}
+
+	for i := range records {
+		if decoded[i].Hash != records[i].Hash {
+			t.Fatalf("record %d hash = %s, want %s", i, decoded[i].Hash, records[i].Hash)
+		}
+		if decoded[i].Type != records[i].Type {
+			t.Fatalf("record %d type = %s, want %s", i, decoded[i].Type, records[i].Type)
+		}
+		if !bytes.Equal(decoded[i].Data, records[i].Data) {
+			t.Fatalf("record %d data mismatch", i)
+		}
 	}
 }

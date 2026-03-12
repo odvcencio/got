@@ -1,0 +1,39 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Build artifacts
+scannertest
+ts2go
+tsquery
+parity_report
+
+# Logs
+*.log
+*.prof
+
+# Benchmark outputs
+cgo_harness/reports/
+harness_out/
+parity_out/
+
+# Generated real-corpus artifacts
+cgo_harness/corpus_real/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Worktrees
+.worktrees/

@@ -1,8 +1,10 @@
 package repo
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/odvcencio/graft/pkg/object"
@@ -586,6 +588,62 @@ func TestAdd_GlobstarPathspecStagesRecursively(t *testing.T) {
 	}
 }
 
+func TestAdd_DuplicateContentStagesDeterministically(t *testing.T) {
+	prevProcs := runtime.GOMAXPROCS(4)
+	defer runtime.GOMAXPROCS(prevProcs)
+
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(dir, "pkg"), 0o755); err != nil {
+		t.Fatalf("mkdir pkg: %v", err)
+	}
+
+	const fileCount = 16
+	content := []byte("package shared\n\nfunc Shared() {}\n")
+	paths := make([]string, 0, fileCount)
+	for i := 0; i < fileCount; i++ {
+		relPath := filepath.ToSlash(filepath.Join("pkg", fmt.Sprintf("shared_%02d.go", i)))
+		paths = append(paths, relPath)
+		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(relPath)), content, 0o644); err != nil {
+			t.Fatalf("write %s: %v", relPath, err)
+		}
+	}
+
+	if err := r.Add(paths); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+
+	var blobHash object.Hash
+	for i, relPath := range paths {
+		entry, ok := stg.Entries[relPath]
+		if !ok {
+			t.Fatalf("missing staged entry for %s", relPath)
+		}
+		if entry.BlobHash == "" {
+			t.Fatalf("%s has empty BlobHash", relPath)
+		}
+		if entry.EntityListHash == "" {
+			t.Fatalf("%s has empty EntityListHash", relPath)
+		}
+		if i == 0 {
+			blobHash = entry.BlobHash
+			continue
+		}
+		if entry.BlobHash != blobHash {
+			t.Fatalf("%s BlobHash = %s, want %s", relPath, entry.BlobHash, blobHash)
+		}
+	}
+}
+
 func TestRemove_RemovesFromIndexAndWorktree(t *testing.T) {
 	dir := t.TempDir()
 	r, err := Init(dir)
@@ -725,6 +783,7 @@ func TestAddWithProgress_ReportsPhasesAndCounts(t *testing.T) {
 
 	var scanComplete *AddProgress
 	stageCount := 0
+	stagePaths := make([]string, 0, 2)
 	for i := range events {
 		ev := events[i]
 		switch ev.Phase {
@@ -733,11 +792,15 @@ func TestAddWithProgress_ReportsPhasesAndCounts(t *testing.T) {
 			scanComplete = &copy
 		case AddProgressPhaseStageFile:
 			stageCount++
+			stagePaths = append(stagePaths, ev.Path)
 			if ev.Total <= 0 {
 				t.Fatalf("stage event total = %d, want > 0", ev.Total)
 			}
 			if ev.Current <= 0 || ev.Current > ev.Total {
 				t.Fatalf("stage event current/total = %d/%d invalid", ev.Current, ev.Total)
+			}
+			if ev.Current != stageCount {
+				t.Fatalf("stage event current = %d, want %d", ev.Current, stageCount)
 			}
 			if ev.Path == "" {
 				t.Fatalf("stage event missing path")
@@ -753,6 +816,9 @@ func TestAddWithProgress_ReportsPhasesAndCounts(t *testing.T) {
 	}
 	if stageCount != 2 {
 		t.Fatalf("stage event count = %d, want 2", stageCount)
+	}
+	if len(stagePaths) != 2 || stagePaths[0] != "main.go" || stagePaths[1] != "pkg/util.go" {
+		t.Fatalf("stage paths = %v, want [main.go pkg/util.go]", stagePaths)
 	}
 
 	last := events[len(events)-1]

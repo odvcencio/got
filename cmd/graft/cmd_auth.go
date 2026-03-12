@@ -152,7 +152,7 @@ func newAuthSetupCmd() *cobra.Command {
 				return nil
 			}
 
-			currentToken := configuredToken(authResp.Token)
+			currentToken := configuredTokenForHost(baseURL, authResp.Token)
 			if currentToken == "" {
 				return fmt.Errorf("cannot register ssh key without auth token")
 			}
@@ -188,8 +188,7 @@ func newAuthSSHLoginCmd() *cobra.Command {
 			}
 			username = strings.TrimSpace(username)
 			if username == "" {
-				cfg := loadUserConfig()
-				username = strings.TrimSpace(cfg.Username)
+				username = configuredUsernameForHost(baseURL)
 			}
 			if username == "" {
 				return fmt.Errorf("username is required (pass --username or configure via auth setup)")
@@ -257,8 +256,7 @@ func newAuthBootstrapSSHCmd() *cobra.Command {
 
 			username = strings.TrimSpace(username)
 			if username == "" {
-				cfg := loadUserConfig()
-				username = strings.TrimSpace(cfg.Username)
+				username = configuredUsernameForHost(baseURL)
 			}
 
 			token := strings.TrimSpace(bootstrapToken)
@@ -266,7 +264,7 @@ func newAuthBootstrapSSHCmd() *cobra.Command {
 				token = strings.TrimSpace(os.Getenv("GRAFT_BOOTSTRAP_TOKEN"))
 			}
 			if token == "" {
-				authToken := strings.TrimSpace(configuredToken(""))
+				authToken := strings.TrimSpace(configuredTokenForHost(baseURL, ""))
 				if authToken != "" {
 					mintResp, err := mintBootstrapToken(cmd, baseURL, authToken, mintTTL)
 					if err != nil {
@@ -392,7 +390,7 @@ func newAuthRegisterSSHKeyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			token := configuredToken(tokenFlag)
+			token := configuredTokenForHost(baseURL, tokenFlag)
 			if token == "" {
 				return fmt.Errorf("auth token not found; run `graft auth setup` or set GRAFT_TOKEN")
 			}
@@ -415,7 +413,9 @@ func newAuthRegisterSSHKeyCmd() *cobra.Command {
 }
 
 func newAuthStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	host := configuredOrchardHost("")
+	var all bool
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show current graft auth configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -424,42 +424,150 @@ func newAuthStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			host := strings.TrimSpace(cfg.OrchardURL)
-			if host == "" {
-				host = defaultOrchardBaseURL
+			baseURL, err := normalizeBaseURL(configuredOrchardHost(host), defaultOrchardBaseURL)
+			if err != nil {
+				return err
 			}
-			tokenSet := strings.TrimSpace(configuredToken("")) != ""
-			fmt.Fprintf(cmd.OutOrStdout(), "config: %s\n", path)
-			fmt.Fprintf(cmd.OutOrStdout(), "host: %s\n", host)
-			if strings.TrimSpace(cfg.Username) != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "username: %s\n", cfg.Username)
-			}
-			if strings.TrimSpace(cfg.Owner) != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "owner: %s\n", cfg.Owner)
-			}
-			if tokenSet {
-				fmt.Fprintln(cmd.OutOrStdout(), "token: set")
-			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), "token: not set")
+			for _, line := range formatAuthStatusLines(cfg, path, baseURL, all) {
+				fmt.Fprintln(cmd.OutOrStdout(), line)
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&host, "host", host, "Orchard base URL (default: --host, GRAFT_ORCHARD_URL, ~/.graftconfig, or https://orchard.dev)")
+	cmd.Flags().BoolVar(&all, "all", false, "show auth state for all configured Orchard hosts")
+	return cmd
 }
 
 func newAuthLogoutCmd() *cobra.Command {
-	return &cobra.Command{
+	host := configuredOrchardHost("")
+	var all bool
+	cmd := &cobra.Command{
 		Use:   "logout",
 		Short: "Clear stored auth token from ~/.graftconfig",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := loadUserConfig()
-			cfg.Token = ""
+			if all {
+				clearAllStoredAuthTokens(cfg)
+				if err := userconfig.Save(cfg); err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "Cleared stored auth tokens for all Orchard hosts.")
+				return nil
+			}
+			baseURL, err := normalizeBaseURL(configuredOrchardHost(host), defaultOrchardBaseURL)
+			if err != nil {
+				return err
+			}
+			profile := cfg.OrchardProfile(baseURL)
+			profile.Token = ""
+			cfg.SetOrchardProfile(baseURL, profile)
+			if strings.TrimSpace(cfg.DefaultOrchardURL()) == strings.TrimSpace(baseURL) {
+				cfg.Token = ""
+			}
 			if err := userconfig.Save(cfg); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Cleared stored auth token.")
+			fmt.Fprintf(cmd.OutOrStdout(), "Cleared stored auth token for %s.\n", baseURL)
 			return nil
 		},
+	}
+	cmd.Flags().StringVar(&host, "host", host, "Orchard base URL (default: --host, GRAFT_ORCHARD_URL, ~/.graftconfig, or https://orchard.dev)")
+	cmd.Flags().BoolVar(&all, "all", false, "clear stored auth tokens for all configured Orchard hosts")
+	return cmd
+}
+
+func formatAuthStatusLines(cfg *userconfig.Config, path, selectedHost string, includeAll bool) []string {
+	lines := []string{"config: " + path}
+	if !includeAll {
+		profile := cfg.OrchardProfile(selectedHost)
+		lines = append(lines, "host: "+selectedHost)
+		if strings.TrimSpace(profile.Username) != "" {
+			lines = append(lines, "username: "+profile.Username)
+		}
+		if strings.TrimSpace(profile.Owner) != "" {
+			lines = append(lines, "owner: "+profile.Owner)
+		}
+		if strings.TrimSpace(profile.Token) != "" {
+			lines = append(lines, "token: set")
+		} else {
+			lines = append(lines, "token: not set")
+		}
+		if known := knownAuthHosts(cfg, selectedHost); len(known) > 1 {
+			lines = append(lines, fmt.Sprintf("known orchard hosts: %d (use --all to list)", len(known)))
+		}
+		return lines
+	}
+
+	for _, host := range knownAuthHosts(cfg, selectedHost) {
+		profile := cfg.OrchardProfile(host)
+		labels := make([]string, 0, 3)
+		if host == cfg.DefaultOrchardURL() {
+			labels = append(labels, "default")
+		}
+		if host == selectedHost {
+			labels = append(labels, "selected")
+		}
+		if strings.TrimSpace(profile.Token) != "" {
+			labels = append(labels, "token:set")
+		} else {
+			labels = append(labels, "token:not set")
+		}
+		line := "host: " + host
+		if len(labels) > 0 {
+			line += " (" + strings.Join(labels, ", ") + ")"
+		}
+		lines = append(lines, line)
+		if strings.TrimSpace(profile.Username) != "" {
+			lines = append(lines, "username: "+profile.Username)
+		}
+		if strings.TrimSpace(profile.Owner) != "" {
+			lines = append(lines, "owner: "+profile.Owner)
+		}
+	}
+	return lines
+}
+
+func knownAuthHosts(cfg *userconfig.Config, selectedHost string) []string {
+	if cfg == nil {
+		if strings.TrimSpace(selectedHost) == "" {
+			return nil
+		}
+		return []string{selectedHost}
+	}
+
+	seen := make(map[string]struct{})
+	hosts := make([]string, 0, len(cfg.OrchardProfileHosts())+2)
+	addHost := func(host string) {
+		host = strings.TrimSpace(host)
+		if host == "" {
+			return
+		}
+		if _, ok := seen[host]; ok {
+			return
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+
+	addHost(cfg.DefaultOrchardURL())
+	addHost(selectedHost)
+	for _, host := range cfg.OrchardProfileHosts() {
+		addHost(host)
+	}
+	sort.Strings(hosts)
+	return hosts
+}
+
+func clearAllStoredAuthTokens(cfg *userconfig.Config) {
+	if cfg == nil {
+		return
+	}
+	cfg.Token = ""
+	for _, host := range cfg.OrchardProfileHosts() {
+		profile := cfg.OrchardProfile(host)
+		profile.Token = ""
+		cfg.SetOrchardProfile(host, profile)
 	}
 }
 
@@ -623,12 +731,18 @@ func registerSSHKey(cmd *cobra.Command, baseURL, token, name, publicKey string) 
 
 func writeAuthConfig(baseURL, token string, user authUser) error {
 	cfg := loadUserConfig()
-	cfg.OrchardURL = strings.TrimSpace(baseURL)
-	cfg.Token = strings.TrimSpace(token)
-	cfg.Username = strings.TrimSpace(user.Username)
-	if strings.TrimSpace(cfg.Owner) == "" && strings.TrimSpace(user.Username) != "" {
-		cfg.Owner = strings.TrimSpace(user.Username)
+	profile := cfg.OrchardProfile(baseURL)
+	profile.Token = strings.TrimSpace(token)
+	if username := strings.TrimSpace(user.Username); username != "" {
+		profile.Username = username
+		if strings.TrimSpace(profile.Owner) == "" {
+			profile.Owner = username
+		}
 	}
+	cfg.OrchardURL = cfg.SetOrchardProfile(baseURL, profile)
+	cfg.Token = profile.Token
+	cfg.Username = profile.Username
+	cfg.Owner = profile.Owner
 	return userconfig.Save(cfg)
 }
 

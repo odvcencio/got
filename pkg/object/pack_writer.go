@@ -38,6 +38,12 @@ func compressPackPayload(raw []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// CompressPackPayload zlib-compresses a raw pack payload so callers can
+// parallelize pack preparation before serial pack writing.
+func CompressPackPayload(raw []byte) ([]byte, error) {
+	return compressPackPayload(raw)
+}
+
 // PackWriter writes Git-compatible pack streams with zlib-compressed object
 // entries. The trailer checksum is SHA-256 over all bytes preceding the trailer.
 type PackWriter struct {
@@ -78,8 +84,7 @@ func (p *PackWriter) CurrentOffset() uint64 {
 	return p.counter.Count()
 }
 
-// WriteEntry appends one object entry to the pack stream.
-func (p *PackWriter) WriteEntry(objType PackObjectType, data []byte) error {
+func (p *PackWriter) writeCompressedEntry(objType PackObjectType, rawSize uint64, compressed []byte) error {
 	if p.finished {
 		return fmt.Errorf("pack writer already finished")
 	}
@@ -87,14 +92,9 @@ func (p *PackWriter) WriteEntry(objType PackObjectType, data []byte) error {
 		return fmt.Errorf("pack object count exceeded: expected %d", p.expected)
 	}
 
-	header := encodePackEntryHeader(objType, uint64(len(data)))
+	header := encodePackEntryHeader(objType, rawSize)
 	if _, err := p.hashedW.Write(header); err != nil {
 		return fmt.Errorf("write pack entry header: %w", err)
-	}
-
-	compressed, err := compressPackPayload(data)
-	if err != nil {
-		return fmt.Errorf("compress pack entry: %w", err)
 	}
 	if _, err := p.hashedW.Write(compressed); err != nil {
 		return fmt.Errorf("write compressed pack entry: %w", err)
@@ -102,6 +102,22 @@ func (p *PackWriter) WriteEntry(objType PackObjectType, data []byte) error {
 
 	p.written++
 	return nil
+}
+
+// WriteCompressedEntry appends an already-compressed object entry. The caller
+// is responsible for passing the uncompressed object size alongside the exact
+// zlib-compressed payload bytes for that object.
+func (p *PackWriter) WriteCompressedEntry(objType PackObjectType, rawSize uint64, compressed []byte) error {
+	return p.writeCompressedEntry(objType, rawSize, compressed)
+}
+
+// WriteEntry appends one object entry to the pack stream.
+func (p *PackWriter) WriteEntry(objType PackObjectType, data []byte) error {
+	compressed, err := compressPackPayload(data)
+	if err != nil {
+		return fmt.Errorf("compress pack entry: %w", err)
+	}
+	return p.writeCompressedEntry(objType, uint64(len(data)), compressed)
 }
 
 // WriteOfsDelta writes an OFS_DELTA entry using an insert-only delta stream.

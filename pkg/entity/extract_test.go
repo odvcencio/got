@@ -344,6 +344,13 @@ func TestExtractUnknownExtension(t *testing.T) {
 	}
 }
 
+func TestExtractRejectsNonStructuralPlainText(t *testing.T) {
+	_, err := Extract("notes.txt", []byte("hello world\n"))
+	if err == nil {
+		t.Fatal("expected error for non-structural plain text")
+	}
+}
+
 func TestExtractEmptyFile(t *testing.T) {
 	el, err := Extract("empty.go", []byte(""))
 	if err != nil {

@@ -58,6 +58,47 @@ func TestPackWriterMultipleObjects(t *testing.T) {
 	}
 }
 
+func TestPackWriterCompressedEntryMatchesWriteEntry(t *testing.T) {
+	data := bytes.Repeat([]byte("hello world\n"), 64)
+
+	var direct bytes.Buffer
+	pwDirect, err := NewPackWriter(&direct, 1)
+	if err != nil {
+		t.Fatalf("NewPackWriter(direct): %v", err)
+	}
+	if err := pwDirect.WriteEntry(PackBlob, data); err != nil {
+		t.Fatalf("WriteEntry: %v", err)
+	}
+	directChecksum, err := pwDirect.Finish()
+	if err != nil {
+		t.Fatalf("Finish(direct): %v", err)
+	}
+
+	var prepared bytes.Buffer
+	pwPrepared, err := NewPackWriter(&prepared, 1)
+	if err != nil {
+		t.Fatalf("NewPackWriter(prepared): %v", err)
+	}
+	compressed, err := compressPackPayload(data)
+	if err != nil {
+		t.Fatalf("compressPackPayload: %v", err)
+	}
+	if err := pwPrepared.writeCompressedEntry(PackBlob, uint64(len(data)), compressed); err != nil {
+		t.Fatalf("writeCompressedEntry: %v", err)
+	}
+	preparedChecksum, err := pwPrepared.Finish()
+	if err != nil {
+		t.Fatalf("Finish(prepared): %v", err)
+	}
+
+	if directChecksum != preparedChecksum {
+		t.Fatalf("checksum mismatch: direct=%s prepared=%s", directChecksum, preparedChecksum)
+	}
+	if !bytes.Equal(direct.Bytes(), prepared.Bytes()) {
+		t.Fatalf("prepared entry bytes differ from direct write")
+	}
+}
+
 func TestPackWriterCountMismatch(t *testing.T) {
 	var buf bytes.Buffer
 	pw, err := NewPackWriter(&buf, 2)

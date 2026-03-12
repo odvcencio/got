@@ -255,11 +255,46 @@ func formatUserConfig(cfg *userconfig.Config) []string {
 	if cfg.Owner != "" {
 		lines = append(lines, "orchard.owner="+cfg.Owner)
 	}
+	lines = append(lines, formatUserConfigOrchardProfiles(cfg)...)
 	if cfg.SigningKeyPath != "" {
 		lines = append(lines, "signing.key="+cfg.SigningKeyPath)
 	}
 	if cfg.AutoSign {
 		lines = append(lines, "signing.auto=true")
+	}
+	return lines
+}
+
+func formatUserConfigOrchardProfiles(cfg *userconfig.Config) []string {
+	if cfg == nil {
+		return nil
+	}
+
+	hosts := cfg.OrchardProfileHosts()
+	defaultHost := cfg.DefaultOrchardURL()
+	if defaultHost != "" && len(hosts) == 0 {
+		profile := cfg.OrchardProfile(defaultHost)
+		if profile.Token != "" || profile.Username != "" || profile.Owner != "" {
+			hosts = append(hosts, defaultHost)
+		}
+	}
+
+	lines := make([]string, 0, len(hosts)*4)
+	for _, host := range hosts {
+		profile := cfg.OrchardProfile(host)
+		prefix := "orchard.profile[" + host + "]"
+		if host == defaultHost {
+			lines = append(lines, prefix+".default=true")
+		}
+		if profile.Username != "" {
+			lines = append(lines, prefix+".username="+profile.Username)
+		}
+		if profile.Owner != "" {
+			lines = append(lines, prefix+".owner="+profile.Owner)
+		}
+		if profile.Token != "" {
+			lines = append(lines, prefix+".token=set")
+		}
 	}
 	return lines
 }
@@ -279,4 +314,3 @@ func formatRepoConfig(cfg *repo.Config) []string {
 	}
 	return lines
 }
-

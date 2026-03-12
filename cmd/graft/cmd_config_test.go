@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/odvcencio/graft/pkg/userconfig"
 )
 
 func TestIntegration_ConfigSetGetRepoLevel(t *testing.T) {
@@ -133,5 +135,44 @@ func TestIntegration_ConfigUnknownKey(t *testing.T) {
 	_, err := runGraft(t, dir, "config", "foo.bar", "value")
 	if err == nil {
 		t.Fatal("expected error for unknown config key")
+	}
+}
+
+func TestFormatUserConfigIncludesOrchardProfiles(t *testing.T) {
+	lines := formatUserConfig(&userconfig.Config{
+		OrchardURL: "https://orchard.example.com",
+		Username:   "orchard-user",
+		Owner:      "orchard-owner",
+		OrchardProfiles: map[string]userconfig.OrchardProfile{
+			"https://orchard.example.com": {
+				Token:    "orchard-token",
+				Username: "orchard-user",
+				Owner:    "orchard-owner",
+			},
+			"https://code.example.com/api/v1": {
+				Token:    "code-token",
+				Username: "code-user",
+				Owner:    "code-owner",
+			},
+		},
+	})
+
+	out := strings.Join(lines, "\n")
+	for _, want := range []string{
+		"orchard.url=https://orchard.example.com",
+		"orchard.username=orchard-user",
+		"orchard.owner=orchard-owner",
+		"orchard.profile[https://orchard.example.com].default=true",
+		"orchard.profile[https://orchard.example.com].token=set",
+		"orchard.profile[https://code.example.com/api/v1].username=code-user",
+		"orchard.profile[https://code.example.com/api/v1].owner=code-owner",
+		"orchard.profile[https://code.example.com/api/v1].token=set",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("formatUserConfig output missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "code-token") || strings.Contains(out, "orchard-token") {
+		t.Fatalf("formatUserConfig leaked token values:\n%s", out)
 	}
 }
