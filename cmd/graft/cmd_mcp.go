@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	mcpServerName      = "graft-coord"
-	mcpServerVersion   = "0.1.0"
+	mcpServerName      = "graft"
+	mcpServerVersion   = "0.2.0"
 	mcpProtocolVersion = "2024-11-05"
 )
 
@@ -46,15 +46,13 @@ func newMCPServeCmd() *cobra.Command {
 		Long: `Start a JSON-RPC 2.0 MCP server over stdio with Content-Length framing.
 Exposes graft coordination tools for AI agent integration.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if withCodeintel {
-				log.Println("note: --with-codeintel set; gts-suite code intelligence integration planned but not yet active")
-			}
 			server := newMCPServer(os.Stdin, os.Stdout, os.Stderr)
+			server.withCodeintel = withCodeintel
 			return server.run()
 		},
 	}
 
-	cmd.Flags().BoolVar(&withCodeintel, "with-codeintel", false, "enable gts-suite code intelligence tools (stub)")
+	cmd.Flags().BoolVar(&withCodeintel, "with-codeintel", false, "enable tree-sitter code intelligence tools (entities, symbols, references, exports, callers)")
 	return cmd
 }
 
@@ -148,10 +146,11 @@ func (s mcpSchema) toMap() map[string]any {
 // --- MCP Server ---
 
 type mcpServer struct {
-	reader *bufio.Reader
-	writer io.Writer
-	log    *log.Logger
-	outMu  sync.Mutex
+	reader        *bufio.Reader
+	writer        io.Writer
+	log           *log.Logger
+	outMu         sync.Mutex
+	withCodeintel bool
 }
 
 func newMCPServer(in io.Reader, out io.Writer, logOut io.Writer) *mcpServer {
@@ -226,7 +225,15 @@ func (s *mcpServer) handleRequest(request mcpRPCRequest) (any, *mcpRPCError) {
 	case "shutdown":
 		return map[string]any{}, nil
 	case "tools/list":
-		return mcpToolsListResult{Tools: mcpToolDefs()}, nil
+		tools := mcpToolDefs()
+		tools = append(tools, mcpPlanToolDefs()...)
+		if s.withCodeintel {
+			tools = append(tools, mcpCodeintelToolDefs()...)
+		}
+		sort.Slice(tools, func(i, j int) bool {
+			return tools[i].Name < tools[j].Name
+		})
+		return mcpToolsListResult{Tools: tools}, nil
 	case "tools/call":
 		var params mcpToolsCallParams
 		if err := mcpDecodeParams(request.Params, &params); err != nil {
@@ -240,7 +247,7 @@ func (s *mcpServer) handleRequest(request mcpRPCRequest) (any, *mcpRPCError) {
 		}
 
 		started := time.Now()
-		result, err := mcpDispatchTool(params.Name, params.Arguments)
+		result, err := mcpDispatchAll(s.withCodeintel, params.Name, params.Arguments)
 		durationMs := time.Since(started).Milliseconds()
 
 		meta := map[string]any{
@@ -534,6 +541,25 @@ func mcpDispatchTool(name string, args map[string]any) (any, error) {
 	default:
 		return nil, fmt.Errorf("unknown tool %q", name)
 	}
+}
+
+// mcpDispatchAll routes a tool call to the correct dispatcher.
+func mcpDispatchAll(withCodeintel bool, name string, args map[string]any) (any, error) {
+	// Try coordination tools first.
+	result, err := mcpDispatchTool(name, args)
+	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
+		return result, err
+	}
+	// Try plan tools.
+	result, err = mcpDispatchPlanTool(name, args)
+	if err == nil || !strings.Contains(err.Error(), "unknown plan tool") {
+		return result, err
+	}
+	// Try codeintel tools if enabled.
+	if withCodeintel {
+		return mcpDispatchCodeintelTool(name, args)
+	}
+	return nil, fmt.Errorf("unknown tool %q", name)
 }
 
 // --- Arg helpers ---
