@@ -110,6 +110,9 @@ func applyDelta(base, delta []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read result size: %w", err)
 	}
+	if resultSize > maxDecompressedObjectSize {
+		return nil, fmt.Errorf("delta result size %d exceeds maximum (%d bytes)", resultSize, maxDecompressedObjectSize)
+	}
 
 	out := make([]byte, 0, resultSize)
 	for dr.Len() > 0 {

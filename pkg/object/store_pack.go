@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -209,14 +210,20 @@ func (s *Store) gcWithReachableSet(reachable map[Hash]struct{}) (*GCSummary, err
 	s.InvalidatePackIndexCache()
 
 	pruned := 0
+	removeFailed := 0
 	for _, h := range toPack {
 		if err := os.Remove(s.objectPath(h)); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			return nil, fmt.Errorf("gc: remove loose object %s: %w", h, err)
+			removeFailed++
+			slog.Warn("gc: could not remove loose object", "hash", string(h), "error", err)
+			continue
 		}
 		pruned++
+	}
+	if removeFailed > 0 {
+		slog.Warn("gc: some loose objects could not be removed", "failed", removeFailed, "total", len(toPack))
 	}
 
 	return &GCSummary{
@@ -371,6 +378,17 @@ func (s *Store) cachedPackIndex(idxPath string) (*PackIndex, error) {
 	if s.packIdxCache == nil {
 		s.packIdxCache = make(map[string]packIndexCacheEntry)
 	}
+	// Evict oldest entry if cache is at capacity.
+	if _, exists := s.packIdxCache[idxPath]; !exists && len(s.packIdxCache) >= maxPackIdxCacheEntries {
+		if len(s.packIdxOrder) > 0 {
+			oldest := s.packIdxOrder[0]
+			s.packIdxOrder = s.packIdxOrder[1:]
+			delete(s.packIdxCache, oldest)
+		}
+	}
+	if _, exists := s.packIdxCache[idxPath]; !exists {
+		s.packIdxOrder = append(s.packIdxOrder, idxPath)
+	}
 	s.packIdxCache[idxPath] = packIndexCacheEntry{idx: idx, modTime: modNano}
 	s.packIdxMu.Unlock()
 
@@ -382,6 +400,7 @@ func (s *Store) cachedPackIndex(idxPath string) (*PackIndex, error) {
 func (s *Store) InvalidatePackIndexCache() {
 	s.packIdxMu.Lock()
 	s.packIdxCache = nil
+	s.packIdxOrder = nil
 	s.packIdxMu.Unlock()
 }
 

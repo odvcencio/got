@@ -40,6 +40,9 @@ func (idx *PackIndex) Find(h Hash) (PackIndexEntry, bool) {
 	if end <= start {
 		return PackIndexEntry{}, false
 	}
+	if end > uint32(len(idx.entries)) {
+		return PackIndexEntry{}, false
+	}
 
 	lo := int(start)
 	hi := int(end)

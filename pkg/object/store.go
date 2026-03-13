@@ -21,15 +21,19 @@ type packIndexCacheEntry struct {
 	modTime int64 // UnixNano of the idx file when cached
 }
 
+const maxPackIdxCacheEntries = 64
+
 // Store is a content-addressed object store with a 2-character fan-out
 // directory layout: objects/ab/cdef0123...
 type Store struct {
 	root string
 
-	// packIdxMu guards packIdxCache.
+	// packIdxMu guards packIdxCache and packIdxOrder.
 	packIdxMu sync.Mutex
 	// packIdxCache maps absolute idx file path → cached parsed index.
 	packIdxCache map[string]packIndexCacheEntry
+	// packIdxOrder tracks insertion order for cache eviction.
+	packIdxOrder []string
 }
 
 // NewStore creates a Store rooted at the given directory. The objects/

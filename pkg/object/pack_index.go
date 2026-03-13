@@ -73,13 +73,19 @@ func WritePackIndex(w io.Writer, entries []PackIndexEntry, packChecksum Hash) (H
 	buf.Write(packIndexMagic[:])
 	_ = binary.Write(&buf, binary.BigEndian, uint32(packIndexVersion))
 
-	fanout := buildPackIndexFanout(normalized)
+	fanout, err := buildPackIndexFanout(normalized)
+	if err != nil {
+		return "", err
+	}
 	for i := 0; i < 256; i++ {
 		_ = binary.Write(&buf, binary.BigEndian, fanout[i])
 	}
 
 	for _, entry := range normalized {
-		raw, _ := hashHexToBytes(entry.Hash)
+		raw, err := hashHexToBytes(entry.Hash)
+		if err != nil {
+			return "", fmt.Errorf("entry hash %s: %w", entry.Hash, err)
+		}
 		buf.Write(raw)
 	}
 	for _, entry := range normalized {
@@ -112,10 +118,13 @@ func WritePackIndex(w io.Writer, entries []PackIndexEntry, packChecksum Hash) (H
 	return Hash(hex.EncodeToString(indexSum[:])), nil
 }
 
-func buildPackIndexFanout(entries []PackIndexEntry) [256]uint32 {
+func buildPackIndexFanout(entries []PackIndexEntry) ([256]uint32, error) {
 	var counts [256]uint32
 	for _, entry := range entries {
-		raw, _ := hashHexToBytes(entry.Hash)
+		raw, err := hashHexToBytes(entry.Hash)
+		if err != nil {
+			return [256]uint32{}, fmt.Errorf("fanout hash %s: %w", entry.Hash, err)
+		}
 		counts[int(raw[0])]++
 	}
 
@@ -125,5 +134,5 @@ func buildPackIndexFanout(entries []PackIndexEntry) [256]uint32 {
 		total += counts[i]
 		fanout[i] = total
 	}
-	return fanout
+	return fanout, nil
 }

@@ -13,7 +13,7 @@ import (
 const (
 	packEntityTrailerVersion    uint16 = 1
 	packEntityTrailerHeaderSize        = 4 + 2 + 4
-	maxPackEntityStableIDSize          = (1 << 16) - 1
+	maxPackEntityStableIDSize          = 4096
 )
 
 var packEntityTrailerMagic = [4]byte{'G', 'E', 'N', 'T'}

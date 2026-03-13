@@ -10,6 +10,9 @@ import (
 
 const objectSerializationVersion = "1"
 
+// maxCommitTimestamp is year 3000 in Unix seconds, used to reject absurd values.
+const maxCommitTimestamp = 32503680000
+
 // ---------------------------------------------------------------------------
 // Blob
 // ---------------------------------------------------------------------------
@@ -328,6 +331,9 @@ func UnmarshalTree(data []byte) (*TreeObj, error) {
 			EntityListHash: dashOrHash(string(entityListHash)),
 			SubtreeHash:    dashOrHash(string(subtreeHash)),
 		}
+		if !entry.IsDir && entry.BlobHash == "" {
+			return nil, fmt.Errorf("unmarshal tree: non-directory entry %q has empty blob hash", name)
+		}
 		tr.Entries = append(tr.Entries, entry)
 	}
 	return tr, nil
@@ -443,6 +449,9 @@ func UnmarshalCommit(data []byte) (*CommitObj, error) {
 			if err != nil {
 				return nil, fmt.Errorf("unmarshal commit: bad timestamp %q: %w", val, err)
 			}
+			if ts < 0 || ts > maxCommitTimestamp {
+				return nil, fmt.Errorf("unmarshal commit: timestamp %d out of valid range [0, %d]", ts, maxCommitTimestamp)
+			}
 			c.Timestamp = ts
 		case "author_tz":
 			c.AuthorTimezone = val
@@ -452,6 +461,9 @@ func UnmarshalCommit(data []byte) (*CommitObj, error) {
 			ts, err := strconv.ParseInt(val, 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("unmarshal commit: bad committer timestamp %q: %w", val, err)
+			}
+			if ts < 0 || ts > maxCommitTimestamp {
+				return nil, fmt.Errorf("unmarshal commit: committer timestamp %d out of valid range [0, %d]", ts, maxCommitTimestamp)
 			}
 			c.CommitterTimestamp = ts
 		case "committer_tz":
