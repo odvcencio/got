@@ -22,6 +22,7 @@ type FileMergeReport struct {
 	EntityCount     int
 	ConflictCount   int
 	EntityConflicts []merge.EntityConflictDetail
+	Diagnostics     []merge.Diagnostic
 }
 
 // MergeReport is the overall result of a repository-level merge.
@@ -583,6 +584,7 @@ func (r *Repo) buildMergeReport(branchName string) (*mergeReportInput, error) {
 				Path:        f.Path,
 				Status:      "clean",
 				EntityCount: f.Conflicts,
+				Diagnostics: f.Diagnostics,
 			})
 		case "conflict":
 			report.Files = append(report.Files, FileMergeReport{
@@ -590,6 +592,7 @@ func (r *Repo) buildMergeReport(branchName string) (*mergeReportInput, error) {
 				Status:          "conflict",
 				ConflictCount:   f.Conflicts,
 				EntityConflicts: f.EntityConflicts,
+				Diagnostics:     f.Diagnostics,
 			})
 			// Determine blob hashes for conflict state.
 			var bh, oh, th object.Hash
@@ -998,6 +1001,7 @@ func (r *Repo) mergeFileContents(path string, base, ours, theirs []byte) (FileMe
 		Path:            path,
 		ConflictCount:   result.ConflictCount,
 		EntityConflicts: result.EntityConflicts,
+		Diagnostics:     result.Diagnostics,
 	}
 	if result.HasConflicts {
 		fr.Status = "conflict"

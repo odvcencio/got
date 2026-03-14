@@ -17,6 +17,7 @@ type ThreeWayFileResult struct {
 	Status          string // "clean", "conflict", "added", "deleted", "unchanged"
 	Conflicts       int
 	EntityConflicts []merge.EntityConflictDetail
+	Diagnostics     []merge.Diagnostic
 }
 
 // ThreeWayMergeResult holds the outcome of a complete three-way tree merge.
@@ -110,6 +111,7 @@ func (r *Repo) threeWayTreeMerge(
 				Status:          status,
 				Conflicts:       mergeResult.ConflictCount,
 				EntityConflicts: mergeResult.EntityConflicts,
+				Diagnostics:     mergeResult.Diagnostics,
 			})
 
 		case !inBase && !inOurs && inTheirs:
@@ -160,6 +162,7 @@ func (r *Repo) threeWayTreeMerge(
 				Status:          status,
 				Conflicts:       mergeResult.ConflictCount,
 				EntityConflicts: mergeResult.EntityConflicts,
+				Diagnostics:     mergeResult.Diagnostics,
 			})
 
 		case inBase && inOurs && !inTheirs:

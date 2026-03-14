@@ -5,6 +5,12 @@ import (
 	"fmt"
 )
 
+func init() {
+	DefaultRegistry.Register(&GoInterfaceImplRule{})
+	DefaultRegistry.Register(&GoConstVarBlockRule{})
+	DefaultRegistry.Register(&GoInitFuncRule{})
+}
+
 // GoInterfaceImplRule warns when a method is added to a Go interface,
 // since all implementations will need to add the method.
 type GoInterfaceImplRule struct{}
