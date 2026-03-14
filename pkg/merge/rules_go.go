@@ -52,6 +52,38 @@ func (r *GoInterfaceImplRule) Apply(ctx *MergeRuleContext) []Diagnostic {
 	return diags
 }
 
+// GoConstVarBlockRule detects when both sides add entries to a const or
+// var block, and suggests set-union merge if there's a conflict.
+type GoConstVarBlockRule struct{}
+
+func (r *GoConstVarBlockRule) Language() string { return "go" }
+
+func (r *GoConstVarBlockRule) Apply(ctx *MergeRuleContext) []Diagnostic {
+	var diags []Diagnostic
+	for _, m := range ctx.Matched {
+		if m.Disposition != Conflict {
+			continue
+		}
+		if m.Base == nil || m.Ours == nil || m.Theirs == nil {
+			continue
+		}
+		body := m.Base.Body
+		trimmed := bytes.TrimSpace(body)
+		if !bytes.HasPrefix(trimmed, []byte("const ")) && !bytes.HasPrefix(trimmed, []byte("const(")) &&
+			!bytes.HasPrefix(trimmed, []byte("var ")) && !bytes.HasPrefix(trimmed, []byte("var(")) &&
+			!bytes.HasPrefix(trimmed, []byte("const\t")) && !bytes.HasPrefix(trimmed, []byte("var\t")) {
+			continue
+		}
+		diags = append(diags, Diagnostic{
+			Severity: DiagInfo,
+			Entity:   m.Key,
+			Message:  m.Base.Name + ": both sides modified const/var block — consider set-union merge",
+			Rule:     "go-const-var-block",
+		})
+	}
+	return diags
+}
+
 // countInterfaceMethods counts lines that look like method signatures
 // inside a Go interface body. This is a heuristic — not a full parse.
 func countInterfaceMethods(body []byte) int {
