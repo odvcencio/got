@@ -84,6 +84,37 @@ func (r *GoConstVarBlockRule) Apply(ctx *MergeRuleContext) []Diagnostic {
 	return diags
 }
 
+// GoInitFuncRule warns when init() is modified on both sides,
+// since init() ordering and side effects are sensitive.
+type GoInitFuncRule struct{}
+
+func (r *GoInitFuncRule) Language() string { return "go" }
+
+func (r *GoInitFuncRule) Apply(ctx *MergeRuleContext) []Diagnostic {
+	var diags []Diagnostic
+	for _, m := range ctx.Matched {
+		if m.Disposition != Conflict {
+			continue
+		}
+		if m.Base == nil {
+			continue
+		}
+		if m.Base.Name != "init" {
+			continue
+		}
+		if m.Base.DeclKind != "function_declaration" && m.Base.DeclKind != "function_definition" {
+			continue
+		}
+		diags = append(diags, Diagnostic{
+			Severity: DiagWarning,
+			Entity:   m.Key,
+			Message:  "init() modified on both sides — review carefully, execution order may matter",
+			Rule:     "go-init-func",
+		})
+	}
+	return diags
+}
+
 // countInterfaceMethods counts lines that look like method signatures
 // inside a Go interface body. This is a heuristic — not a full parse.
 func countInterfaceMethods(body []byte) int {

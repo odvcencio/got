@@ -86,3 +86,25 @@ func TestGoInterfaceImplRuleNoWarningWhenUnchanged(t *testing.T) {
 		t.Errorf("expected no diagnostics for unchanged interface, got %d", len(diags))
 	}
 }
+
+func TestGoInitFuncRule(t *testing.T) {
+	base := []byte("package main\n\nfunc init() {\n\tsetupA()\n}\n")
+	ours := []byte("package main\n\nfunc init() {\n\tsetupA()\n\tsetupB()\n}\n")
+	theirs := []byte("package main\n\nfunc init() {\n\tsetupA()\n\tsetupC()\n}\n")
+
+	diags := mergeAndRunRule(t, "main.go", base, ours, theirs, &GoInitFuncRule{})
+
+	found := false
+	for _, d := range diags {
+		if d.Rule == "go-init-func" && d.Severity == DiagWarning {
+			found = true
+		}
+	}
+	if !found {
+		// Only fail if MergeFiles produced a conflict
+		result, _ := MergeFiles("main.go", base, ours, theirs)
+		if result.HasConflicts {
+			t.Error("expected go-init-func warning when init() has a conflict")
+		}
+	}
+}
