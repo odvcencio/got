@@ -174,6 +174,38 @@ func (b *Bridge) importHEAD() error {
 	return nil
 }
 
+// OpenBridge opens an existing bridge (does not create one).
+func OpenBridge(dir string) (*Bridge, error) {
+	graftDir := filepath.Join(dir, ".graft")
+	if _, err := os.Stat(graftDir); err != nil {
+		return nil, fmt.Errorf("no .graft directory found")
+	}
+	if !DetectGitRepo(dir) {
+		return nil, fmt.Errorf("no .git directory found")
+	}
+
+	store := object.NewStore(filepath.Join(graftDir, "objects"))
+
+	hm, err := OpenHashMap(filepath.Join(graftDir, "hash_map"))
+	if err != nil {
+		return nil, err
+	}
+
+	return &Bridge{
+		rootDir:  dir,
+		gitDir:   filepath.Join(dir, ".git"),
+		graftDir: graftDir,
+		hashMap:  hm,
+		store:    store,
+	}, nil
+}
+
+// IsBridgeRepo returns true if dir has both .git/ and .graft/.
+func IsBridgeRepo(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".graft"))
+	return err == nil && DetectGitRepo(dir)
+}
+
 // Close releases resources held by the Bridge.
 func (b *Bridge) Close() error {
 	return b.hashMap.Close()

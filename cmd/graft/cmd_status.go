@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/odvcencio/graft/pkg/gitbridge"
 	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
 )
@@ -124,6 +125,18 @@ func newStatusCmd() *cobra.Command {
 				fmt.Fprintln(out, "untracked:")
 				for _, s := range untracked {
 					fmt.Fprintln(out, s)
+				}
+			}
+
+			if gitbridge.IsBridgeRepo(r.RootDir) {
+				b, err := gitbridge.OpenBridge(r.RootDir)
+				if err == nil {
+					defer b.Close()
+					_, err := b.GitHEAD()
+					if err == nil {
+						// Simple check: just show bridge is active
+						fmt.Println("\ngit bridge: active")
+					}
 				}
 			}
 
