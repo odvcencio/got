@@ -1,2 +1,5 @@
 /got
 .got/
+/graft
+/graft.test
+*.test
