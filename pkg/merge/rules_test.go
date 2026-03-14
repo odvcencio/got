@@ -35,6 +35,36 @@ func TestRuleRegistryDispatch(t *testing.T) {
 	}
 }
 
+type callTracker struct {
+	lang   string
+	called *bool
+}
+
+func (c *callTracker) Language() string { return c.lang }
+func (c *callTracker) Apply(ctx *MergeRuleContext) []Diagnostic {
+	*c.called = true
+	return nil
+}
+
+func TestMergeFilesRunsRules(t *testing.T) {
+	base := []byte("package main\n\nfunc A() { return }\n")
+	ours := []byte("package main\n\nfunc A() { return 1 }\n")
+	theirs := []byte("package main\n\nfunc A() { return 2 }\n")
+
+	called := false
+	DefaultRegistry.Register(&callTracker{lang: "go", called: &called})
+	defer func() { DefaultRegistry = NewRuleRegistry() }()
+
+	result, err := MergeFiles("test.go", base, ours, theirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Error("expected rule to be called during merge")
+	}
+	_ = result
+}
+
 func TestDiagnosticSeverityString(t *testing.T) {
 	tests := []struct {
 		sev  DiagSeverity

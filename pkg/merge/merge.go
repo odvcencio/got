@@ -31,6 +31,7 @@ type MergeResult struct {
 	ConflictCount   int
 	Stats           MergeStats
 	EntityConflicts []EntityConflictDetail
+	Diagnostics     []Diagnostic
 }
 
 // MergeFiles performs a structural three-way merge of source files.
@@ -175,13 +176,31 @@ func MergeFiles(path string, base, ours, theirs []byte) (*MergeResult, error) {
 		}
 	}
 
-	return &MergeResult{
+	result := &MergeResult{
 		Merged:          merged,
 		HasConflicts:    conflictCount > 0,
 		ConflictCount:   conflictCount,
 		Stats:           stats,
 		EntityConflicts: entityConflicts,
-	}, nil
+	}
+
+	// Run post-merge language rules.
+	if language != "" {
+		for _, rule := range DefaultRegistry.RulesFor(language) {
+			diags := rule.Apply(&MergeRuleContext{
+				Base:     baseEL.Entities,
+				Ours:     oursEL.Entities,
+				Theirs:   theirsEL.Entities,
+				Matched:  matches,
+				Result:   result,
+				Language: language,
+				Path:     path,
+			})
+			result.Diagnostics = append(result.Diagnostics, diags...)
+		}
+	}
+
+	return result, nil
 }
 
 // resolveConflict handles entities where both sides modified differently.
