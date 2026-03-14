@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/odvcencio/graft/pkg/gitbridge"
 	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
 )
@@ -28,6 +29,16 @@ func newInitCmd() *cobra.Command {
 			// Ensure the target directory exists.
 			if err := os.MkdirAll(abs, 0o755); err != nil {
 				return fmt.Errorf("create directory: %w", err)
+			}
+
+			if gitbridge.DetectGitRepo(abs) {
+				bridge, err := gitbridge.InitBridge(abs)
+				if err != nil {
+					return fmt.Errorf("init git bridge: %w", err)
+				}
+				bridge.Close()
+				fmt.Println("Initialized graft bridge alongside existing git repository")
+				return nil
 			}
 
 			r, err := repo.Init(abs)
