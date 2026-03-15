@@ -210,6 +210,14 @@ func mergeReportToJSON(cmd *cobra.Command, report *repo.MergeReport, action, sou
 				Type: ec.Type,
 			})
 		}
+		for _, d := range f.Diagnostics {
+			jf.Diagnostics = append(jf.Diagnostics, JSONDiagnostic{
+				Severity: d.Severity.String(),
+				Entity:   d.Entity,
+				Message:  d.Message,
+				Rule:     d.Rule,
+			})
+		}
 		result.Files = append(result.Files, jf)
 	}
 

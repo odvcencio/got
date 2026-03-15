@@ -184,9 +184,9 @@ func OpenBridge(dir string) (*Bridge, error) {
 		return nil, fmt.Errorf("no .git directory found")
 	}
 
-	store := object.NewStore(filepath.Join(graftDir, "objects"))
+	store := object.NewStore(graftDir)
 
-	hm, err := OpenHashMap(filepath.Join(graftDir, "hash_map"))
+	hm, err := OpenHashMap(filepath.Join(graftDir, "hashmap"))
 	if err != nil {
 		return nil, err
 	}

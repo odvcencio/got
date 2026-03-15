@@ -111,12 +111,21 @@ type JSONMergeFile struct {
 	EntityCount     int                   `json:"entityCount,omitempty"`
 	ConflictCount   int                   `json:"conflictCount,omitempty"`
 	EntityConflicts []JSONEntityConflict  `json:"entityConflicts,omitempty"`
+	Diagnostics     []JSONDiagnostic      `json:"diagnostics,omitempty"`
 }
 
 // JSONEntityConflict represents a single entity-level conflict within a file.
 type JSONEntityConflict struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+}
+
+// JSONDiagnostic represents a merge rule diagnostic in JSON output.
+type JSONDiagnostic struct {
+	Severity string `json:"severity"`
+	Entity   string `json:"entity,omitempty"`
+	Message  string `json:"message"`
+	Rule     string `json:"rule"`
 }
 
 // --- Show ---
