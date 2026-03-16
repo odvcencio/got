@@ -38,6 +38,8 @@ func newCoordCmd() *cobra.Command {
 	cmd.AddCommand(newCoordWatchCmd(&jsonFlag))
 	cmd.AddCommand(newCoordUnwatchCmd(&jsonFlag))
 	cmd.AddCommand(newCoordResolveCmd(&jsonFlag))
+	cmd.AddCommand(newCoordPlanCmd(&jsonFlag))
+	cmd.AddCommand(newCoordPublishCmd(&jsonFlag))
 
 	return cmd
 }
@@ -748,6 +750,233 @@ func newCoordResolveCmd(jsonFlag *bool) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&transfer, "transfer", "", "transfer claim to another agent ID")
+	return cmd
+}
+
+// --- Plan ---
+
+func newCoordPlanCmd(jsonFlag *bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "plan",
+		Short: "Manage coordination plans",
+	}
+
+	cmd.AddCommand(newCoordPlanListCmd(jsonFlag))
+	cmd.AddCommand(newCoordPlanGetCmd(jsonFlag))
+	cmd.AddCommand(newCoordPlanCreateCmd(jsonFlag))
+
+	return cmd
+}
+
+func newCoordPlanListCmd(jsonFlag *bool) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List all coordination plans",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, _, err := openCoordinator()
+			if err != nil {
+				return err
+			}
+
+			plans, err := c.ListPlans()
+			if err != nil {
+				return fmt.Errorf("list plans: %w", err)
+			}
+
+			if *jsonFlag {
+				return outputJSON(plans)
+			}
+
+			if len(plans) == 0 {
+				fmt.Println("No plans.")
+				return nil
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(w, "ID\tTITLE\tSTATUS\tSTEPS\tCREATED")
+			for _, p := range plans {
+				completed := 0
+				for _, s := range p.Steps {
+					if s.Status == "completed" {
+						completed++
+					}
+				}
+				stepSummary := fmt.Sprintf("%d/%d done", completed, len(p.Steps))
+				if len(p.Steps) == 0 {
+					stepSummary = "-"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+					p.ID, truncate(p.Title, 40), p.Status, stepSummary,
+					p.CreatedAt.Format("2006-01-02 15:04"))
+			}
+			return w.Flush()
+		},
+	}
+}
+
+func newCoordPlanGetCmd(jsonFlag *bool) *cobra.Command {
+	return &cobra.Command{
+		Use:   "get <plan-id>",
+		Short: "Show plan details with step status",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, _, err := openCoordinator()
+			if err != nil {
+				return err
+			}
+
+			plan, err := c.GetPlan(args[0])
+			if err != nil {
+				return fmt.Errorf("get plan: %w", err)
+			}
+
+			if *jsonFlag {
+				return outputJSON(plan)
+			}
+
+			fmt.Printf("Plan: %s\n", plan.Title)
+			fmt.Printf("  ID:      %s\n", plan.ID)
+			fmt.Printf("  Status:  %s\n", plan.Status)
+			if plan.Author != "" {
+				fmt.Printf("  Author:  %s\n", plan.Author)
+			}
+			if plan.Description != "" {
+				fmt.Printf("  Desc:    %s\n", plan.Description)
+			}
+			fmt.Printf("  Created: %s\n", plan.CreatedAt.Format("2006-01-02 15:04:05"))
+			fmt.Printf("  Updated: %s\n", plan.UpdatedAt.Format("2006-01-02 15:04:05"))
+
+			if len(plan.Steps) == 0 {
+				fmt.Println("  Steps:   (none)")
+				return nil
+			}
+
+			fmt.Printf("  Steps (%d):\n", len(plan.Steps))
+			for _, step := range plan.Steps {
+				marker := " "
+				switch step.Status {
+				case "completed":
+					marker = "x"
+				case "in_progress":
+					marker = ">"
+				case "skipped":
+					marker = "-"
+				}
+				assignee := ""
+				if step.AssignedTo != "" {
+					assignee = fmt.Sprintf(" [%s]", step.AssignedTo)
+				}
+				fmt.Printf("    [%s] %d. %s%s\n", marker, step.Order, step.Description, assignee)
+			}
+
+			return nil
+		},
+	}
+}
+
+func newCoordPlanCreateCmd(jsonFlag *bool) *cobra.Command {
+	var (
+		description string
+		status      string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create <title>",
+		Short: "Create a new coordination plan",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, r, err := openCoordinator()
+			if err != nil {
+				return err
+			}
+
+			author := readActiveAgentID(r)
+
+			plan := &coord.Plan{
+				Title:       args[0],
+				Description: description,
+				Status:      status,
+				Author:      author,
+			}
+
+			if err := c.CreatePlan(plan); err != nil {
+				return fmt.Errorf("create plan: %w", err)
+			}
+
+			if *jsonFlag {
+				return outputJSON(plan)
+			}
+
+			fmt.Printf("Created plan %s: %s\n", plan.ID, plan.Title)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&description, "description", "", "plan description")
+	cmd.Flags().StringVar(&status, "status", "draft", "initial status (draft, active)")
+	return cmd
+}
+
+// truncate shortens a string to maxLen, appending "..." if truncated.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
+}
+
+// --- Publish ---
+
+func newCoordPublishCmd(jsonFlag *bool) *cobra.Command {
+	var commitRef string
+
+	cmd := &cobra.Command{
+		Use:   "publish",
+		Short: "Publish a feed event for a commit (for git/buckley commits)",
+		Long:  `Manually publish a coordination feed event for the latest commit, useful when commits are made via git or buckley rather than graft.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, r, err := openCoordinator()
+			if err != nil {
+				return err
+			}
+
+			activeID := readActiveAgentID(r)
+			if activeID == "" {
+				return fmt.Errorf("no active coordination session; run 'graft workon --as <name>' first")
+			}
+			c.AgentID = activeID
+
+			// Resolve the commit to publish
+			ref := commitRef
+			if ref == "" {
+				ref = "HEAD"
+			}
+			commitHash, err := c.Repo.ResolveRef(ref)
+			if err != nil {
+				return fmt.Errorf("resolve %s: %w", ref, err)
+			}
+
+			if err := c.PostCommitHook(commitHash); err != nil {
+				return fmt.Errorf("publish: %w", err)
+			}
+
+			if *jsonFlag {
+				return outputJSON(map[string]string{
+					"status":      "published",
+					"commit_hash": string(commitHash),
+					"agent_id":    activeID,
+				})
+			}
+
+			fmt.Printf("Published feed event for commit %s\n", string(commitHash)[:12])
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&commitRef, "commit", "", "commit ref to publish (default: HEAD)")
 	return cmd
 }
 

@@ -170,6 +170,54 @@ func (c *Coordinator) OnCommit(commitHash object.Hash, workspaces map[string]str
 	return nil
 }
 
+// PostCommitHook generates a feed event for any commit (including git/buckley commits).
+// Unlike OnCommit, this does not release claims -- it only publishes the feed event.
+// This enables external tooling to trigger coord feed events after non-graft commits.
+func (c *Coordinator) PostCommitHook(commitHash object.Hash) error {
+	if c.AgentID == "" {
+		return fmt.Errorf("no active agent; call RegisterAgent first")
+	}
+
+	commit, err := c.Repo.Store.ReadCommit(commitHash)
+	if err != nil {
+		return fmt.Errorf("read commit: %w", err)
+	}
+
+	var changes []EntityChange
+	if len(commit.Parents) > 0 {
+		parentCommit, err := c.Repo.Store.ReadCommit(commit.Parents[0])
+		if err == nil {
+			changes = c.diffTrees(parentCommit.TreeHash, commit.TreeHash)
+		}
+	}
+	if len(commit.Parents) == 0 {
+		changes = c.treeEntities(commit.TreeHash, "entity_added")
+	}
+
+	agentName := c.AgentID
+	if agent, err := c.GetAgent(c.AgentID); err == nil {
+		agentName = agent.Name
+	}
+
+	event := FeedEvent{
+		Event:      "commit",
+		AgentID:    c.AgentID,
+		AgentName:  agentName,
+		CommitHash: string(commitHash),
+		Entities:   changes,
+	}
+
+	if err := c.AppendFeed(event); err != nil {
+		return fmt.Errorf("append feed: %w", err)
+	}
+
+	if c.ShouldAutoPush() {
+		_ = c.PushCoordRefs()
+	}
+
+	return nil
+}
+
 // diffTrees compares two tree hashes and returns entity changes.
 // This uses the repo's FlattenTree to get file-level diffs and
 // infers entity changes from changed Go files.

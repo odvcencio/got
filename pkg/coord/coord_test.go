@@ -111,3 +111,56 @@ func TestOnCommit_NoAgent(t *testing.T) {
 		t.Fatal("expected error when no agent is registered")
 	}
 }
+
+func TestPostCommitHook(t *testing.T) {
+	c := newTestCoordinator(t)
+
+	id, err := c.RegisterAgent(AgentInfo{Name: "git-user", Workspace: "graft", Host: "test"})
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+
+	// Write a file and commit
+	goFile := filepath.Join(c.Repo.RootDir, "main.go")
+	if err := os.WriteFile(goFile, []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := c.Repo.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	commitHash, err := c.Repo.Commit("git commit", "test-author")
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// PostCommitHook should generate a feed event
+	if err := c.PostCommitHook(commitHash); err != nil {
+		t.Fatalf("PostCommitHook: %v", err)
+	}
+
+	events, err := c.WalkFeed("", 10)
+	if err != nil {
+		t.Fatalf("WalkFeed: %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatal("expected at least 1 feed event after PostCommitHook")
+	}
+	if events[0].Event != "commit" {
+		t.Errorf("feed event type = %q, want commit", events[0].Event)
+	}
+	if events[0].AgentID != id {
+		t.Errorf("feed event agent ID = %q, want %q", events[0].AgentID, id)
+	}
+	if events[0].CommitHash != string(commitHash) {
+		t.Errorf("feed event commit hash = %q, want %q", events[0].CommitHash, commitHash)
+	}
+}
+
+func TestPostCommitHook_NoAgent(t *testing.T) {
+	c := newTestCoordinator(t)
+
+	err := c.PostCommitHook("deadbeef")
+	if err == nil {
+		t.Fatal("expected error when no agent is registered")
+	}
+}
