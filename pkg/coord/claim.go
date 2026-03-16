@@ -236,6 +236,23 @@ func (c *Coordinator) ListWatches() ([]ClaimInfo, error) {
 	return watches, nil
 }
 
+// ResolveEntityFile attempts to find the file path for an entity key
+// by looking it up in the export index. Returns empty string if not found.
+func (c *Coordinator) ResolveEntityFile(entityKey string) string {
+	idx, err := c.LoadExportIndex()
+	if err != nil {
+		return ""
+	}
+	for _, pkg := range idx.Packages {
+		for key, entity := range pkg {
+			if key == entityKey {
+				return entity.File
+			}
+		}
+	}
+	return ""
+}
+
 // ReleaseWatch removes a watch claim for a specific agent.
 func (c *Coordinator) ReleaseWatch(keyHash, agentID string) error {
 	ref := refPath("watches", keyHash, agentID)

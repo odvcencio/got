@@ -40,6 +40,7 @@ func newCoordCmd() *cobra.Command {
 	cmd.AddCommand(newCoordResolveCmd(&jsonFlag))
 	cmd.AddCommand(newCoordPlanCmd(&jsonFlag))
 	cmd.AddCommand(newCoordPublishCmd(&jsonFlag))
+	cmd.AddCommand(newCoordHeartbeatCmd(&jsonFlag))
 
 	return cmd
 }
@@ -127,32 +128,77 @@ type dashboardResult struct {
 // --- Agents ---
 
 func newCoordAgentsCmd(jsonFlag *bool) *cobra.Command {
-	return &cobra.Command{
+	var allWorkspaces bool
+
+	cmd := &cobra.Command{
 		Use:   "agents",
 		Short: "List registered agents",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, _, err := openCoordinator()
-			if err != nil {
-				return err
-			}
+			var allAgents []coord.AgentInfo
 
-			agents, err := c.ListAgents()
-			if err != nil {
-				return fmt.Errorf("list agents: %w", err)
+			if allWorkspaces {
+				cfg, err := userconfig.Load()
+				if err != nil {
+					return fmt.Errorf("load user config: %w", err)
+				}
+				if cfg.Workspaces != nil {
+					for wsName, wsPath := range cfg.Workspaces {
+						r, err := repo.Open(wsPath)
+						if err != nil {
+							continue // skip non-graft workspaces
+						}
+						wc := coord.New(r, coord.DefaultConfig)
+						agents, err := wc.ListAgents()
+						if err != nil {
+							continue
+						}
+						for i := range agents {
+							if agents[i].Workspace == "" {
+								agents[i].Workspace = wsName
+							}
+						}
+						allAgents = append(allAgents, agents...)
+					}
+				}
+				// Also include current repo
+				c, _, err := openCoordinator()
+				if err == nil {
+					agents, _ := c.ListAgents()
+					// Deduplicate: skip agents already collected
+					seen := make(map[string]bool)
+					for _, a := range allAgents {
+						seen[a.ID] = true
+					}
+					for _, a := range agents {
+						if !seen[a.ID] {
+							allAgents = append(allAgents, a)
+						}
+					}
+				}
+			} else {
+				c, _, err := openCoordinator()
+				if err != nil {
+					return err
+				}
+				agents, err := c.ListAgents()
+				if err != nil {
+					return fmt.Errorf("list agents: %w", err)
+				}
+				allAgents = agents
 			}
 
 			if *jsonFlag {
-				return outputJSON(agents)
+				return outputJSON(allAgents)
 			}
 
-			if len(agents) == 0 {
+			if len(allAgents) == 0 {
 				fmt.Println("No active agents.")
 				return nil
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 			fmt.Fprintln(w, "ID\tNAME\tWORKSPACE\tHOST\tHEARTBEAT")
-			for _, a := range agents {
+			for _, a := range allAgents {
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 					a.ID, a.Name, a.Workspace, a.Host,
 					a.HeartbeatAt.Format("15:04:05"))
@@ -160,6 +206,9 @@ func newCoordAgentsCmd(jsonFlag *bool) *cobra.Command {
 			return w.Flush()
 		},
 	}
+
+	cmd.Flags().BoolVar(&allWorkspaces, "all", false, "list agents across all registered workspaces")
+	return cmd
 }
 
 // --- Claims ---
@@ -622,7 +671,9 @@ func newCoordGraphCmd(jsonFlag *bool) *cobra.Command {
 // --- Watch ---
 
 func newCoordWatchCmd(jsonFlag *bool) *cobra.Command {
-	return &cobra.Command{
+	var file string
+
+	cmd := &cobra.Command{
 		Use:   "watch <entity-key>",
 		Short: "Add a watch claim on an entity",
 		Args:  cobra.ExactArgs(1),
@@ -638,9 +689,16 @@ func newCoordWatchCmd(jsonFlag *bool) *cobra.Command {
 			}
 
 			entityKey := args[0]
+
+			// Try to resolve entity key to a file if not provided
+			filePath := file
+			if filePath == "" {
+				filePath = c.ResolveEntityFile(entityKey)
+			}
+
 			err = c.AcquireClaim(activeID, coord.ClaimRequest{
 				EntityKey: entityKey,
-				File:      "",
+				File:      filePath,
 				Mode:      coord.ClaimWatching,
 			})
 			if err != nil {
@@ -648,16 +706,27 @@ func newCoordWatchCmd(jsonFlag *bool) *cobra.Command {
 			}
 
 			if *jsonFlag {
-				return outputJSON(map[string]string{
+				result := map[string]string{
 					"status":     "watching",
 					"entity_key": entityKey,
-				})
+				}
+				if filePath != "" {
+					result["file"] = filePath
+				}
+				return outputJSON(result)
 			}
 
-			fmt.Printf("Watching: %s\n", entityKey)
+			if filePath != "" {
+				fmt.Printf("Watching: %s (in %s)\n", entityKey, filePath)
+			} else {
+				fmt.Printf("Watching: %s\n", entityKey)
+			}
 			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&file, "file", "", "file path for the entity (auto-resolved if omitted)")
+	return cmd
 }
 
 // --- Unwatch ---
@@ -978,6 +1047,40 @@ func newCoordPublishCmd(jsonFlag *bool) *cobra.Command {
 
 	cmd.Flags().StringVar(&commitRef, "commit", "", "commit ref to publish (default: HEAD)")
 	return cmd
+}
+
+// --- Heartbeat ---
+
+func newCoordHeartbeatCmd(jsonFlag *bool) *cobra.Command {
+	return &cobra.Command{
+		Use:   "heartbeat",
+		Short: "Update the active agent's heartbeat timestamp",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, r, err := openCoordinator()
+			if err != nil {
+				return err
+			}
+
+			activeID := readActiveAgentID(r)
+			if activeID == "" {
+				return fmt.Errorf("no active coordination session; run 'graft workon --as <name>' first")
+			}
+
+			if err := c.Heartbeat(activeID); err != nil {
+				return fmt.Errorf("heartbeat: %w", err)
+			}
+
+			if *jsonFlag {
+				return outputJSON(map[string]string{
+					"status":   "ok",
+					"agent_id": activeID,
+				})
+			}
+
+			fmt.Printf("Heartbeat updated for agent %s\n", activeID)
+			return nil
+		},
+	}
 }
 
 // Note: outputJSON is defined in cmd_workon.go and shared across the package.
