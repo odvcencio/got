@@ -141,6 +141,57 @@ func TestWatchingClaimDoesNotBlock(t *testing.T) {
 	}
 }
 
+func TestMultipleAgentsWatchSameEntity(t *testing.T) {
+	c := newTestCoordinator(t)
+	id1, _ := c.RegisterAgent(AgentInfo{Name: "watcher-1", Workspace: "graft", Host: "test"})
+	id2, _ := c.RegisterAgent(AgentInfo{Name: "watcher-2", Workspace: "graft", Host: "test"})
+
+	entityKey := "decl:function_definition::Baz:func Baz():0"
+
+	// First agent watches
+	if err := c.AcquireClaim(id1, ClaimRequest{EntityKey: entityKey, File: "baz.go", Mode: ClaimWatching}); err != nil {
+		t.Fatalf("first watch: %v", err)
+	}
+
+	// Second agent watches same entity
+	if err := c.AcquireClaim(id2, ClaimRequest{EntityKey: entityKey, File: "baz.go", Mode: ClaimWatching}); err != nil {
+		t.Fatalf("second watch: %v", err)
+	}
+
+	// Both watches should persist
+	watches, err := c.ListWatches()
+	if err != nil {
+		t.Fatalf("ListWatches: %v", err)
+	}
+	if len(watches) != 2 {
+		t.Fatalf("expected 2 watches, got %d", len(watches))
+	}
+
+	// Verify both agents are represented
+	agents := map[string]bool{}
+	for _, w := range watches {
+		agents[w.Agent] = true
+	}
+	if !agents[id1] {
+		t.Error("missing watch for watcher-1")
+	}
+	if !agents[id2] {
+		t.Error("missing watch for watcher-2")
+	}
+
+	// Release one watch -- other should remain
+	if err := c.ReleaseWatch(EntityKeyHash(entityKey), id1); err != nil {
+		t.Fatalf("ReleaseWatch: %v", err)
+	}
+	watches, _ = c.ListWatches()
+	if len(watches) != 1 {
+		t.Fatalf("expected 1 watch after release, got %d", len(watches))
+	}
+	if watches[0].Agent != id2 {
+		t.Errorf("remaining watch agent = %q, want %q", watches[0].Agent, id2)
+	}
+}
+
 func TestClaimsForFile(t *testing.T) {
 	c := newTestCoordinator(t)
 	id, _ := c.RegisterAgent(AgentInfo{Name: "filer", Workspace: "graft", Host: "test"})

@@ -109,7 +109,7 @@ func (c *Coordinator) Heartbeat(id string) error {
 	return c.Repo.UpdateRefCAS(ref, newHash, oldHash)
 }
 
-// DeregisterAgent removes an agent and all its claims.
+// DeregisterAgent removes an agent and all its claims and watches.
 func (c *Coordinator) DeregisterAgent(id string) error {
 	// Remove claims owned by this agent
 	claims, err := c.ListClaims()
@@ -119,6 +119,16 @@ func (c *Coordinator) DeregisterAgent(id string) error {
 	for _, cl := range claims {
 		if cl.Agent == id {
 			_ = c.ReleaseClaim(cl.EntityKeyHash)
+		}
+	}
+
+	// Remove watches owned by this agent
+	watches, err := c.ListWatches()
+	if err == nil {
+		for _, w := range watches {
+			if w.Agent == id {
+				_ = c.ReleaseWatch(w.EntityKeyHash, id)
+			}
 		}
 	}
 

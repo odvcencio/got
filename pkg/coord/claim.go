@@ -49,6 +49,10 @@ func EntityKeyHash(key string) string {
 
 // AcquireClaim attempts to claim an entity for the given agent.
 // Returns ErrEntityProtected if the entity matches a protected pattern.
+//
+// Watches are non-exclusive: multiple agents can watch the same entity.
+// Each watch is stored at refs/coord/watches/{entity-key-hash}/{agent-id}.
+// Editing claims are exclusive and stored at refs/coord/claims/{entity-key-hash}.
 func (c *Coordinator) AcquireClaim(agentID string, req ClaimRequest) error {
 	// Check if entity is protected (hard block regardless of conflict mode)
 	if req.Mode == ClaimEditing && c.IsEntityProtected(req.EntityKey) {
@@ -56,6 +60,14 @@ func (c *Coordinator) AcquireClaim(agentID string, req ClaimRequest) error {
 	}
 
 	keyHash := EntityKeyHash(req.EntityKey)
+
+	// Watches always go to the watches namespace (non-exclusive).
+	if req.Mode == ClaimWatching {
+		watchRef := refPath("watches", keyHash, agentID)
+		return c.writeClaimToRef(watchRef, agentID, req, keyHash)
+	}
+
+	// Editing claims use the exclusive claims namespace.
 	ref := refPath("claims", keyHash)
 
 	// Check if already claimed
@@ -70,18 +82,6 @@ func (c *Coordinator) AcquireClaim(agentID string, req ClaimRequest) error {
 		// Same agent reclaiming -- update
 		if existing.Agent == agentID {
 			return c.writeClaimToRef(ref, agentID, req, keyHash)
-		}
-
-		// Existing is watching -- editing can proceed (overwrite the watch)
-		if existing.Mode == ClaimWatching && req.Mode == ClaimEditing {
-			return c.writeClaimToRef(ref, agentID, req, keyHash)
-		}
-
-		// New is watching -- don't conflict with existing editing claim
-		if req.Mode == ClaimWatching {
-			// Watching doesn't need the ref -- store in a separate namespace
-			watchRef := refPath("watches", keyHash, agentID)
-			return c.writeClaimToRef(watchRef, agentID, req, keyHash)
 		}
 
 		// Conflict: existing editing claim held by another agent
@@ -216,4 +216,32 @@ func (c *Coordinator) ListClaims() ([]ClaimInfo, error) {
 		claims = append(claims, info)
 	}
 	return claims, nil
+}
+
+// ListWatches returns all active watch claims.
+func (c *Coordinator) ListWatches() ([]ClaimInfo, error) {
+	refs, err := c.Repo.ListRefs("coord/watches")
+	if err != nil {
+		return nil, fmt.Errorf("list watch refs: %w", err)
+	}
+
+	var watches []ClaimInfo
+	for _, h := range refs {
+		var info ClaimInfo
+		if err := c.readJSONBlob(h, &info); err != nil {
+			continue
+		}
+		watches = append(watches, info)
+	}
+	return watches, nil
+}
+
+// ReleaseWatch removes a watch claim for a specific agent.
+func (c *Coordinator) ReleaseWatch(keyHash, agentID string) error {
+	ref := refPath("watches", keyHash, agentID)
+	oldHash, err := c.Repo.ResolveRef(ref)
+	if err != nil {
+		return nil // already released
+	}
+	return c.Repo.DeleteRefCAS(ref, oldHash)
 }

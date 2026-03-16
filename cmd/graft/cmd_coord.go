@@ -666,14 +666,19 @@ func newCoordUnwatchCmd(jsonFlag *bool) *cobra.Command {
 		Short: "Remove a watch claim",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, _, err := openCoordinator()
+			c, r, err := openCoordinator()
 			if err != nil {
 				return err
 			}
 
+			activeID := readActiveAgentID(r)
+			if activeID == "" {
+				return fmt.Errorf("no active coordination session; run 'graft workon --as <name>' first")
+			}
+
 			entityKey := args[0]
 			keyHash := coord.EntityKeyHash(entityKey)
-			if err := c.ReleaseClaim(keyHash); err != nil {
+			if err := c.ReleaseWatch(keyHash, activeID); err != nil {
 				return fmt.Errorf("unwatch: %w", err)
 			}
 
