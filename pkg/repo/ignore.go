@@ -31,8 +31,10 @@ type ignorePattern struct {
 }
 
 // NewIgnoreChecker creates an IgnoreChecker for the given repository root.
-// It always ignores .graft/, .got/, and .git/. If a .graftignore (or legacy
-// .gotignore) file exists in repoRoot, its patterns are parsed and applied.
+// It always ignores .graft/, .got/, and .git/. Patterns are loaded from the
+// first ignore file found: .graftignore, then .gotignore (legacy), then
+// .gitignore (fallback so that projects without a graft-specific ignore file
+// still respect their git ignore rules).
 func NewIgnoreChecker(repoRoot string) *IgnoreChecker {
 	ic := &IgnoreChecker{}
 
@@ -43,10 +45,13 @@ func NewIgnoreChecker(repoRoot string) *IgnoreChecker {
 		ignorePattern{pattern: ".git", dirOnly: false, hasSlash: false},
 	)
 
-	// Read .graftignore if it exists, falling back to .gotignore.
+	// Read .graftignore if it exists, falling back to .gotignore, then .gitignore.
 	ignorePath := filepath.Join(repoRoot, ".graftignore")
 	if _, err := os.Stat(ignorePath); os.IsNotExist(err) {
 		ignorePath = filepath.Join(repoRoot, ".gotignore")
+		if _, err := os.Stat(ignorePath); os.IsNotExist(err) {
+			ignorePath = filepath.Join(repoRoot, ".gitignore")
+		}
 	}
 	f, err := os.Open(ignorePath)
 	if err == nil {

@@ -679,6 +679,16 @@ func (r *Repo) expandAddPaths(inputs []string) ([]string, error) {
 		}
 
 		if hasGlobMeta(input) {
+			// If the path exists literally (e.g. Next.js [owner]/page.tsx with bracket
+			// chars that would otherwise be interpreted as glob syntax), treat it as a
+			// plain path rather than a glob pattern.
+			if _, statErr := os.Stat(filepath.Join(r.RootDir, filepath.FromSlash(input))); statErr == nil {
+				if err := r.collectAddPath(input, ic, seen); err != nil {
+					return nil, fmt.Errorf("add %q: %w", input, err)
+				}
+				continue
+			}
+
 			spec, err := r.repoRelPath(input)
 			if err != nil {
 				return nil, fmt.Errorf("resolve path %q: %w", input, err)

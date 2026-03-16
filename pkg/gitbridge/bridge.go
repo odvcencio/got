@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/odvcencio/graft/pkg/entity"
 	"github.com/odvcencio/graft/pkg/object"
 )
 
@@ -50,6 +49,18 @@ func InitBridge(dir string) (*Bridge, error) {
 		if err := os.MkdirAll(filepath.Join(graftDir, sub), 0o755); err != nil {
 			return nil, fmt.Errorf("create .graft/%s: %w", sub, err)
 		}
+	}
+
+	// Write .graft/HEAD, mirroring the current git branch when possible.
+	headContent := "ref: refs/heads/main\n"
+	if gitHeadData, err := os.ReadFile(filepath.Join(gitDir, "HEAD")); err == nil {
+		line := strings.TrimRight(string(gitHeadData), "\n")
+		if strings.HasPrefix(line, "ref: refs/heads/") {
+			headContent = line + "\n"
+		}
+	}
+	if err := os.WriteFile(filepath.Join(graftDir, "HEAD"), []byte(headContent), 0o644); err != nil {
+		return nil, fmt.Errorf("write .graft/HEAD: %w", err)
 	}
 
 	store := object.NewStore(graftDir)
@@ -156,19 +167,9 @@ func (b *Bridge) importHEAD() error {
 			return fmt.Errorf("record hash mapping for %s: %w", relPath, err)
 		}
 
-		// Attempt entity extraction (best-effort; unsupported file types are skipped).
-		if el, err := entity.Extract(relPath, content); err == nil && el != nil {
-			hasDeclations := false
-			for _, e := range el.Entities {
-				if e.Kind == entity.KindDeclaration {
-					hasDeclations = true
-					break
-				}
-			}
-			// Placeholder: entity list storage will be implemented in a later step.
-			_ = hasDeclations
-			_ = el
-		}
+		// Entity extraction is deferred to `graft add` where results are
+		// actually stored.  Running it here during init is wasteful — the
+		// results were previously discarded.
 	}
 
 	return nil
