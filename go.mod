@@ -3,6 +3,7 @@ module github.com/odvcencio/graft
 go 1.25
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/klauspost/compress v1.18.4
 	github.com/odvcencio/gotreesitter v0.7.0
 	github.com/odvcencio/gts-suite v0.5.0
