@@ -16,16 +16,19 @@ import (
 func newCoordCmd() *cobra.Command {
 	var jsonFlag bool
 
+	var allWorkspaces bool
+
 	cmd := &cobra.Command{
 		Use:   "coord",
 		Short: "Multi-agent coordination dashboard and tools",
 		Long:  `View and manage entity-level coordination state: agents, claims, feed, and impact analysis.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return coordDashboard(jsonFlag)
+			return coordDashboard(jsonFlag, allWorkspaces)
 		},
 	}
 
 	cmd.PersistentFlags().BoolVar(&jsonFlag, "json", false, "JSON output")
+	cmd.Flags().BoolVar(&allWorkspaces, "all", false, "aggregate dashboard across all registered workspaces")
 
 	cmd.AddCommand(newCoordAgentsCmd(&jsonFlag))
 	cmd.AddCommand(newCoordClaimsCmd(&jsonFlag))
@@ -70,7 +73,11 @@ func readActiveAgentID(r *repo.Repo) string {
 
 // --- Dashboard ---
 
-func coordDashboard(jsonOutput bool) error {
+func coordDashboard(jsonOutput bool, allWorkspaces bool) error {
+	if allWorkspaces {
+		return coordDashboardAll(jsonOutput)
+	}
+
 	c, r, err := openCoordinator()
 	if err != nil {
 		return err
@@ -79,6 +86,7 @@ func coordDashboard(jsonOutput bool) error {
 	agents, _ := c.ListAgents()
 	claims, _ := c.ListClaims()
 	feedEvents, _ := c.WalkFeed("", 100)
+	tasks, _ := c.ListTasks()
 
 	// Count conflicts: claims by different agents on same entity
 	conflictCount := 0
@@ -92,14 +100,28 @@ func coordDashboard(jsonOutput bool) error {
 		}
 	}
 
+	// Count tasks by status.
+	taskPending, taskInProgress := 0, 0
+	for _, t := range tasks {
+		switch t.Status {
+		case "pending":
+			taskPending++
+		case "in_progress":
+			taskInProgress++
+		}
+	}
+
 	activeID := readActiveAgentID(r)
 
 	result := dashboardResult{
-		Agents:    len(agents),
-		Claims:    len(claims),
-		Conflicts: conflictCount,
-		FeedCount: len(feedEvents),
-		ActiveID:  activeID,
+		Agents:         len(agents),
+		Claims:         len(claims),
+		Conflicts:      conflictCount,
+		FeedCount:      len(feedEvents),
+		Tasks:          len(tasks),
+		TasksPending:   taskPending,
+		TasksActive:    taskInProgress,
+		ActiveID:       activeID,
 	}
 
 	if jsonOutput {
@@ -112,6 +134,7 @@ func coordDashboard(jsonOutput bool) error {
 	fmt.Printf("  Claims:     %d\n", result.Claims)
 	fmt.Printf("  Conflicts:  %d\n", result.Conflicts)
 	fmt.Printf("  Feed:       %d event(s)\n", result.FeedCount)
+	fmt.Printf("  Tasks:      %d (%d pending, %d active)\n", result.Tasks, result.TasksPending, result.TasksActive)
 	if activeID != "" {
 		fmt.Printf("  Active as:  %s\n", activeID)
 	} else {
@@ -121,12 +144,79 @@ func coordDashboard(jsonOutput bool) error {
 	return nil
 }
 
+func coordDashboardAll(jsonOutput bool) error {
+	result := dashboardResult{}
+	claimsByEntity := make(map[string][]string)
+
+	if err := iterateWorkspaces(func(name string, c *coord.Coordinator) error {
+		agents, _ := c.ListAgents()
+		claims, _ := c.ListClaims()
+		feedEvents, _ := c.WalkFeed("", 100)
+		tasks, _ := c.ListTasks()
+
+		result.Agents += len(agents)
+		result.Claims += len(claims)
+		result.FeedCount += len(feedEvents)
+		result.Tasks += len(tasks)
+
+		for _, t := range tasks {
+			switch t.Status {
+			case "pending":
+				result.TasksPending++
+			case "in_progress":
+				result.TasksActive++
+			}
+		}
+
+		for _, cl := range claims {
+			key := name + ":" + cl.EntityKeyHash
+			claimsByEntity[key] = append(claimsByEntity[key], cl.AgentName)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	for _, holders := range claimsByEntity {
+		if len(holders) > 1 {
+			result.Conflicts++
+		}
+	}
+
+	_, r, _ := openCoordinator()
+	if r != nil {
+		result.ActiveID = readActiveAgentID(r)
+	}
+
+	if jsonOutput {
+		return outputJSON(result)
+	}
+
+	fmt.Println("Coordination Dashboard (all workspaces)")
+	fmt.Println(strings.Repeat("-", 40))
+	fmt.Printf("  Agents:     %d\n", result.Agents)
+	fmt.Printf("  Claims:     %d\n", result.Claims)
+	fmt.Printf("  Conflicts:  %d\n", result.Conflicts)
+	fmt.Printf("  Feed:       %d event(s)\n", result.FeedCount)
+	fmt.Printf("  Tasks:      %d (%d pending, %d active)\n", result.Tasks, result.TasksPending, result.TasksActive)
+	if result.ActiveID != "" {
+		fmt.Printf("  Active as:  %s\n", result.ActiveID)
+	} else {
+		fmt.Printf("  Active as:  (not joined)\n")
+	}
+
+	return nil
+}
+
 type dashboardResult struct {
-	Agents    int    `json:"agents"`
-	Claims    int    `json:"claims"`
-	Conflicts int    `json:"conflicts"`
-	FeedCount int    `json:"feed_count"`
-	ActiveID  string `json:"active_id,omitempty"`
+	Agents       int    `json:"agents"`
+	Claims       int    `json:"claims"`
+	Conflicts    int    `json:"conflicts"`
+	FeedCount    int    `json:"feed_count"`
+	Tasks        int    `json:"tasks"`
+	TasksPending int    `json:"tasks_pending"`
+	TasksActive  int    `json:"tasks_active"`
+	ActiveID     string `json:"active_id,omitempty"`
 }
 
 // --- Agents ---
@@ -218,58 +308,103 @@ func newCoordAgentsCmd(jsonFlag *bool) *cobra.Command {
 // --- Claims ---
 
 func newCoordClaimsCmd(jsonFlag *bool) *cobra.Command {
-	var workspace string
+	var (
+		workspace     string
+		allWorkspaces bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "claims",
 		Short: "List active claims",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, _, err := openCoordinator()
-			if err != nil {
-				return err
+			type claimWithSource struct {
+				coord.ClaimInfo
+				SourceWorkspace string `json:"source_workspace,omitempty"`
 			}
 
-			claims, err := c.ListClaims()
-			if err != nil {
-				return fmt.Errorf("list claims: %w", err)
+			var allClaims []claimWithSource
+
+			if allWorkspaces {
+				if err := iterateWorkspaces(func(name string, c *coord.Coordinator) error {
+					claims, err := c.ListClaims()
+					if err != nil {
+						return nil
+					}
+					for _, cl := range claims {
+						allClaims = append(allClaims, claimWithSource{
+							ClaimInfo:       cl,
+							SourceWorkspace: name,
+						})
+					}
+					return nil
+				}); err != nil {
+					return err
+				}
+			} else {
+				c, _, err := openCoordinator()
+				if err != nil {
+					return err
+				}
+				claims, err := c.ListClaims()
+				if err != nil {
+					return fmt.Errorf("list claims: %w", err)
+				}
+				for _, cl := range claims {
+					allClaims = append(allClaims, claimWithSource{ClaimInfo: cl})
+				}
 			}
 
 			// Filter by workspace agent name prefix if requested
 			if workspace != "" {
-				var filtered []coord.ClaimInfo
-				for _, cl := range claims {
+				var filtered []claimWithSource
+				for _, cl := range allClaims {
 					if strings.Contains(cl.AgentName, workspace) || strings.Contains(cl.File, workspace) {
 						filtered = append(filtered, cl)
 					}
 				}
-				claims = filtered
+				allClaims = filtered
 			}
 
 			if *jsonFlag {
-				return outputJSON(claims)
+				return outputJSON(allClaims)
 			}
 
-			if len(claims) == 0 {
+			if len(allClaims) == 0 {
 				fmt.Println("No active claims.")
 				return nil
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "ENTITY\tFILE\tAGENT\tMODE\tSINCE")
-			for _, cl := range claims {
-				entityDisplay := cl.EntityKey
-				if len(entityDisplay) > 60 {
-					entityDisplay = entityDisplay[:57] + "..."
+			if allWorkspaces {
+				fmt.Fprintln(w, "ENTITY\tFILE\tAGENT\tMODE\tSOURCE\tSINCE")
+				for _, cl := range allClaims {
+					entityDisplay := cl.EntityKey
+					if len(entityDisplay) > 60 {
+						entityDisplay = entityDisplay[:57] + "..."
+					}
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+						entityDisplay, cl.File, cl.AgentName, cl.Mode,
+						cl.SourceWorkspace,
+						cl.ClaimedAt.Format("15:04:05"))
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					entityDisplay, cl.File, cl.AgentName, cl.Mode,
-					cl.ClaimedAt.Format("15:04:05"))
+			} else {
+				fmt.Fprintln(w, "ENTITY\tFILE\tAGENT\tMODE\tSINCE")
+				for _, cl := range allClaims {
+					entityDisplay := cl.EntityKey
+					if len(entityDisplay) > 60 {
+						entityDisplay = entityDisplay[:57] + "..."
+					}
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+						entityDisplay, cl.File, cl.AgentName, cl.Mode,
+						cl.ClaimedAt.Format("15:04:05"))
+				}
 			}
 			return w.Flush()
 		},
 	}
 
 	cmd.Flags().StringVar(&workspace, "workspace", "", "filter claims by workspace")
+	cmd.Flags().BoolVar(&allWorkspaces, "all", false, "aggregate claims across all registered workspaces")
 	return cmd
 }
 
@@ -277,50 +412,95 @@ func newCoordClaimsCmd(jsonFlag *bool) *cobra.Command {
 
 func newCoordFeedCmd(jsonFlag *bool) *cobra.Command {
 	var (
-		since string
-		mine  bool
+		since         string
+		mine          bool
+		allWorkspaces bool
 	)
 
 	cmd := &cobra.Command{
 		Use:   "feed",
 		Short: "Show coordination feed events",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, r, err := openCoordinator()
-			if err != nil {
-				return err
+			type feedEventWithSource struct {
+				coord.FeedEvent
+				SourceWorkspace string `json:"source_workspace,omitempty"`
 			}
 
-			events, err := c.WalkFeed(since, 50)
-			if err != nil {
-				return fmt.Errorf("walk feed: %w", err)
+			var allEvents []feedEventWithSource
+
+			if allWorkspaces {
+				if err := iterateWorkspaces(func(name string, c *coord.Coordinator) error {
+					events, err := c.WalkFeed(since, 50)
+					if err != nil {
+						return nil
+					}
+					for _, ev := range events {
+						allEvents = append(allEvents, feedEventWithSource{
+							FeedEvent:       ev,
+							SourceWorkspace: name,
+						})
+					}
+					return nil
+				}); err != nil {
+					return err
+				}
+				// Sort by timestamp (FeedHash is derived from content, not time, so
+				// we use the event order -- most recent first within each workspace).
+			} else {
+				c, _, err := openCoordinator()
+				if err != nil {
+					return err
+				}
+				events, err := c.WalkFeed(since, 50)
+				if err != nil {
+					return fmt.Errorf("walk feed: %w", err)
+				}
+				for _, ev := range events {
+					allEvents = append(allEvents, feedEventWithSource{FeedEvent: ev})
+				}
 			}
 
 			if mine {
-				activeID := readActiveAgentID(r)
-				if activeID != "" {
-					var filtered []coord.FeedEvent
-					for _, ev := range events {
-						if ev.AgentID == activeID {
-							filtered = append(filtered, ev)
+				_, r, _ := openCoordinator()
+				if r != nil {
+					activeID := readActiveAgentID(r)
+					if activeID != "" {
+						var filtered []feedEventWithSource
+						for _, ev := range allEvents {
+							if ev.AgentID == activeID {
+								filtered = append(filtered, ev)
+							}
 						}
+						allEvents = filtered
 					}
-					events = filtered
 				}
 			}
 
 			if *jsonFlag {
-				return outputJSON(events)
+				return outputJSON(allEvents)
 			}
 
-			if len(events) == 0 {
+			if len(allEvents) == 0 {
 				fmt.Println("No feed events.")
 				return nil
 			}
 
-			for _, ev := range events {
-				fmt.Printf("[%s] %s by %s", ev.FeedHash[:8], ev.Event, ev.AgentName)
+			for _, ev := range allEvents {
+				prefix := ""
+				if allWorkspaces && ev.SourceWorkspace != "" {
+					prefix = fmt.Sprintf("[%s] ", ev.SourceWorkspace)
+				}
+				hashDisplay := ev.FeedHash
+				if len(hashDisplay) > 8 {
+					hashDisplay = hashDisplay[:8]
+				}
+				fmt.Printf("%s[%s] %s by %s", prefix, hashDisplay, ev.Event, ev.AgentName)
 				if ev.CommitHash != "" {
-					fmt.Printf(" (commit %s)", ev.CommitHash[:8])
+					commitDisplay := ev.CommitHash
+					if len(commitDisplay) > 8 {
+						commitDisplay = commitDisplay[:8]
+					}
+					fmt.Printf(" (commit %s)", commitDisplay)
 				}
 				fmt.Println()
 				for _, ent := range ev.Entities {
@@ -338,6 +518,7 @@ func newCoordFeedCmd(jsonFlag *bool) *cobra.Command {
 
 	cmd.Flags().StringVar(&since, "since", "", "show events after this feed hash")
 	cmd.Flags().BoolVar(&mine, "mine", false, "show only my events")
+	cmd.Flags().BoolVar(&allWorkspaces, "all", false, "aggregate feed events across all registered workspaces")
 	return cmd
 }
 
