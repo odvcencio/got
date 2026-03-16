@@ -410,3 +410,4 @@ func (r *Repo) HistoryGrep(opts HistoryGrepOptions) ([]HistoryGrepResult, error)
 	return results, nil
 }
 
+// coord stress test marker
