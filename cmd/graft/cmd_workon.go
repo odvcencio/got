@@ -49,7 +49,7 @@ Use --as to register as a named agent. Use --done to deregister and release all 
 			c := coord.New(r, cfg)
 
 			if done {
-				return workonDone(c, r, jsonFlag)
+				return workonDone(c, r, name, jsonFlag)
 			}
 
 			return workonStart(c, r, name, autoDiscover, notifyMode, watchOnly, scope, jsonFlag)
@@ -91,14 +91,18 @@ func workonStart(c *coord.Coordinator, r *repo.Repo, name string, autoDiscover b
 		os.Exit(0)
 	}()
 
-	// Save the agent ID to .graft/coord/agent-id for later use by --done
+	// Save the agent ID to .graft/coord/agent-{name} for later use by --done.
+	// Per-agent files prevent concurrent agents from clobbering each other's session.
 	agentIDDir := filepath.Join(r.GraftDir, "coord")
 	if err := os.MkdirAll(agentIDDir, 0o755); err != nil {
 		return fmt.Errorf("create coord dir: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(agentIDDir, "agent-id"), []byte(id), 0o644); err != nil {
+	agentFileName := "agent-" + name
+	if err := os.WriteFile(filepath.Join(agentIDDir, agentFileName), []byte(id), 0o644); err != nil {
 		return fmt.Errorf("save agent ID: %w", err)
 	}
+	// Also write a legacy agent-id for backwards compat with single-agent workflows
+	_ = os.WriteFile(filepath.Join(agentIDDir, "agent-id"), []byte(id), 0o644)
 
 	// Auto-discover workspaces
 	var discovered map[string]string
@@ -165,19 +169,55 @@ func workonStart(c *coord.Coordinator, r *repo.Repo, name string, autoDiscover b
 	return nil
 }
 
-func workonDone(c *coord.Coordinator, r *repo.Repo, jsonOutput bool) error {
-	// Read saved agent ID
-	agentIDPath := filepath.Join(r.GraftDir, "coord", "agent-id")
-	data, err := os.ReadFile(agentIDPath)
-	if err != nil {
-		return fmt.Errorf("no active coordination session (missing %s)", agentIDPath)
+func workonDone(c *coord.Coordinator, r *repo.Repo, name string, jsonOutput bool) error {
+	coordDir := filepath.Join(r.GraftDir, "coord")
+
+	var agentID string
+	var agentIDPath string
+
+	// If name is provided, look up the per-agent file directly
+	if name != "" {
+		agentFileName := "agent-" + name
+		p := filepath.Join(coordDir, agentFileName)
+		if data, err := os.ReadFile(p); err == nil {
+			agentID = string(data)
+			agentIDPath = p
+		}
 	}
-	agentID := string(data)
+
+	// Otherwise scan for any per-agent file
+	if agentID == "" {
+		entries, _ := os.ReadDir(coordDir)
+		for _, e := range entries {
+			if e.IsDir() || e.Name() == "agent-id" {
+				continue
+			}
+			if data, err := os.ReadFile(filepath.Join(coordDir, e.Name())); err == nil {
+				agentID = string(data)
+				agentIDPath = filepath.Join(coordDir, e.Name())
+				break
+			}
+		}
+	}
+
+	// Fall back to legacy single agent-id file
+	if agentID == "" {
+		legacyPath := filepath.Join(coordDir, "agent-id")
+		data, err := os.ReadFile(legacyPath)
+		if err != nil {
+			return fmt.Errorf("no active coordination session found")
+		}
+		agentID = string(data)
+		agentIDPath = legacyPath
+	}
 
 	agent, err := c.GetAgent(agentID)
 	if err != nil {
 		// Agent already gone; clean up local state
 		_ = os.Remove(agentIDPath)
+		if agentIDPath != filepath.Join(coordDir, "agent-id") {
+			_ = os.Remove(filepath.Join(coordDir, "agent-id"))
+		}
 		if jsonOutput {
 			return outputJSON(workonResult{Status: "already_done"})
 		}
@@ -192,6 +232,8 @@ func workonDone(c *coord.Coordinator, r *repo.Repo, jsonOutput bool) error {
 	}
 
 	_ = os.Remove(agentIDPath)
+	// Also clean legacy file if this was the last agent
+	_ = os.Remove(filepath.Join(coordDir, "agent-id"))
 
 	if jsonOutput {
 		return outputJSON(workonResult{
