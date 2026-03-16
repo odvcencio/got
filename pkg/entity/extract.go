@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -9,6 +10,16 @@ import (
 	"github.com/odvcencio/gotreesitter/grammars"
 	classify "github.com/odvcencio/gts-suite/pkg/lang/treesitter"
 )
+
+// ErrDataFormatSkipped is returned when extraction is skipped because the file
+// is a large data format file (JSON, YAML, TOML, etc.) above the size threshold.
+var ErrDataFormatSkipped = errors.New("data format file skipped")
+
+// ExtractOptions configures optional behaviour for ExtractWithOptions.
+type ExtractOptions struct {
+	// ForceEntities bypasses the data format size denylist and always extracts.
+	ForceEntities bool
+}
 
 // Aliases for the shared node type classification maps.
 var (
@@ -33,9 +44,24 @@ type classifiedNode struct {
 // containing structural entities. The critical invariant is that
 // concatenating all entity bodies reproduces the original source exactly.
 func Extract(filename string, source []byte) (*EntityList, error) {
+	return extractImpl(filename, source, ExtractOptions{})
+}
+
+// ExtractWithOptions is like Extract but accepts ExtractOptions for additional
+// control (e.g. forcing extraction of data format files above the size threshold).
+func ExtractWithOptions(filename string, source []byte, opts ExtractOptions) (*EntityList, error) {
+	return extractImpl(filename, source, opts)
+}
+
+func extractImpl(filename string, source []byte, opts ExtractOptions) (*EntityList, error) {
 	entry := grammars.DetectLanguage(filename)
 	if entry == nil {
 		return nil, fmt.Errorf("unsupported file type: %s", filename)
+	}
+
+	if ShouldSkipExtraction(entry.Name, int64(len(source)), opts.ForceEntities) {
+		return nil, fmt.Errorf("%w: %s (%d bytes, threshold %d)",
+			ErrDataFormatSkipped, filename, len(source), DataFormatSizeThreshold)
 	}
 
 	el := &EntityList{
@@ -48,7 +74,7 @@ func Extract(filename string, source []byte) (*EntityList, error) {
 		return el, nil
 	}
 
-	bt, err := grammars.ParseFile(filename, source)
+	bt, err := grammars.ParseFilePooled(filename, source)
 	if err != nil {
 		return nil, fmt.Errorf("parse error: %w", err)
 	}

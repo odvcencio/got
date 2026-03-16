@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/odvcencio/graft/pkg/object"
@@ -879,6 +880,93 @@ func TestStaging_WriteSyncPersistence(t *testing.T) {
 	}
 	if entry.Size != 99 {
 		t.Errorf("Size = %d, want 99", entry.Size)
+	}
+}
+
+func TestAdd_LargeJSONSkipsEntities(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	data := []byte(`{"key":"` + strings.Repeat("x", 300*1024) + `"}`)
+	if err := os.WriteFile(filepath.Join(dir, "big.json"), data, 0o644); err != nil {
+		t.Fatalf("write big.json: %v", err)
+	}
+	if err := r.Add([]string{"big.json"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	entry := stg.Entries["big.json"]
+	if entry == nil {
+		t.Fatal("missing entry for big.json")
+	}
+	if entry.BlobHash == "" {
+		t.Error("BlobHash should be set")
+	}
+	if entry.EntityListHash != "" {
+		t.Error("EntityListHash should be empty for large JSON")
+	}
+}
+
+func TestAdd_ForceEntitiesOnLargeJSON(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	data := []byte(`{"key":"` + strings.Repeat("x", 300*1024) + `"}`)
+	if err := os.WriteFile(filepath.Join(dir, "big.json"), data, 0o644); err != nil {
+		t.Fatalf("write big.json: %v", err)
+	}
+	opts := AddOptions{ForceEntities: true}
+	if err := r.AddWithOptions([]string{"big.json"}, nil, opts); err != nil {
+		t.Fatalf("AddWithOptions: %v", err)
+	}
+	stg, err := r.ReadStaging()
+	if err != nil {
+		t.Fatalf("ReadStaging: %v", err)
+	}
+	entry := stg.Entries["big.json"]
+	if entry == nil {
+		t.Fatal("missing entry for big.json")
+	}
+	if entry.BlobHash == "" {
+		t.Error("BlobHash should be set")
+	}
+}
+
+func TestAdd_EntityProgressEvents(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	var phases []string
+	progress := func(event AddProgress) { phases = append(phases, event.Phase) }
+	if err := r.AddWithOptions([]string{"main.go"}, progress, AddOptions{}); err != nil {
+		t.Fatalf("AddWithOptions: %v", err)
+	}
+	hasStage, hasEntity := false, false
+	for _, p := range phases {
+		if p == AddProgressPhaseStageFile {
+			hasStage = true
+		}
+		if p == AddProgressPhaseEntityFile {
+			hasEntity = true
+		}
+	}
+	if !hasStage {
+		t.Error("missing AddProgressPhaseStageFile")
+	}
+	if !hasEntity {
+		t.Error("missing AddProgressPhaseEntityFile")
 	}
 }
 

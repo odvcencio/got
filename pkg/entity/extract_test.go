@@ -2,6 +2,7 @@ package entity
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -472,4 +473,42 @@ func TestExtractGoVarConst(t *testing.T) {
 
 	verifyByteCoverage(t, el)
 	verifyUniqueKeys(t, el)
+}
+
+func TestExtract_LargeJSONSkipped(t *testing.T) {
+	source := []byte(`{"key":"` + strings.Repeat("x", 300*1024) + `"}`)
+	_, err := Extract("data.json", source)
+	if err == nil {
+		t.Fatal("expected error for large JSON file")
+	}
+	if !errors.Is(err, ErrDataFormatSkipped) {
+		t.Errorf("expected ErrDataFormatSkipped, got: %v", err)
+	}
+}
+
+func TestExtract_SmallJSONAllowed(t *testing.T) {
+	source := []byte(`{"name": "test"}`)
+	_, err := Extract("package.json", source)
+	if errors.Is(err, ErrDataFormatSkipped) {
+		t.Errorf("small JSON should not be skipped, got: %v", err)
+	}
+}
+
+func TestExtract_GoFileAlwaysExtracted(t *testing.T) {
+	source := []byte("package main\n\n" + strings.Repeat("func f() {}\n", 10000))
+	el, err := Extract("main.go", source)
+	if err != nil {
+		t.Fatalf("Extract error for large Go file: %v", err)
+	}
+	if len(el.Entities) == 0 {
+		t.Error("expected entities from large Go file")
+	}
+}
+
+func TestExtractWithOptions_ForceEntities(t *testing.T) {
+	source := []byte(`{"key":"` + strings.Repeat("x", 300*1024) + `"}`)
+	_, err := ExtractWithOptions("data.json", source, ExtractOptions{ForceEntities: true})
+	if errors.Is(err, ErrDataFormatSkipped) {
+		t.Errorf("force should bypass skip, got: %v", err)
+	}
 }

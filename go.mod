@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/klauspost/compress v1.18.4
-	github.com/odvcencio/gotreesitter v0.6.1-0.20260311120359-68e85114acc0
+	github.com/odvcencio/gotreesitter v0.7.0
 	github.com/odvcencio/gts-suite v0.5.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.46.0
@@ -16,4 +16,4 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 )
 
-replace github.com/odvcencio/gotreesitter => ./third_party/gotreesitter
+replace github.com/odvcencio/gotreesitter => ../gotreesitter

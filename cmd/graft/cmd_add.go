@@ -9,6 +9,8 @@ import (
 
 func newAddCmd() *cobra.Command {
 	var quiet bool
+	var skipEntities bool
+	var forceEntities bool
 
 	cmd := &cobra.Command{
 		Use:   "add <files...>",
@@ -19,8 +21,14 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			opts := repo.AddOptions{
+				SkipEntities:  skipEntities,
+				ForceEntities: forceEntities,
+			}
+
 			if quiet {
-				return r.Add(args)
+				return r.AddWithOptions(args, nil, opts)
 			}
 
 			out := cmd.ErrOrStderr()
@@ -36,7 +44,23 @@ func newAddCmd() *cobra.Command {
 						fmt.Fprintf(out, "\rStaging files... %d/%d", event.Current, event.Total)
 						progressLineActive = true
 					}
-				case repo.AddProgressPhaseWriteIndex:
+				case repo.AddProgressPhaseEntityStart:
+				if progressLineActive {
+					fmt.Fprintln(out)
+					progressLineActive = false
+				}
+				fmt.Fprintln(out, "Extracting entities...")
+			case repo.AddProgressPhaseEntityFile:
+				if shouldRenderAddProgress(event.Current, event.Total) {
+					fmt.Fprintf(out, "\rExtracting entities... %d/%d", event.Current, event.Total)
+					progressLineActive = true
+				}
+			case repo.AddProgressPhaseEntityComplete:
+				if progressLineActive {
+					fmt.Fprintln(out)
+					progressLineActive = false
+				}
+			case repo.AddProgressPhaseWriteIndex:
 					if progressLineActive {
 						fmt.Fprintln(out)
 						progressLineActive = false
@@ -45,7 +69,7 @@ func newAddCmd() *cobra.Command {
 				}
 			}
 
-			if err := r.AddWithProgress(args, progress); err != nil {
+			if err := r.AddWithOptions(args, progress, opts); err != nil {
 				if progressLineActive {
 					fmt.Fprintln(out)
 				}
@@ -55,6 +79,8 @@ func newAddCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "suppress add progress output")
+	cmd.Flags().BoolVar(&skipEntities, "skip-entities", false, "skip entity extraction (faster, lower memory)")
+	cmd.Flags().BoolVar(&forceEntities, "force-entities", false, "force entity extraction for data formats above size threshold")
 	return cmd
 }
 

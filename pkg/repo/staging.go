@@ -11,11 +11,14 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/odvcencio/graft/pkg/entity"
 	"github.com/odvcencio/graft/pkg/object"
+
+	"github.com/odvcencio/gotreesitter/grammars"
 )
 
 // StagingEntry records the staged state of a single file.
@@ -43,10 +46,13 @@ type Staging struct {
 }
 
 const (
-	AddProgressPhaseScanStart    = "scan_start"
-	AddProgressPhaseScanComplete = "scan_complete"
-	AddProgressPhaseStageFile    = "stage_file"
-	AddProgressPhaseWriteIndex   = "write_index"
+	AddProgressPhaseScanStart      = "scan_start"
+	AddProgressPhaseScanComplete   = "scan_complete"
+	AddProgressPhaseStageFile      = "stage_file"
+	AddProgressPhaseEntityStart    = "entity_start"
+	AddProgressPhaseEntityFile     = "entity_file"
+	AddProgressPhaseEntityComplete = "entity_complete"
+	AddProgressPhaseWriteIndex     = "write_index"
 )
 
 type AddProgress struct {
@@ -59,8 +65,9 @@ type AddProgress struct {
 type AddProgressFunc func(AddProgress)
 
 type preparedAddEntry struct {
-	entry *StagingEntry
-	err   error
+	entry   *StagingEntry
+	content []byte // retained for Phase 2 entity extraction
+	err     error
 }
 
 // indexPath returns the filesystem path to the staging index file.
@@ -134,6 +141,17 @@ func (r *Repo) writeStaging(s *Staging, invalidateStatusCache bool) error {
 	return nil
 }
 
+// AddOptions controls optional behavior for the Add operation.
+type AddOptions struct {
+	// SkipEntities disables entity extraction during staging. Blobs are
+	// still written; entity lists can be computed later.
+	SkipEntities bool
+
+	// ForceEntities bypasses the data format size denylist and always
+	// extracts entities, even for large JSON/YAML/TOML files.
+	ForceEntities bool
+}
+
 // Add stages the given file paths. Each path is resolved relative to the
 // repo root. For each file:
 //  1. The raw content is written as a blob to the object store.
@@ -142,15 +160,95 @@ func (r *Repo) writeStaging(s *Staging, invalidateStatusCache bool) error {
 //  3. A StagingEntry is created/updated with the resulting hashes and file
 //     metadata, and the staging area is flushed to disk.
 func (r *Repo) Add(paths []string) error {
-	return r.add(paths, nil)
+	return r.add(paths, nil, AddOptions{})
 }
 
 // AddWithProgress stages files while emitting coarse-grained progress events.
 func (r *Repo) AddWithProgress(paths []string, progress AddProgressFunc) error {
-	return r.add(paths, progress)
+	return r.add(paths, progress, AddOptions{})
 }
 
-func (r *Repo) add(paths []string, progress AddProgressFunc) error {
+// AddWithOptions stages files with the given options and progress callback.
+func (r *Repo) AddWithOptions(paths []string, progress AddProgressFunc, opts AddOptions) error {
+	return r.add(paths, progress, opts)
+}
+
+// blobResult holds the output of Phase 1 (blob staging) for a single file.
+type blobResult struct {
+	relPath string
+	entry   *StagingEntry
+	content []byte // retained for Phase 2 entity extraction
+}
+
+// sourceBytesSemaphore limits aggregate in-flight source bytes during entity
+// extraction to bound memory usage.
+type sourceBytesSemaphore struct {
+	ch     chan struct{}
+	mu     sync.Mutex
+	used   int64
+	budget int64
+}
+
+func newSourceBytesSemaphore(budgetMB int) *sourceBytesSemaphore {
+	if budgetMB <= 0 {
+		budgetMB = 64
+	}
+	return &sourceBytesSemaphore{
+		budget: int64(budgetMB) * 1024 * 1024,
+		ch:     make(chan struct{}, 1),
+	}
+}
+
+func (s *sourceBytesSemaphore) Acquire(ctx context.Context, n int64) error {
+	for {
+		s.mu.Lock()
+		if s.used+n <= s.budget || s.used == 0 {
+			s.used += n
+			s.mu.Unlock()
+			return nil
+		}
+		s.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.ch:
+			// retry
+		}
+	}
+}
+
+func (s *sourceBytesSemaphore) Release(n int64) {
+	s.mu.Lock()
+	s.used -= n
+	s.mu.Unlock()
+	select {
+	case s.ch <- struct{}{}:
+	default:
+	}
+}
+
+// entityWorkerCount returns the number of concurrent entity extraction workers.
+func entityWorkerCount() int {
+	if v := os.Getenv("GRAFT_ENTITY_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 2
+}
+
+// entityMemoryBudgetMB returns the memory budget (in MB) for in-flight source
+// bytes during entity extraction.
+func entityMemoryBudgetMB() int {
+	if v := os.Getenv("GRAFT_ENTITY_MEMORY_MB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 64
+}
+
+func (r *Repo) add(paths []string, progress AddProgressFunc, opts AddOptions) error {
 	stg, err := r.ReadStaging()
 	if err != nil {
 		return fmt.Errorf("add: %w", err)
@@ -169,6 +267,7 @@ func (r *Repo) add(paths []string, progress AddProgressFunc) error {
 		Total: len(toAdd),
 	})
 
+	// ── Phase 1: Blob staging (parallel, GOMAXPROCS workers) ──────────
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -181,11 +280,11 @@ func (r *Repo) add(paths []string, progress AddProgressFunc) error {
 		go func() {
 			defer workers.Done()
 			for job := range jobs {
-				entry, err := r.prepareAddEntry(job.value)
+				entry, content, err := r.prepareBlobEntry(job.value, opts)
 				select {
 				case preparedResults <- indexedResult[preparedAddEntry]{
 					index: job.index,
-					value: preparedAddEntry{entry: entry, err: err},
+					value: preparedAddEntry{entry: entry, content: content, err: err},
 				}:
 				case <-ctx.Done():
 					return
@@ -194,13 +293,14 @@ func (r *Repo) add(paths []string, progress AddProgressFunc) error {
 		}()
 	}
 
-	done := make(chan struct{})
+	blobDone := make(chan struct{})
 	go func() {
 		workers.Wait()
 		close(preparedResults)
-		close(done)
+		close(blobDone)
 	}()
 
+	blobs := make([]blobResult, len(toAdd))
 	pending := make(map[int]preparedAddEntry, workersCount)
 	for i, relPath := range toAdd {
 		emitAddProgress(progress, AddProgress{
@@ -212,12 +312,82 @@ func (r *Repo) add(paths []string, progress AddProgressFunc) error {
 		prepared, err := awaitOrderedResult(ctx, preparedResults, pending, i)
 		if err != nil {
 			cancel()
-			<-done
+			<-blobDone
 			return fmt.Errorf("add: %w", err)
+		}
+		blobs[i] = blobResult{
+			relPath: relPath,
+			entry:   prepared.entry,
+			content: prepared.content,
 		}
 		stg.Entries[relPath] = prepared.entry
 	}
-	<-done
+	<-blobDone
+
+	// Release Phase 1 content references so GC can reclaim before Phase 2.
+	// Phase 2 re-reads from the blob store as needed.
+	for i := range blobs {
+		blobs[i].content = nil
+	}
+
+	// ── Phase 2: Entity extraction (bounded concurrency) ──────────────
+	if !opts.SkipEntities {
+		emitAddProgress(progress, AddProgress{
+			Phase: AddProgressPhaseEntityStart,
+			Total: len(blobs),
+		})
+
+		sem := newSourceBytesSemaphore(entityMemoryBudgetMB())
+		ewCount := entityWorkerCount()
+		entityJobs := make(chan int, ewCount)
+		var entityWg sync.WaitGroup
+		var entityErr error
+		var entityErrOnce sync.Once
+
+		for w := 0; w < ewCount; w++ {
+			entityWg.Add(1)
+			go func() {
+				defer entityWg.Done()
+				for idx := range entityJobs {
+					br := &blobs[idx]
+					if err := r.extractAndStoreEntities(ctx, sem, br, opts); err != nil {
+						entityErrOnce.Do(func() { entityErr = err })
+						return
+					}
+				}
+			}()
+		}
+
+		for i := range blobs {
+			select {
+			case entityJobs <- i:
+			case <-ctx.Done():
+				break
+			}
+		}
+		close(entityJobs)
+		entityWg.Wait()
+
+		if entityErr != nil {
+			return fmt.Errorf("add: %w", entityErr)
+		}
+
+		// Emit per-file entity progress events and update staging entries.
+		for i, br := range blobs {
+			stg.Entries[br.relPath] = br.entry
+			emitAddProgress(progress, AddProgress{
+				Phase:   AddProgressPhaseEntityFile,
+				Path:    br.relPath,
+				Current: i + 1,
+				Total:   len(blobs),
+			})
+		}
+
+		emitAddProgress(progress, AddProgress{
+			Phase: AddProgressPhaseEntityComplete,
+			Total: len(blobs),
+		})
+	}
 
 	emitAddProgress(progress, AddProgress{
 		Phase:   AddProgressPhaseWriteIndex,
@@ -227,6 +397,74 @@ func (r *Repo) add(paths []string, progress AddProgressFunc) error {
 	if err := r.WriteStaging(stg); err != nil {
 		return fmt.Errorf("add: %w", err)
 	}
+	return nil
+}
+
+// extractAndStoreEntities performs entity extraction for a single blob result,
+// guarded by the source-bytes semaphore. It updates br.entry.EntityListHash
+// in place and calls the AddHook if set.
+func (r *Repo) extractAndStoreEntities(ctx context.Context, sem *sourceBytesSemaphore, br *blobResult, opts AddOptions) error {
+	// Read content from the blob store instead of retaining it in memory
+	// across phases. This prevents holding all file contents simultaneously.
+	var content []byte
+	if br.content != nil {
+		content = br.content
+		br.content = nil // allow GC
+	} else {
+		blob, err := r.Store.ReadBlob(br.entry.BlobHash)
+		if err != nil {
+			return nil // blob missing, skip entity extraction
+		}
+		content = blob.Data
+	}
+	if len(content) == 0 {
+		return nil
+	}
+
+	// Detect language to check the denylist before acquiring semaphore.
+	langEntry := grammars.DetectLanguage(br.relPath)
+	if langEntry == nil {
+		return nil // unsupported file type — no entities
+	}
+	if entity.ShouldSkipExtraction(langEntry.Name, int64(len(content)), opts.ForceEntities) {
+		return nil
+	}
+
+	n := int64(len(content))
+	if err := sem.Acquire(ctx, n); err != nil {
+		return err
+	}
+	defer sem.Release(n)
+
+	el, extractErr := entity.ExtractWithOptions(br.relPath, content, entity.ExtractOptions{
+		ForceEntities: opts.ForceEntities,
+	})
+	if extractErr != nil {
+		if errors.Is(extractErr, entity.ErrDataFormatSkipped) {
+			return nil
+		}
+		// Non-fatal: unsupported file types, parse errors, etc.
+		return nil
+	}
+	if len(el.Entities) == 0 {
+		return nil
+	}
+
+	entityListHash, err := r.writeEntityList(br.relPath, el)
+	if err != nil {
+		return fmt.Errorf("write entities %q: %w", br.relPath, err)
+	}
+	br.entry.EntityListHash = entityListHash
+
+	// Call the coordination hook with entity identity keys.
+	if r.AddHook != nil {
+		keys := make([]string, 0, len(el.Entities))
+		for i := range el.Entities {
+			keys = append(keys, el.Entities[i].IdentityKey())
+		}
+		_ = r.AddHook(br.relPath, keys)
+	}
+
 	return nil
 }
 
@@ -295,16 +533,19 @@ func addWorkerCount(total int) int {
 	return workers
 }
 
-func (r *Repo) prepareAddEntry(relPath string) (*StagingEntry, error) {
+// prepareBlobEntry performs Phase 1 work for a single file: read, stat, LFS
+// check, and blob write. It returns the staging entry (with BlobHash set,
+// EntityListHash empty) and the raw content for Phase 2 entity extraction.
+func (r *Repo) prepareBlobEntry(relPath string, opts AddOptions) (*StagingEntry, []byte, error) {
 	absPath := filepath.Join(r.RootDir, filepath.FromSlash(relPath))
 	content, err := os.ReadFile(absPath)
 	if err != nil {
-		return nil, fmt.Errorf("read %q: %w", relPath, err)
+		return nil, nil, fmt.Errorf("read %q: %w", relPath, err)
 	}
 
 	info, err := os.Stat(absPath)
 	if err != nil {
-		return nil, fmt.Errorf("stat %q: %w", relPath, err)
+		return nil, nil, fmt.Errorf("stat %q: %w", relPath, err)
 	}
 
 	// LFS: if file is tracked via .graftattributes filter=lfs,
@@ -312,43 +553,22 @@ func (r *Repo) prepareAddEntry(relPath string) (*StagingEntry, error) {
 	if r.IsLFSTracked(relPath) {
 		oid, err := r.StoreLFSObject(content)
 		if err != nil {
-			return nil, fmt.Errorf("lfs store %q: %w", relPath, err)
+			return nil, nil, fmt.Errorf("lfs store %q: %w", relPath, err)
 		}
 		content = WriteLFSPointer(oid, int64(len(content)))
 	}
 
 	blobHash, err := r.Store.WriteBlob(&object.Blob{Data: content})
 	if err != nil {
-		return nil, fmt.Errorf("write blob %q: %w", relPath, err)
-	}
-
-	var entityListHash object.Hash
-	el, extractErr := entity.Extract(relPath, content)
-	if extractErr == nil && len(el.Entities) > 0 {
-		entityListHash, err = r.writeEntityList(relPath, el)
-		if err != nil {
-			return nil, fmt.Errorf("write entities %q: %w", relPath, err)
-		}
-
-		// Call the coordination hook with entity identity keys.
-		if r.AddHook != nil {
-			keys := make([]string, 0, len(el.Entities))
-			for i := range el.Entities {
-				keys = append(keys, el.Entities[i].IdentityKey())
-			}
-			// Errors from the hook are non-fatal; coordination should
-			// not block staging.
-			_ = r.AddHook(relPath, keys)
-		}
+		return nil, nil, fmt.Errorf("write blob %q: %w", relPath, err)
 	}
 
 	entry := &StagingEntry{
-		Path:           relPath,
-		BlobHash:       blobHash,
-		EntityListHash: entityListHash,
+		Path:     relPath,
+		BlobHash: blobHash,
 	}
 	setStagingEntryStat(entry, info, modeFromFileInfo(info))
-	return entry, nil
+	return entry, content, nil
 }
 
 // Remove stages file deletions and optionally removes files from disk.
