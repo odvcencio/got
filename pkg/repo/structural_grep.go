@@ -15,6 +15,8 @@ import (
 type StructuralGrepOptions struct {
 	Pattern     string // code pattern with metavariables
 	PathPattern string // glob filter on file path
+	SExp        bool   // treat pattern as raw S-expression
+	Rewrite     string // replacement template (empty = search only)
 }
 
 // StructuralGrepResult represents a single structural match with entity context.
@@ -103,13 +105,28 @@ func (r *Repo) StructuralGrep(opts StructuralGrepOptions) ([]StructuralGrepResul
 
 		// Run structural match.
 		lang := entry.Language()
-		matches, err := tsgrep.Match(lang, opts.Pattern, source)
+		var matches []tsgrep.Result
+		if opts.SExp {
+			matches, err = tsgrep.MatchSexp(lang, opts.Pattern, source)
+		} else {
+			matches, err = tsgrep.Match(lang, opts.Pattern, source)
+		}
 		if err != nil {
 			// Pattern may not apply to this language; skip silently.
 			return nil
 		}
 		if len(matches) == 0 {
 			return nil
+		}
+
+		// If rewrite mode, apply replacements to this file and continue
+		// (we still collect match results for reporting).
+		if opts.Rewrite != "" {
+			rr, replaceErr := tsgrep.Replace(lang, opts.Pattern, opts.Rewrite, source)
+			if replaceErr == nil && len(rr.Edits) > 0 {
+				newSource := tsgrep.ApplyEdits(source, rr.Edits)
+				_ = os.WriteFile(path, newSource, 0644)
+			}
 		}
 
 		// Extract entities for context (best-effort).
