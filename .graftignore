@@ -1,0 +1,15 @@
+.git
+.graft
+.claude
+graft
+graft.test
+*.test
+*.exe
+*.dll
+*.so
+*.dylib
+*.log
+*.prof
+third_party/
+vendor/
+.worktrees/
