@@ -276,6 +276,19 @@ func workonDone(c *coord.Coordinator, r *repo.Repo, name string, jsonOutput bool
 
 	agentName := agent.Name
 
+	// Ownership check: if the owning process is still alive, block release
+	// from a different process. This prevents one agent from accidentally
+	// deregistering another active agent. Dead processes are allowed to be
+	// cleaned up by any caller.
+	if name != "" {
+		if sess, _ := coord.LoadSession(r.GraftDir, name); sess != nil && sess.PID != 0 {
+			callerPID := os.Getpid()
+			if sess.PID != callerPID && isProcessAlive(sess.PID) {
+				return fmt.Errorf("cannot release agent %q: owned by active PID %d (caller is PID %d)", name, sess.PID, callerPID)
+			}
+		}
+	}
+
 	if err := c.DeregisterAgent(agentID); err != nil {
 		return fmt.Errorf("deregister agent: %w", err)
 	}
@@ -303,6 +316,16 @@ func workonDone(c *coord.Coordinator, r *repo.Repo, name string, jsonOutput bool
 	fmt.Printf("Coordination session ended for %s (%s)\n", agentName, agentID)
 	fmt.Println("All claims released.")
 	return nil
+}
+
+// isProcessAlive checks whether a process with the given PID is still running.
+func isProcessAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	// Signal 0 tests process existence without sending a real signal.
+	return proc.Signal(syscall.Signal(0)) == nil
 }
 
 type workonResult struct {
