@@ -19,6 +19,9 @@ type HookEntry struct {
 	Remote       string   `toml:"remote"`
 	BranchFilter []string `toml:"branch_filter"`
 	Source       string   `toml:"source"`
+	Grep         string   `toml:"grep"`    // structural grep pattern (e.g. "go::$PKG.Exec($$$ARGS)")
+	Action       string   `toml:"action"`  // "block" or "warn" (for grep hooks)
+	Message      string   `toml:"message"` // human-readable message shown on match
 }
 
 // HooksConfig holds all hook entries loaded from repo and user configuration.

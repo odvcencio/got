@@ -92,18 +92,30 @@ func (r *Repo) RunHook(name HookName, args ...string) error {
 
 // RunHookEntry executes a single HookEntry. For entries with a Run command,
 // the command is split and spawned with the JSON payload on stdin. For entries
-// with a Type field, the built-in hook handler is invoked instead.
+// with a Type field, the built-in hook handler is invoked instead. For entries
+// with a Grep field, structural grep is run (requires a *Repo; use
+// RunHookEntryWithRepo instead for grep-enabled hooks).
 //
 // Environment variables GRAFT_HOOK and GRAFT_REPO_ROOT are set for
 // external commands. If entry.Timeout is set (Go duration string), the
 // process is killed when the timeout expires.
 func RunHookEntry(ctx context.Context, repoRoot string, entry HookEntry, payload []byte) error {
+	if entry.Grep != "" {
+		// Grep hooks require a Repo for structural matching. Open one
+		// from repoRoot so the non-Repo call path still works.
+		r, err := Open(repoRoot)
+		if err != nil {
+			return fmt.Errorf("hook %s.%s: cannot open repo for grep: %w", entry.Point, entry.Name, err)
+		}
+		return runGrepHook(ctx, r, entry)
+	}
+
 	if entry.Type != "" {
 		return runBuiltinHook(ctx, repoRoot, entry, payload)
 	}
 
 	if entry.Run == "" {
-		return fmt.Errorf("hook %s.%s: neither run nor type specified", entry.Point, entry.Name)
+		return fmt.Errorf("hook %s.%s: neither run, type, nor grep specified", entry.Point, entry.Name)
 	}
 
 	// Apply timeout if specified.
