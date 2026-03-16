@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.5.0
+
+### Hooks Engine
+
+Declarative hooks system that replaces git's hidden `.git/hooks/` scripts with committed, configurable, entity-aware hooks.
+
+**`hooks.toml`** — Committed with the repo. Repo hooks are mandatory and cannot be disabled by users. User hooks in `~/.graftconfig` extend repo hooks.
+
+```toml
+[pre-commit.lint]
+run = "golangci-lint run --new-from-rev HEAD"
+on-fail = "abort"
+
+[post-push.mirror]
+type = "mirror"
+remote = "github"
+```
+
+**Structured JSON payloads** — Hooks receive rich context on stdin: staged files, entity diffs, commit hashes, ref updates. A pre-commit hook can see exactly which functions changed signatures.
+
+**Hook points:** pre-commit, post-commit, pre-push, post-push. Pre-hooks can abort the operation. Post-hooks run all handlers even if one fails.
+
+**Built-in types:**
+- `mirror` — Push to a git remote after graft push. Makes graft the source of truth with GitHub as a read-only mirror.
+
+**Timeout support** — Set `timeout = "120s"` per hook. Hooks without a timeout run until completion.
+
+### Requires
+
+- gotreesitter v0.7.0+
+
 ## v0.4.0
 
 ### Memory-Safe Entity Extraction
