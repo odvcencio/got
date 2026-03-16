@@ -1,11 +1,13 @@
 package repo
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/odvcencio/graft/pkg/entity"
 	"github.com/odvcencio/graft/pkg/object"
@@ -35,78 +37,65 @@ type StructuralGrepResult struct {
 	MatchedText string            // full matched source text
 }
 
-// skipDirs are directory names that StructuralGrep skips during tree walking.
-var skipDirs = map[string]bool{
-	".graft":       true,
-	".git":         true,
-	"vendor":       true,
-	"node_modules": true,
-}
-
 // StructuralGrep searches working tree files for structural pattern matches
-// using tree-sitter AST-aware matching. For each match it resolves the
-// enclosing entity to provide declaration context. Results are sorted by
-// path then start line.
+// using tree-sitter AST-aware matching via the gotreesitter parse gateway.
+// For each match it resolves the enclosing entity to provide declaration
+// context. Results are sorted by path then start line.
 func (r *Repo) StructuralGrep(opts StructuralGrepOptions) ([]StructuralGrepResult, error) {
 	if opts.Pattern == "" {
 		return nil, fmt.Errorf("structural grep: pattern must not be empty")
 	}
 
-	var results []StructuralGrepResult
+	policy := grammars.DefaultPolicy()
 
-	err := filepath.WalkDir(r.RootDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Skip excluded directories.
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return filepath.SkipDir
+	// If a path filter is specified, wire it into the gateway's ShouldParse hook
+	// so files are skipped before reading and parsing.
+	if opts.PathPattern != "" {
+		policy.ShouldParse = func(path string, size int64, _ time.Time) bool {
+			relPath, err := filepath.Rel(r.RootDir, path)
+			if err != nil {
+				return false
 			}
-			return nil
-		}
-
-		// Compute relative path.
-		relPath, err := filepath.Rel(r.RootDir, path)
-		if err != nil {
-			return nil
-		}
-		// Normalize to forward slashes for consistency.
-		relPath = filepath.ToSlash(relPath)
-
-		// Apply path filter if specified.
-		if opts.PathPattern != "" {
+			relPath = filepath.ToSlash(relPath)
 			matched, err := filepath.Match(opts.PathPattern, relPath)
 			if err != nil {
-				return fmt.Errorf("structural grep: invalid path pattern %q: %w", opts.PathPattern, err)
+				return false
 			}
-			if !matched {
-				// Also try matching against the base name.
-				matched, _ = filepath.Match(opts.PathPattern, filepath.Base(relPath))
+			if matched {
+				return true
 			}
-			if !matched {
-				return nil
-			}
+			matched, _ = filepath.Match(opts.PathPattern, filepath.Base(relPath))
+			return matched
+		}
+	}
+
+	ctx := context.Background()
+	ch, _ := grammars.WalkAndParse(ctx, r.RootDir, policy)
+
+	var results []StructuralGrepResult
+
+	for file := range ch {
+		if file.Err != nil {
+			file.Close()
+			continue
 		}
 
-		// Detect language from filename.
-		entry := grammars.DetectLanguage(d.Name())
-		if entry == nil {
-			return nil
-		}
-
-		// Read source.
-		source, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
+		source := file.Source
 		if len(source) == 0 {
-			return nil
+			file.Close()
+			continue
 		}
+
+		// Compute relative path from the absolute path provided by the gateway.
+		relPath, err := filepath.Rel(r.RootDir, file.Path)
+		if err != nil {
+			file.Close()
+			continue
+		}
+		relPath = filepath.ToSlash(relPath)
 
 		// Run structural match.
-		lang := entry.Language()
+		lang := file.Lang.Language()
 		var matches []tsgrep.Result
 		if opts.SExp {
 			matches, err = tsgrep.MatchSexp(lang, opts.Pattern, source)
@@ -115,10 +104,12 @@ func (r *Repo) StructuralGrep(opts StructuralGrepOptions) ([]StructuralGrepResul
 		}
 		if err != nil {
 			// Pattern may not apply to this language; skip silently.
-			return nil
+			file.Close()
+			continue
 		}
 		if len(matches) == 0 {
-			return nil
+			file.Close()
+			continue
 		}
 
 		// If rewrite mode, apply replacements to this file and continue
@@ -127,7 +118,7 @@ func (r *Repo) StructuralGrep(opts StructuralGrepOptions) ([]StructuralGrepResul
 			rr, replaceErr := tsgrep.Replace(lang, opts.Pattern, opts.Rewrite, source)
 			if replaceErr == nil && len(rr.Edits) > 0 {
 				newSource := tsgrep.ApplyEdits(source, rr.Edits)
-				_ = os.WriteFile(path, newSource, 0644)
+				_ = os.WriteFile(file.Path, newSource, 0644)
 			}
 		}
 
@@ -170,10 +161,7 @@ func (r *Repo) StructuralGrep(opts StructuralGrepOptions) ([]StructuralGrepResul
 			results = append(results, res)
 		}
 
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("structural grep: %w", err)
+		file.Close()
 	}
 
 	// Sort by path, then by start line.
