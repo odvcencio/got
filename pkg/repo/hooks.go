@@ -161,7 +161,7 @@ func RunHooksForPoint(ctx context.Context, repoRoot string, hooks []HookEntry, p
 func runBuiltinHook(ctx context.Context, repoRoot string, entry HookEntry, payload []byte) error {
 	switch entry.Type {
 	case "mirror":
-		return fmt.Errorf("mirror hook not yet implemented")
+		return runMirrorHook(ctx, repoRoot, entry)
 	default:
 		return fmt.Errorf("hook %s.%s: unknown built-in type %q", entry.Point, entry.Name, entry.Type)
 	}

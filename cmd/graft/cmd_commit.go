@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +37,27 @@ func newCommitCmd() *cobra.Command {
 
 			if author == "" {
 				author = r.ResolveAuthor()
+			}
+
+			// Determine current branch name early (needed for hook payloads).
+			branch := "HEAD"
+			if head, headErr := r.Head(); headErr == nil && strings.HasPrefix(head, "refs/heads/") {
+				branch = strings.TrimPrefix(head, "refs/heads/")
+			}
+
+			// Load hooks config and run pre-commit hooks.
+			hooksCfg, _ := repo.LoadHooksConfig(r.RootDir, nil)
+			preCommitHooks := hooksCfg.ForPoint("pre-commit")
+			if len(preCommitHooks) > 0 {
+				payload, _ := json.Marshal(repo.PreCommitPayload{
+					Hook:   "pre-commit",
+					Repo:   r.RootDir,
+					Branch: branch,
+					Author: author,
+				})
+				if err := repo.RunHooksForPoint(cmd.Context(), r.RootDir, preCommitHooks, payload, true); err != nil {
+					return err
+				}
 			}
 
 			// Determine whether to sign. Explicit --sign/--sign-key flags
@@ -111,11 +133,18 @@ func newCommitCmd() *cobra.Command {
 				}
 			}
 
-			// Determine current branch name for output.
-			branch := "HEAD"
-			head, err := r.Head()
-			if err == nil && strings.HasPrefix(head, "refs/heads/") {
-				branch = strings.TrimPrefix(head, "refs/heads/")
+			// Run post-commit hooks (non-blocking: errors are warnings only).
+			postCommitHooks := hooksCfg.ForPoint("post-commit")
+			if len(postCommitHooks) > 0 {
+				payload, _ := json.Marshal(repo.PostCommitPayload{
+					Hook:    "post-commit",
+					Repo:    r.RootDir,
+					Branch:  branch,
+					Commit:  h,
+					Message: message,
+					Author:  author,
+				})
+				_ = repo.RunHooksForPoint(cmd.Context(), r.RootDir, postCommitHooks, payload, false)
 			}
 
 			// Short hash: first 8 characters.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -79,6 +80,24 @@ func pushBranchGot(cmd *cobra.Command, r *repo.Repo, remoteName, remoteURL, bran
 		hasRemote = false
 	}
 
+	// Load hooks config and run pre-push hooks.
+	hooksCfg, _ := repo.LoadHooksConfig(r.RootDir, nil)
+	prePushHooks := hooksCfg.ForPoint("pre-push")
+	if len(prePushHooks) > 0 {
+		payload, _ := json.Marshal(repo.PrePushPayload{
+			Hook:      "pre-push",
+			Repo:      r.RootDir,
+			Remote:    remoteName,
+			RemoteURL: remoteURL,
+			Refs: []repo.HookRefUpdate{
+				{LocalRef: localRef, RemoteRef: remoteRef, LocalHash: string(localHash), RemoteHash: string(remoteHash)},
+			},
+		})
+		if err := repo.RunHooksForPoint(cmd.Context(), r.RootDir, prePushHooks, payload, true); err != nil {
+			return err
+		}
+	}
+
 	if hasRemote && remoteHash == localHash {
 		_ = r.UpdateRef(remoteTrackingRefName(remoteName, remoteRef), remoteHash)
 		fmt.Fprintf(cmd.OutOrStdout(), "everything up-to-date (%s)\n", shortHash(localHash))
@@ -153,6 +172,19 @@ func pushBranchGot(cmd *cobra.Command, r *repo.Repo, remoteName, remoteURL, bran
 		fmt.Fprintf(cmd.OutOrStdout(), "pushed %s: %s -> %s (%d objects)\n", pushTarget, shortHash(remoteHash), shortHash(finalHash), uploaded)
 	} else {
 		fmt.Fprintf(cmd.OutOrStdout(), "pushed new %s at %s (%d objects)\n", pushTarget, shortHash(finalHash), uploaded)
+	}
+
+	// Run post-push hooks (non-blocking: errors are warnings only).
+	postPushHooks := hooksCfg.ForPoint("post-push")
+	if len(postPushHooks) > 0 {
+		payload, _ := json.Marshal(repo.PostPushPayload{
+			Hook:          "post-push",
+			Remote:        remoteName,
+			RemoteURL:     remoteURL,
+			Refs:          []repo.HookRefUpdate{{Name: remoteRef, Old: string(remoteHash), New: string(finalHash)}},
+			ObjectsPushed: uploaded,
+		})
+		_ = repo.RunHooksForPoint(cmd.Context(), r.RootDir, postPushHooks, payload, false)
 	}
 
 	// Push LFS objects referenced by the commit.
