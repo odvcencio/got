@@ -53,6 +53,19 @@ func (c *Coordinator) RegisterAgent(info AgentInfo) (string, error) {
 	return id, nil
 }
 
+// AgentStartedAt returns the StartedAt time for the current agent.
+// Returns the zero value if no agent is registered.
+func (c *Coordinator) AgentStartedAt() time.Time {
+	if c.AgentID == "" {
+		return time.Time{}
+	}
+	agent, err := c.GetAgent(c.AgentID)
+	if err != nil {
+		return time.Time{}
+	}
+	return agent.StartedAt
+}
+
 // GetAgent reads a single agent's info by ID.
 func (c *Coordinator) GetAgent(id string) (*AgentInfo, error) {
 	ref := refPath("agents", id)

@@ -39,8 +39,12 @@ func newCoordCmd() *cobra.Command {
 	cmd.AddCommand(newCoordUnwatchCmd(&jsonFlag))
 	cmd.AddCommand(newCoordResolveCmd(&jsonFlag))
 	cmd.AddCommand(newCoordPlanCmd(&jsonFlag))
+	cmd.AddCommand(newCoordTaskCmd(&jsonFlag))
 	cmd.AddCommand(newCoordPublishCmd(&jsonFlag))
 	cmd.AddCommand(newCoordHeartbeatCmd(&jsonFlag))
+	cmd.AddCommand(newCoordSessionsCmd(&jsonFlag))
+	cmd.AddCommand(newCoordPresenceCmd(&jsonFlag))
+	cmd.AddCommand(newCoordReadingCmd(&jsonFlag))
 
 	return cmd
 }
@@ -1081,6 +1085,141 @@ func newCoordHeartbeatCmd(jsonFlag *bool) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// --- Sessions ---
+
+func newCoordSessionsCmd(jsonFlag *bool) *cobra.Command {
+	return &cobra.Command{
+		Use:   "sessions",
+		Short: "List active persistent sessions",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, r, err := openCoordinator()
+			if err != nil {
+				return err
+			}
+
+			sessions, err := coord.ListSessions(r.GraftDir)
+			if err != nil {
+				return fmt.Errorf("list sessions: %w", err)
+			}
+
+			if *jsonFlag {
+				return outputJSON(sessions)
+			}
+
+			if len(sessions) == 0 {
+				fmt.Println("No active sessions.")
+				return nil
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(w, "AGENT\tID\tMODE\tHOST\tPID\tLAST ACTIVE\tSTALE")
+			for _, s := range sessions {
+				stale := ""
+				if coord.IsSessionStale(&s, coord.SessionStaleThreshold) {
+					stale = "yes"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+					s.AgentName, s.AgentID, s.Mode, s.Host, s.PID,
+					s.LastActive.Format("15:04:05"), stale)
+			}
+			return w.Flush()
+		},
+	}
+}
+
+// --- Presence ---
+
+func newCoordPresenceCmd(jsonFlag *bool) *cobra.Command {
+	return &cobra.Command{
+		Use:   "presence",
+		Short: "Show who is reading what files",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, _, err := openCoordinator()
+			if err != nil {
+				return err
+			}
+
+			entries, err := c.ListPresence()
+			if err != nil {
+				return fmt.Errorf("list presence: %w", err)
+			}
+
+			if *jsonFlag {
+				return outputJSON(entries)
+			}
+
+			if len(entries) == 0 {
+				fmt.Println("No active readers.")
+				return nil
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(w, "AGENT\tFILE\tENTITY\tSINCE")
+			for _, e := range entries {
+				entity := e.Entity
+				if entity == "" {
+					entity = "-"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+					e.AgentName, e.File, entity,
+					e.Timestamp.Format("15:04:05"))
+			}
+			return w.Flush()
+		},
+	}
+}
+
+// --- Reading ---
+
+func newCoordReadingCmd(jsonFlag *bool) *cobra.Command {
+	var entity string
+
+	cmd := &cobra.Command{
+		Use:   "reading <file>",
+		Short: "Register that you are reading a file",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, r, err := openCoordinator()
+			if err != nil {
+				return err
+			}
+
+			activeID := readActiveAgentID(r)
+			if activeID == "" {
+				return fmt.Errorf("no active coordination session; run 'graft workon --as <name>' first")
+			}
+			c.AgentID = activeID
+
+			file := args[0]
+			if err := c.RegisterPresence(file, entity); err != nil {
+				return fmt.Errorf("register presence: %w", err)
+			}
+
+			if *jsonFlag {
+				result := map[string]string{
+					"status":   "reading",
+					"file":     file,
+					"agent_id": activeID,
+				}
+				if entity != "" {
+					result["entity"] = entity
+				}
+				return outputJSON(result)
+			}
+
+			if entity != "" {
+				fmt.Printf("Reading: %s (entity: %s)\n", file, entity)
+			} else {
+				fmt.Printf("Reading: %s\n", file)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&entity, "entity", "", "specific entity being read")
+	return cmd
 }
 
 // Note: outputJSON is defined in cmd_workon.go and shared across the package.

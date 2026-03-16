@@ -71,15 +71,58 @@ Use --as to register as a named agent. Use --done to deregister and release all 
 func workonStart(c *coord.Coordinator, r *repo.Repo, name string, autoDiscover bool, notifyMode string, watchOnly bool, scope string, jsonOutput bool) error {
 	hostname, _ := os.Hostname()
 
-	info := coord.AgentInfo{
-		Name:      name,
-		Workspace: filepath.Base(r.RootDir),
-		Host:      hostname,
+	mode := "editing"
+	if watchOnly {
+		mode = "watching"
 	}
 
-	id, err := c.RegisterAgent(info)
-	if err != nil {
-		return fmt.Errorf("register agent: %w", err)
+	// Check for existing persistent session
+	var id string
+	var resumed bool
+	existingSession, _ := coord.LoadSession(r.GraftDir, name)
+	if existingSession != nil && !coord.IsSessionStale(existingSession, coord.SessionStaleThreshold) {
+		// Resume: reuse the existing agent ID, update PID/host
+		id = existingSession.AgentID
+		c.AgentID = id
+		existingSession.PID = os.Getpid()
+		existingSession.Host = hostname
+		existingSession.Scope = scope
+		existingSession.Mode = mode
+		if err := coord.TouchSession(r.GraftDir, existingSession); err != nil {
+			return fmt.Errorf("touch session: %w", err)
+		}
+		// Update the agent heartbeat in the ref store too
+		_ = c.Heartbeat(id)
+		resumed = true
+	} else {
+		// New session (or replacing a stale one)
+		info := coord.AgentInfo{
+			Name:      name,
+			Workspace: filepath.Base(r.RootDir),
+			Host:      hostname,
+		}
+
+		var err error
+		id, err = c.RegisterAgent(info)
+		if err != nil {
+			return fmt.Errorf("register agent: %w", err)
+		}
+
+		// Write persistent session
+		sess := &coord.Session{
+			AgentID:    id,
+			AgentName:  name,
+			Workspace:  filepath.Base(r.RootDir),
+			Host:       hostname,
+			StartedAt:  c.AgentStartedAt(),
+			LastActive: c.AgentStartedAt(),
+			PID:        os.Getpid(),
+			Scope:      scope,
+			Mode:       mode,
+		}
+		if err := coord.SaveSession(r.GraftDir, sess); err != nil {
+			return fmt.Errorf("save session: %w", err)
+		}
 	}
 
 	// Set up signal handler to deregister agent on SIGTERM/SIGINT
@@ -88,6 +131,7 @@ func workonStart(c *coord.Coordinator, r *repo.Repo, name string, autoDiscover b
 	go func() {
 		<-sigCh
 		_ = c.DeregisterAgent(id)
+		_ = coord.RemoveSession(r.GraftDir, name)
 		os.Exit(0)
 	}()
 
@@ -128,19 +172,20 @@ func workonStart(c *coord.Coordinator, r *repo.Repo, name string, autoDiscover b
 	agents, _ := c.ListAgents()
 	claims, _ := c.ListClaims()
 
+	status := "joined"
+	if resumed {
+		status = "resumed"
+	}
 	result := workonResult{
-		Status:    "joined",
+		Status:    status,
 		AgentID:   id,
 		AgentName: name,
-		Workspace: info.Workspace,
+		Workspace: filepath.Base(r.RootDir),
 		Agents:    len(agents),
 		Claims:    len(claims),
-		Mode:      "editing",
+		Mode:      mode,
 		Scope:     scope,
 		Notify:    notifyMode,
-	}
-	if watchOnly {
-		result.Mode = "watching"
 	}
 	if len(discovered) > 0 {
 		result.Discovered = discovered
@@ -150,9 +195,13 @@ func workonStart(c *coord.Coordinator, r *repo.Repo, name string, autoDiscover b
 		return outputJSON(result)
 	}
 
-	fmt.Printf("Coordination session started\n")
+	if resumed {
+		fmt.Printf("Coordination session resumed\n")
+	} else {
+		fmt.Printf("Coordination session started\n")
+	}
 	fmt.Printf("  Agent:     %s (%s)\n", name, id)
-	fmt.Printf("  Workspace: %s\n", info.Workspace)
+	fmt.Printf("  Workspace: %s\n", filepath.Base(r.RootDir))
 	fmt.Printf("  Mode:      %s\n", result.Mode)
 	if scope != "" {
 		fmt.Printf("  Scope:     %s\n", scope)
@@ -230,6 +279,14 @@ func workonDone(c *coord.Coordinator, r *repo.Repo, name string, jsonOutput bool
 	if err := c.DeregisterAgent(agentID); err != nil {
 		return fmt.Errorf("deregister agent: %w", err)
 	}
+
+	// Remove persistent session file
+	if agentName != "" {
+		_ = coord.RemoveSession(r.GraftDir, agentName)
+	}
+
+	// Clear any presence entries for this agent
+	_ = coord.ClearAgentPresence(r.GraftDir, agentID)
 
 	_ = os.Remove(agentIDPath)
 	// Also clean legacy file if this was the last agent
