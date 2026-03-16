@@ -229,6 +229,7 @@ func (s *mcpServer) handleRequest(request mcpRPCRequest) (any, *mcpRPCError) {
 		tools = append(tools, mcpPlanToolDefs()...)
 		if s.withCodeintel {
 			tools = append(tools, mcpCodeintelToolDefs()...)
+			tools = append(tools, mcpGrepToolDefs()...)
 		}
 		sort.Slice(tools, func(i, j int) bool {
 			return tools[i].Name < tools[j].Name
@@ -545,21 +546,23 @@ func mcpDispatchTool(name string, args map[string]any) (any, error) {
 
 // mcpDispatchAll routes a tool call to the correct dispatcher.
 func mcpDispatchAll(withCodeintel bool, name string, args map[string]any) (any, error) {
-	// Try coordination tools first.
-	result, err := mcpDispatchTool(name, args)
-	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
-		return result, err
-	}
-	// Try plan tools.
-	result, err = mcpDispatchPlanTool(name, args)
-	if err == nil || !strings.Contains(err.Error(), "unknown plan tool") {
-		return result, err
-	}
-	// Try codeintel tools if enabled.
-	if withCodeintel {
+	// Route by prefix to avoid fragile error-string matching.
+	switch {
+	case strings.HasPrefix(name, "graft_plan_"):
+		return mcpDispatchPlanTool(name, args)
+	case strings.HasPrefix(name, "graft_ci_"):
+		if !withCodeintel {
+			return nil, fmt.Errorf("unknown tool %q (code intelligence tools require --with-codeintel)", name)
+		}
 		return mcpDispatchCodeintelTool(name, args)
+	case strings.HasPrefix(name, "graft_grep"), name == "graft_entity_edit":
+		if !withCodeintel {
+			return nil, fmt.Errorf("unknown tool %q (structural grep tools require --with-codeintel)", name)
+		}
+		return mcpDispatchGrepTool(name, args)
+	default:
+		return mcpDispatchTool(name, args)
 	}
-	return nil, fmt.Errorf("unknown tool %q", name)
 }
 
 // --- Arg helpers ---
