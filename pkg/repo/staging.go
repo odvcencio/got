@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -397,7 +398,30 @@ func (r *Repo) add(paths []string, progress AddProgressFunc, opts AddOptions) er
 	if err := r.WriteStaging(stg); err != nil {
 		return fmt.Errorf("add: %w", err)
 	}
+
+	// Unified staging: also stage in git if a .git/ directory exists.
+	r.gitStageFiles(toAdd)
+
 	return nil
+}
+
+// gitStageFiles stages files in the colocated git repo (if present).
+// This keeps git and graft staging areas in sync so that either
+// `git commit` or `graft commit` produces consistent results.
+// Errors are silently ignored — git staging is best-effort.
+func (r *Repo) gitStageFiles(paths []string) {
+	gitDir := filepath.Join(r.RootDir, ".git")
+	if _, err := os.Stat(gitDir); err != nil {
+		return // no git repo
+	}
+	if len(paths) == 0 {
+		return
+	}
+	// Use git update-index --add --stdin to batch stage files.
+	cmd := exec.Command("git", "add", "--")
+	cmd.Args = append(cmd.Args, paths...)
+	cmd.Dir = r.RootDir
+	_ = cmd.Run()
 }
 
 // extractAndStoreEntities performs entity extraction for a single blob result,

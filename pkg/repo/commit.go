@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -169,8 +170,26 @@ func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (ob
 	r.invalidateStatusCache()
 	r.InvalidateMergeBaseCache()
 
-	// 7. Return commit hash.
+	// 7. Mirror to git if a colocated .git/ directory exists.
+	r.gitMirrorCommit(message, author)
+
+	// 8. Return commit hash.
 	return commitHash, nil
+}
+
+// gitMirrorCommit creates a corresponding git commit from the currently
+// staged files. This keeps git history in sync with graft so that
+// `git log` and `graft log` show the same commits. Errors are silently
+// ignored — git mirroring is best-effort.
+func (r *Repo) gitMirrorCommit(message, author string) {
+	gitDir := filepath.Join(r.RootDir, ".git")
+	if _, err := os.Stat(gitDir); err != nil {
+		return // no git repo
+	}
+	cmd := exec.Command("git", "commit", "--allow-empty", "-m", message, "--author", author)
+	cmd.Dir = r.RootDir
+	cmd.Env = append(os.Environ(), "GIT_COMMITTER_NAME=graft", "GIT_COMMITTER_EMAIL=graft@noreply")
+	_ = cmd.Run()
 }
 
 // CommitAmend replaces the current HEAD commit with a new one built from the
