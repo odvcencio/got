@@ -27,6 +27,7 @@ type ignorePattern struct {
 	negated  bool
 	dirOnly  bool
 	hasSlash bool // pattern contains a slash, so match against full path
+	rooted   bool // pattern was anchored to root with leading /
 	regex    *regexp.Regexp
 }
 
@@ -117,8 +118,16 @@ func parseLine(line string) *ignorePattern {
 		line = strings.TrimRight(line, "/")
 	}
 
-	// If the pattern contains a slash, match against the full relative path.
-	p.hasSlash = strings.Contains(line, "/")
+	// Leading / anchors to root: strip it but mark as rooted so the pattern
+	// matches against the full relative path (not just the basename).
+	if strings.HasPrefix(line, "/") {
+		p.rooted = true
+		line = strings.TrimLeft(line, "/")
+	}
+
+	// If the pattern contains a slash (after stripping leading /), match
+	// against the full relative path.
+	p.hasSlash = p.rooted || strings.Contains(line, "/")
 
 	p.pattern = line
 	if strings.Contains(line, "**") {
@@ -156,10 +165,35 @@ func (ic *IgnoreChecker) IsIgnored(path string) bool {
 	if idxs, ok := ic.dirPrefixPatterns[path]; ok {
 		applyAll(idxs)
 	}
+	// Also check the basename of the full path for non-rooted dir patterns.
+	// This handles "frontend/.next" matching pattern ".next/".
+	if pathBase := filepath.Base(path); pathBase != path {
+		if idxs, ok := ic.dirPrefixPatterns[pathBase]; ok {
+			for _, idx := range idxs {
+				if !ic.patterns[idx].rooted {
+					apply(idx)
+				}
+			}
+		}
+	}
 	for i := 0; i < len(path); i++ {
 		if path[i] == '/' {
-			if idxs, ok := ic.dirPrefixPatterns[path[:i]]; ok {
+			prefix := path[:i]
+			if idxs, ok := ic.dirPrefixPatterns[prefix]; ok {
 				applyAll(idxs)
+			}
+			// For non-rooted patterns (no leading /), also check the
+			// basename of each path segment. This allows patterns like
+			// ".next/" to match "frontend/.next/..." at any depth.
+			segment := filepath.Base(prefix)
+			if segment != prefix {
+				if idxs, ok := ic.dirPrefixPatterns[segment]; ok {
+					for _, idx := range idxs {
+						if !ic.patterns[idx].rooted {
+							apply(idx)
+						}
+					}
+				}
 			}
 		}
 	}

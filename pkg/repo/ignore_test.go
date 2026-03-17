@@ -265,6 +265,53 @@ func TestIgnore_BracketWildcardWithLiteralPrefix(t *testing.T) {
 }
 
 // helper: write a .graftignore file in the given directory.
+// Test: Directory patterns without leading / match at any depth.
+// .next/ should match both root .next/ and frontend/.next/.
+func TestIgnore_NestedDirectoryPattern(t *testing.T) {
+	dir := t.TempDir()
+
+	writeGotignore(t, dir, ".next/\nnode_modules/\n")
+
+	ic := NewIgnoreChecker(dir)
+
+	// Root level
+	if !ic.IsIgnored(".next/BUILD_ID") {
+		t.Error("expected .next/BUILD_ID to be ignored")
+	}
+	// Nested
+	if !ic.IsIgnored("frontend/.next/BUILD_ID") {
+		t.Error("expected frontend/.next/BUILD_ID to be ignored")
+	}
+	if !ic.IsIgnored("frontend/.next/server/app/page.js") {
+		t.Error("expected frontend/.next/server/app/page.js to be ignored")
+	}
+	if !ic.IsIgnored("frontend/node_modules/react/index.js") {
+		t.Error("expected frontend/node_modules/react/index.js to be ignored")
+	}
+	// Non-matching should not be ignored
+	if ic.IsIgnored("frontend/src/app/page.tsx") {
+		t.Error("expected frontend/src/app/page.tsx to NOT be ignored")
+	}
+}
+
+// Test: Leading / anchors pattern to root only.
+func TestIgnore_RootAnchoredPattern(t *testing.T) {
+	dir := t.TempDir()
+
+	writeGotignore(t, dir, "/build/\n")
+
+	ic := NewIgnoreChecker(dir)
+
+	// Root build/ should be ignored
+	if !ic.IsIgnored("build/output.o") {
+		t.Error("expected build/output.o to be ignored")
+	}
+	// Nested build/ should NOT be ignored (rooted pattern)
+	if ic.IsIgnored("frontend/build/output.o") {
+		t.Error("expected frontend/build/output.o to NOT be ignored (rooted pattern)")
+	}
+}
+
 func writeGotignore(t *testing.T, dir, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, ".graftignore"), []byte(content), 0o644); err != nil {
