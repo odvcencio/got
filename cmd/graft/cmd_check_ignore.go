@@ -66,7 +66,7 @@ func newCheckIgnoreCmd() *cobra.Command {
 
 				result := checkIgnoreResult{Path: rel}
 				if includeGraft {
-					explanation := checker.Explain(rel)
+					explanation := graftIgnoreExplanation(checker, rel)
 					result.Graft = &explanation
 				}
 				if includeGit {
@@ -119,6 +119,9 @@ func printIgnoreExplanation(w io.Writer, engine string, explanation repo.IgnoreE
 	} else {
 		fmt.Fprintln(w, "  final: no matching rule")
 	}
+	if explanation.MatchedPath != "" && explanation.MatchedPath != explanation.Path {
+		fmt.Fprintf(w, "  matched path: %s\n", explanation.MatchedPath)
+	}
 	if verbose && len(explanation.Matches) > 1 {
 		fmt.Fprintln(w, "  matches:")
 		for _, match := range explanation.Matches {
@@ -166,6 +169,30 @@ func resolveRepoRelativePath(rootDir, input string) (string, error) {
 		return "", fmt.Errorf("path %q is outside repository", input)
 	}
 	return rel, nil
+}
+
+func graftIgnoreExplanation(checker *repo.IgnoreChecker, relPath string) repo.IgnoreExplanation {
+	explanation := checker.Explain(relPath)
+	if explanation.Ignored {
+		return explanation
+	}
+
+	dir := filepath.ToSlash(filepath.Dir(relPath))
+	for dir != "." && dir != "" {
+		dirExplanation := checker.Explain(dir)
+		if dirExplanation.Ignored {
+			dirExplanation.Path = relPath
+			dirExplanation.MatchedPath = dir
+			return dirExplanation
+		}
+		next := filepath.ToSlash(filepath.Dir(dir))
+		if next == dir {
+			break
+		}
+		dir = next
+	}
+
+	return explanation
 }
 
 func gitIgnoreExplanation(rootDir, relPath string) (*repo.IgnoreExplanation, error) {

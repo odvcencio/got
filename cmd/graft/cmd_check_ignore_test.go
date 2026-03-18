@@ -58,4 +58,7 @@ func TestCheckIgnoreCmdJSON(t *testing.T) {
 	if result.Results[0].Graft.Final == nil || result.Results[0].Graft.Final.Pattern != "orchard" {
 		t.Fatalf("final graft pattern = %#v, want %q", result.Results[0].Graft.Final, "orchard")
 	}
+	if result.Results[0].Graft.MatchedPath != "cmd/orchard" {
+		t.Fatalf("matchedPath = %q, want %q", result.Results[0].Graft.MatchedPath, "cmd/orchard")
+	}
 }

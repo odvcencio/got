@@ -14,10 +14,11 @@ type IgnoreMatch struct {
 
 // IgnoreExplanation captures the full ignore decision for a path.
 type IgnoreExplanation struct {
-	Path    string        `json:"path"`
-	Ignored bool          `json:"ignored"`
-	Final   *IgnoreMatch  `json:"final,omitempty"`
-	Matches []IgnoreMatch `json:"matches,omitempty"`
+	Path        string        `json:"path"`
+	MatchedPath string        `json:"matchedPath,omitempty"`
+	Ignored     bool          `json:"ignored"`
+	Final       *IgnoreMatch  `json:"final,omitempty"`
+	Matches     []IgnoreMatch `json:"matches,omitempty"`
 }
 
 // Explain reports which ignore rules matched the given repo-relative path.
@@ -26,7 +27,7 @@ type IgnoreExplanation struct {
 func (ic *IgnoreChecker) Explain(path string) IgnoreExplanation {
 	path = filepath.ToSlash(path)
 
-	result := IgnoreExplanation{Path: path}
+	result := IgnoreExplanation{Path: path, MatchedPath: path}
 	for _, pattern := range ic.patterns {
 		if !pattern.matches(path) {
 			continue

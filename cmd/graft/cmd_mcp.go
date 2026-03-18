@@ -227,6 +227,7 @@ func (s *mcpServer) handleRequest(request mcpRPCRequest) (any, *mcpRPCError) {
 	case "tools/list":
 		tools := mcpToolDefs()
 		tools = append(tools, mcpExecToolDefs()...)
+		tools = append(tools, mcpSpawnToolDefs()...)
 		tools = append(tools, mcpPlanToolDefs()...)
 		tools = append(tools, mcpTaskToolDefs()...)
 		if s.withCodeintel {
@@ -556,6 +557,8 @@ func mcpDispatchAll(withCodeintel bool, name string, args map[string]any) (any, 
 		return mcpDispatchTaskTool(name, args)
 	case strings.HasPrefix(name, "graft_exec"):
 		return mcpDispatchExecTool(name, args)
+	case strings.HasPrefix(name, "graft_spawn"):
+		return mcpDispatchSpawnTool(name, args)
 	case strings.HasPrefix(name, "graft_ci_"):
 		if !withCodeintel {
 			return nil, fmt.Errorf("unknown tool %q (code intelligence tools require --with-codeintel)", name)
