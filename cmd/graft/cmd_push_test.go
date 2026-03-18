@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/odvcencio/graft/pkg/object"
@@ -177,5 +181,58 @@ func TestPushObjectsChunkedFallsBackWhenPackUnsupported(t *testing.T) {
 	}
 	if ndjsonRequests != 1 {
 		t.Fatalf("ndjsonRequests = %d, want 1", ndjsonRequests)
+	}
+}
+
+func TestPushCmdCheckRejectsOversizedObject(t *testing.T) {
+	dir := t.TempDir()
+	r, err := repo.Init(dir)
+	if err != nil {
+		t.Fatalf("repo.Init: %v", err)
+	}
+
+	large := bytes.Repeat([]byte("a"), pushObjectByteLimit+1)
+	if err := os.WriteFile(filepath.Join(dir, "large.bin"), large, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := r.Add([]string{"large.bin"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("large", "tester"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if !strings.HasSuffix(req.URL.Path, "/refs") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"refs":{}}`))
+	}))
+	defer ts.Close()
+
+	if err := r.SetRemote("origin", ts.URL+"/graft/alice/repo"); err != nil {
+		t.Fatalf("SetRemote: %v", err)
+	}
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	cmd := newPushCmd()
+	cmd.SilenceUsage = true
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--check"})
+
+	err = cmd.Execute()
+	if err == nil {
+		t.Fatal("expected push --check to fail for an oversized object")
+	}
+	if !strings.Contains(err.Error(), "push limit check failed") {
+		t.Fatalf("error = %q, want push limit failure", err.Error())
+	}
+	if !strings.Contains(err.Error(), "16.0 MiB") {
+		t.Fatalf("error = %q, want formatted object limit", err.Error())
 	}
 }

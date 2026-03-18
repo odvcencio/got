@@ -123,6 +123,76 @@ func TestTransferClaim_WrongOwner(t *testing.T) {
 	}
 }
 
+func TestForceAcquireClaimTransfersOwnership(t *testing.T) {
+	c := newTestCoordinator(t)
+	id1, _ := c.RegisterAgent(AgentInfo{Name: "owner", Workspace: "graft", Host: "test"})
+	id2, _ := c.RegisterAgent(AgentInfo{Name: "forcer", Workspace: "graft", Host: "test"})
+
+	req := ClaimRequest{
+		EntityKey: "decl:function_definition::Forced:func Forced():0",
+		File:      "forced.go",
+		Mode:      ClaimEditing,
+	}
+	if err := c.AcquireClaim(id1, req); err != nil {
+		t.Fatalf("AcquireClaim owner: %v", err)
+	}
+
+	result, err := c.ForceAcquireClaim(id2, req, id1)
+	if err != nil {
+		t.Fatalf("ForceAcquireClaim: %v", err)
+	}
+	if result == nil || !result.Transferred {
+		t.Fatal("expected transferred force claim result")
+	}
+	if result.PreviousAgentID != id1 {
+		t.Fatalf("PreviousAgentID = %q, want %q", result.PreviousAgentID, id1)
+	}
+	if result.PreviousAgentName != "owner" {
+		t.Fatalf("PreviousAgentName = %q, want owner", result.PreviousAgentName)
+	}
+
+	claim, err := c.LoadClaim(req.EntityKey)
+	if err != nil {
+		t.Fatalf("LoadClaim: %v", err)
+	}
+	if claim == nil {
+		t.Fatal("expected active claim after force acquire")
+	}
+	if claim.Agent != id2 {
+		t.Fatalf("claim.Agent = %q, want %q", claim.Agent, id2)
+	}
+	if claim.AgentName != "forcer" {
+		t.Fatalf("claim.AgentName = %q, want forcer", claim.AgentName)
+	}
+}
+
+func TestForceAcquireClaimMismatchReturnsConflict(t *testing.T) {
+	c := newTestCoordinator(t)
+	id1, _ := c.RegisterAgent(AgentInfo{Name: "owner", Workspace: "graft", Host: "test"})
+	id2, _ := c.RegisterAgent(AgentInfo{Name: "forcer", Workspace: "graft", Host: "test"})
+
+	req := ClaimRequest{
+		EntityKey: "decl:function_definition::Mismatch:func Mismatch():0",
+		File:      "mismatch.go",
+		Mode:      ClaimEditing,
+	}
+	if err := c.AcquireClaim(id1, req); err != nil {
+		t.Fatalf("AcquireClaim owner: %v", err)
+	}
+
+	_, err := c.ForceAcquireClaim(id2, req, "someone-else")
+	conflict, ok := err.(*ClaimConflictError)
+	if !ok {
+		t.Fatalf("expected ClaimConflictError, got %T: %v", err, err)
+	}
+	if conflict.HeldByID != id1 {
+		t.Fatalf("HeldByID = %q, want %q", conflict.HeldByID, id1)
+	}
+	if conflict.Decision == nil {
+		t.Fatal("expected decision on mismatch conflict")
+	}
+}
+
 func TestWatchingClaimDoesNotBlock(t *testing.T) {
 	c := newTestCoordinator(t)
 	id1, _ := c.RegisterAgent(AgentInfo{Name: "watcher", Workspace: "graft", Host: "test"})

@@ -32,6 +32,7 @@ func newCoordCmd() *cobra.Command {
 
 	cmd.AddCommand(newCoordAgentsCmd(&jsonFlag))
 	cmd.AddCommand(newCoordClaimsCmd(&jsonFlag))
+	cmd.AddCommand(newCoordDecisionsCmd(&jsonFlag))
 	cmd.AddCommand(newCoordFeedCmd(&jsonFlag))
 	cmd.AddCommand(newCoordImpactCmd(&jsonFlag))
 	cmd.AddCommand(newCoordCheckCmd(&jsonFlag))
@@ -114,14 +115,14 @@ func coordDashboard(jsonOutput bool, allWorkspaces bool) error {
 	activeID := readActiveAgentID(r)
 
 	result := dashboardResult{
-		Agents:         len(agents),
-		Claims:         len(claims),
-		Conflicts:      conflictCount,
-		FeedCount:      len(feedEvents),
-		Tasks:          len(tasks),
-		TasksPending:   taskPending,
-		TasksActive:    taskInProgress,
-		ActiveID:       activeID,
+		Agents:       len(agents),
+		Claims:       len(claims),
+		Conflicts:    conflictCount,
+		FeedCount:    len(feedEvents),
+		Tasks:        len(tasks),
+		TasksPending: taskPending,
+		TasksActive:  taskInProgress,
+		ActiveID:     activeID,
 	}
 
 	if jsonOutput {
@@ -408,6 +409,98 @@ func newCoordClaimsCmd(jsonFlag *bool) *cobra.Command {
 	return cmd
 }
 
+// --- Decisions ---
+
+func newCoordDecisionsCmd(jsonFlag *bool) *cobra.Command {
+	var limit int
+	var mine bool
+	var entity string
+
+	cmd := &cobra.Command{
+		Use:   "decisions",
+		Short: "Show recent local decision traces",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, r, err := openCoordinator()
+			if err != nil {
+				return err
+			}
+
+			decisions, err := coord.ListDecisions(r.GraftDir, 0)
+			if err != nil {
+				return fmt.Errorf("list decisions: %w", err)
+			}
+
+			if mine {
+				activeID := readActiveAgentID(r)
+				var filtered []coord.DecisionGraph
+				for _, decision := range decisions {
+					if activeID != "" && decision.AgentID == activeID {
+						filtered = append(filtered, decision)
+					}
+				}
+				decisions = filtered
+			}
+
+			if entity != "" {
+				var filtered []coord.DecisionGraph
+				for _, decision := range decisions {
+					if strings.Contains(decision.EntityKey, entity) || strings.Contains(decision.File, entity) {
+						filtered = append(filtered, decision)
+					}
+				}
+				decisions = filtered
+			}
+
+			if limit > 0 && len(decisions) > limit {
+				decisions = decisions[:limit]
+			}
+
+			if *jsonFlag {
+				return outputJSON(decisions)
+			}
+
+			if len(decisions) == 0 {
+				fmt.Println("No decision traces.")
+				return nil
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(w, "TIME\tOUTCOME\tACTION\tENTITY\tRULE\tSOURCE")
+			for _, decision := range decisions {
+				entityDisplay := decision.EntityKey
+				if entityDisplay == "" {
+					entityDisplay = decision.File
+				}
+				if len(entityDisplay) > 60 {
+					entityDisplay = entityDisplay[:57] + "..."
+				}
+				rule := decision.Rule
+				if rule == "" {
+					rule = "-"
+				}
+				source := decision.Source
+				if source == "" {
+					source = "-"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+					decision.CreatedAt.Format("2006-01-02 15:04:05"),
+					decision.Outcome.Status,
+					decision.Action,
+					entityDisplay,
+					rule,
+					source,
+				)
+			}
+			return w.Flush()
+		},
+	}
+
+	cmd.Flags().IntVar(&limit, "limit", 20, "maximum number of decision traces to show")
+	cmd.Flags().BoolVar(&mine, "mine", false, "show only decision traces for the active agent")
+	cmd.Flags().StringVar(&entity, "entity", "", "filter decision traces by entity key or file path")
+	return cmd
+}
+
 // --- Feed ---
 
 func newCoordFeedCmd(jsonFlag *bool) *cobra.Command {
@@ -618,10 +711,14 @@ func newCoordCheckCmd(jsonFlag *bool) *cobra.Command {
 
 			// Find conflicts: claims on the same entity by different agents
 			type conflict struct {
-				EntityKey string `json:"entity_key"`
-				File      string `json:"file"`
-				HeldBy    string `json:"held_by"`
-				Mode      string `json:"mode"`
+				EntityKey    string `json:"entity_key"`
+				File         string `json:"file"`
+				HeldBy       string `json:"held_by"`
+				Mode         string `json:"mode"`
+				Decision     string `json:"decision,omitempty"`
+				Reason       string `json:"reason,omitempty"`
+				Rule         string `json:"rule,omitempty"`
+				RequireForce bool   `json:"require_force,omitempty"`
 			}
 
 			var conflicts []conflict
@@ -629,11 +726,28 @@ func newCoordCheckCmd(jsonFlag *bool) *cobra.Command {
 				// Check if any of our agent's potential claims conflict
 				for _, cl := range claims {
 					if cl.Agent != activeID && cl.Mode == coord.ClaimEditing {
-						conflicts = append(conflicts, conflict{
+						req := coord.ClaimRequest{
 							EntityKey: cl.EntityKey,
 							File:      cl.File,
-							HeldBy:    cl.AgentName,
-							Mode:      cl.Mode,
+							Mode:      coord.ClaimEditing,
+						}
+						ctx, decisionErr := c.InspectClaimDecisionWithExisting(activeID, req, &cl)
+						if decisionErr != nil {
+							return fmt.Errorf("evaluate claim decision: %w", decisionErr)
+						}
+						recordCoordDecision(c, cmd.ErrOrStderr(), "graft coord check", activeID, req, ctx, coord.DecisionOutcome{
+							Status:  "inspection_reported",
+							Message: coordDecisionMessage(req, ctx),
+						})
+						conflicts = append(conflicts, conflict{
+							EntityKey:    cl.EntityKey,
+							File:         cl.File,
+							HeldBy:       cl.AgentName,
+							Mode:         cl.Mode,
+							Decision:     ctx.Decision.Action,
+							Reason:       ctx.Decision.Reason,
+							Rule:         ctx.Decision.Rule,
+							RequireForce: ctx.Decision.RequireForce,
 						})
 					}
 				}
@@ -664,7 +778,14 @@ func newCoordCheckCmd(jsonFlag *bool) *cobra.Command {
 			} else {
 				fmt.Printf("%d conflict(s) detected:\n", len(conflicts))
 				for _, c := range conflicts {
-					fmt.Printf("  %s in %s (held by %s)\n", c.EntityKey, c.File, c.HeldBy)
+					decision := c.Decision
+					if decision == "" {
+						decision = "Conflict"
+					}
+					fmt.Printf("  [%s] %s in %s (held by %s)\n", decision, c.EntityKey, c.File, c.HeldBy)
+					if c.Reason != "" {
+						fmt.Printf("    %s\n", c.Reason)
+					}
 				}
 			}
 
@@ -978,9 +1099,9 @@ func newCoordResolveCmd(jsonFlag *bool) *cobra.Command {
 				}
 				if *jsonFlag {
 					return outputJSON(map[string]string{
-						"status":     "transferred",
-						"key_hash":   keyHash,
-						"to_agent":   transfer,
+						"status":   "transferred",
+						"key_hash": keyHash,
+						"to_agent": transfer,
 					})
 				}
 				fmt.Printf("Claim %s transferred to %s\n", keyHash, transfer)

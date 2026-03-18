@@ -17,9 +17,15 @@ import (
 // found in that file. The CLI layer can set this hook to integrate with
 // coordination (e.g., acquiring claims on changed entities).
 //
-// If the hook returns an error, the Add operation logs a warning but
-// continues (coordination errors should not block staging).
+// If the hook returns an error that implements BlockingAddHookError, staging
+// aborts. All other hook errors are treated as warnings and ignored.
 type AddEntityHook func(path string, entityKeys []string) error
+
+// BlockingAddHookError marks hook errors that should abort staging.
+type BlockingAddHookError interface {
+	error
+	BlocksAdd() bool
+}
 
 // HookName identifies a client-side hook trigger point.
 type HookName string

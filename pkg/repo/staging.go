@@ -486,7 +486,12 @@ func (r *Repo) extractAndStoreEntities(ctx context.Context, sem *sourceBytesSema
 		for i := range el.Entities {
 			keys = append(keys, el.Entities[i].IdentityKey())
 		}
-		_ = r.AddHook(br.relPath, keys)
+		if err := r.AddHook(br.relPath, keys); err != nil {
+			var blockingErr BlockingAddHookError
+			if errors.As(err, &blockingErr) && blockingErr.BlocksAdd() {
+				return err
+			}
+		}
 	}
 
 	return nil

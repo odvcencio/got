@@ -24,6 +24,9 @@ type IgnoreChecker struct {
 
 type ignorePattern struct {
 	pattern  string
+	original string
+	source   string
+	line     int
 	negated  bool
 	dirOnly  bool
 	hasSlash bool // pattern contains a slash, so match against full path
@@ -41,9 +44,9 @@ func NewIgnoreChecker(repoRoot string) *IgnoreChecker {
 
 	// Hardcoded patterns: always ignore .graft/, .got/, and .git/.
 	ic.patterns = append(ic.patterns,
-		ignorePattern{pattern: ".graft", dirOnly: false, hasSlash: false},
-		ignorePattern{pattern: ".got", dirOnly: false, hasSlash: false},
-		ignorePattern{pattern: ".git", dirOnly: false, hasSlash: false},
+		ignorePattern{pattern: ".graft", original: ".graft", source: "builtin", dirOnly: false, hasSlash: false},
+		ignorePattern{pattern: ".got", original: ".got", source: "builtin", dirOnly: false, hasSlash: false},
+		ignorePattern{pattern: ".git", original: ".git", source: "builtin", dirOnly: false, hasSlash: false},
 	)
 
 	// Read .graftignore if it exists, falling back to .gotignore, then .gitignore.
@@ -59,9 +62,11 @@ func NewIgnoreChecker(repoRoot string) *IgnoreChecker {
 		defer f.Close()
 
 		scanner := bufio.NewScanner(f)
+		lineNo := 0
 		for scanner.Scan() {
 			line := scanner.Text()
-			p := parseLine(line)
+			lineNo++
+			p := parseLineFromSource(line, filepath.Base(ignorePath), lineNo)
 			if p != nil {
 				ic.patterns = append(ic.patterns, *p)
 			}
@@ -76,6 +81,8 @@ func NewIgnoreChecker(repoRoot string) *IgnoreChecker {
 				if m.Path != "" {
 					ic.patterns = append(ic.patterns, ignorePattern{
 						pattern:  m.Path,
+						original: m.Path + "/",
+						source:   ".graftmodules",
 						dirOnly:  true,
 						hasSlash: strings.Contains(m.Path, "/"),
 					})
@@ -91,6 +98,12 @@ func NewIgnoreChecker(repoRoot string) *IgnoreChecker {
 // parseLine parses a single line from a .gotignore file. Returns nil if the
 // line is empty or a comment.
 func parseLine(line string) *ignorePattern {
+	return parseLineFromSource(line, "", 0)
+}
+
+func parseLineFromSource(line, source string, lineNo int) *ignorePattern {
+	raw := line
+
 	// Trim trailing whitespace.
 	line = strings.TrimRight(line, " \t")
 
@@ -130,6 +143,9 @@ func parseLine(line string) *ignorePattern {
 	p.hasSlash = p.rooted || strings.Contains(line, "/")
 
 	p.pattern = line
+	p.original = strings.TrimRight(raw, " \t")
+	p.source = source
+	p.line = lineNo
 	if strings.Contains(line, "**") {
 		if re, err := regexp.Compile(globToRegex(line)); err == nil {
 			p.regex = re

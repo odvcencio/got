@@ -14,6 +14,7 @@ import (
 
 func newPushCmd() *cobra.Command {
 	var force bool
+	var checkOnly bool
 
 	cmd := &cobra.Command{
 		Use:   "push [remote] [branch]",
@@ -45,6 +46,24 @@ func newPushCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if checkOnly {
+				if transport == remoteTransportGit {
+					return fmt.Errorf("push --check currently supports orchard/graft remotes only")
+				}
+				pushTarget, localRef, remoteRef, err := resolvePushRefNames(r, branch)
+				if err != nil {
+					return err
+				}
+				report, err := collectPushLimitReport(cmd.Context(), r, pushTarget, localRef, remoteName, remoteURL, remoteRef)
+				if err != nil {
+					return err
+				}
+				if err := pushLimitError(report); err != nil {
+					return err
+				}
+				printPushLimitSummary(cmd.OutOrStdout(), report)
+				return nil
+			}
 			if transport == remoteTransportGit {
 				return pushViaGit(cmd, r, remoteURL, branch, force)
 			}
@@ -53,6 +72,7 @@ func newPushCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "allow non-fast-forward update")
+	cmd.Flags().BoolVar(&checkOnly, "check", false, "validate push object limits without uploading anything")
 	return cmd
 }
 
@@ -228,20 +248,21 @@ func resolvePushRefNames(r *repo.Repo, branchArg string) (display string, localR
 	if strings.HasPrefix(branchArg, "refs/") {
 		return "", "", "", fmt.Errorf("unsupported ref %q (only refs/heads/* and refs/tags/* are supported)", branchArg)
 	}
+	// Check if the bare name matches a tag before defaulting to branch.
+	if r != nil {
+		if _, tagErr := r.ResolveRef("refs/tags/" + branchArg); tagErr == nil {
+			return "tag " + branchArg, "refs/tags/" + branchArg, "tags/" + branchArg, nil
+		}
+	}
 	return "branch " + branchArg, "refs/heads/" + branchArg, "heads/" + branchArg, nil
 }
 
 func pushObjectsChunked(ctx context.Context, client *remote.Client, objects []remote.ObjectRecord) (int, error) {
-	const (
-		maxChunkObjects = 2000
-		maxChunkBytes   = 32 << 20
-		maxObjectBytes  = 16 << 20
-	)
 	if len(objects) == 0 {
 		return 0, nil
 	}
 
-	chunk := make([]remote.ObjectRecord, 0, maxChunkObjects)
+	chunk := make([]remote.ObjectRecord, 0, pushChunkObjectLimit)
 	chunkBytes := 0
 	uploaded := 0
 	usePack := shouldUsePackPush(client)
@@ -273,11 +294,11 @@ func pushObjectsChunked(ctx context.Context, client *remote.Client, objects []re
 	}
 
 	for _, obj := range objects {
-		if len(obj.Data) > maxObjectBytes {
-			return uploaded, fmt.Errorf("object %s exceeds %d-byte push limit", shortHash(obj.Hash), maxObjectBytes)
+		if len(obj.Data) > pushObjectByteLimit {
+			return uploaded, fmt.Errorf("object %s exceeds %d-byte push limit", shortHash(obj.Hash), pushObjectByteLimit)
 		}
 		recBytes := len(obj.Data) + 128
-		if len(chunk) > 0 && (len(chunk) >= maxChunkObjects || chunkBytes+recBytes > maxChunkBytes) {
+		if len(chunk) > 0 && (len(chunk) >= pushChunkObjectLimit || chunkBytes+recBytes > pushChunkByteLimit) {
 			if err := flush(); err != nil {
 				return uploaded, err
 			}

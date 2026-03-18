@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/odvcencio/graft/pkg/coord"
@@ -112,6 +113,10 @@ func mcpToolCIEntities(args map[string]any) (any, error) {
 	}
 
 	absPath := filepath.Join(r.RootDir, file)
+	// Prevent path traversal.
+	if !strings.HasPrefix(absPath, r.RootDir+string(filepath.Separator)) && absPath != r.RootDir {
+		return nil, fmt.Errorf("file path escapes repository root")
+	}
 	source, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
@@ -189,6 +194,14 @@ func mcpToolCISymbols(args map[string]any) (any, error) {
 			if strings.HasPrefix(base, ".") || base == "vendor" || base == "node_modules" || base == "testdata" {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		// Skip files that tree-sitter can't parse.
+		ext := filepath.Ext(path)
+		switch ext {
+		case ".go", ".js", ".ts", ".jsx", ".tsx", ".py", ".rs", ".c", ".h", ".cpp", ".hpp", ".java", ".rb", ".cs":
+			// supported
+		default:
 			return nil
 		}
 		if len(matches) >= limit {
@@ -270,6 +283,23 @@ func matchesKindFilter(e entity.Entity, filter string) bool {
 	return strings.Contains(strings.ToLower(e.DeclKind), strings.ToLower(filter))
 }
 
+func loadOrBuildXrefIndex(c *coord.Coordinator) (*coord.XrefIndex, error) {
+	idx, err := c.LoadXrefIndex()
+	if err != nil {
+		modulePath := ""
+		gomodPath := filepath.Join(c.Repo.RootDir, "go.mod")
+		if deps, parseErr := coord.ParseGoModDeps(gomodPath); parseErr == nil {
+			modulePath = deps.Module
+		}
+		idx, err = coord.BuildXrefIndex(c.Repo.RootDir, modulePath)
+		if err != nil {
+			return nil, fmt.Errorf("build xref index: %w", err)
+		}
+		_ = c.SaveXrefIndex(idx)
+	}
+	return idx, nil
+}
+
 func mcpToolCIReferences(args map[string]any) (any, error) {
 	name := mcpArgString(args, "name")
 	if name == "" {
@@ -281,19 +311,9 @@ func mcpToolCIReferences(args map[string]any) (any, error) {
 		return nil, err
 	}
 
-	idx, err := c.LoadXrefIndex()
+	idx, err := loadOrBuildXrefIndex(c)
 	if err != nil {
-		// Build fresh index.
-		modulePath := ""
-		gomodPath := filepath.Join(c.Repo.RootDir, "go.mod")
-		if deps, parseErr := coord.ParseGoModDeps(gomodPath); parseErr == nil {
-			modulePath = deps.Module
-		}
-		idx, err = coord.BuildXrefIndex(c.Repo.RootDir, modulePath)
-		if err != nil {
-			return nil, fmt.Errorf("build xref index: %w", err)
-		}
-		_ = c.SaveXrefIndex(idx)
+		return nil, err
 	}
 
 	sites, ok := idx.Refs[name]
@@ -313,6 +333,7 @@ func mcpToolCIReferences(args map[string]any) (any, error) {
 				"references": []coord.XrefCallSite{},
 			}, nil
 		}
+		sort.Strings(partialMatches)
 		// Return partial matches as suggestions.
 		return map[string]any{
 			"name":       name,
@@ -404,18 +425,9 @@ func mcpToolCICallers(args map[string]any) (any, error) {
 		return nil, err
 	}
 
-	idx, err := c.LoadXrefIndex()
+	idx, err := loadOrBuildXrefIndex(c)
 	if err != nil {
-		modulePath := ""
-		gomodPath := filepath.Join(c.Repo.RootDir, "go.mod")
-		if deps, parseErr := coord.ParseGoModDeps(gomodPath); parseErr == nil {
-			modulePath = deps.Module
-		}
-		idx, err = coord.BuildXrefIndex(c.Repo.RootDir, modulePath)
-		if err != nil {
-			return nil, fmt.Errorf("build xref index: %w", err)
-		}
-		_ = c.SaveXrefIndex(idx)
+		return nil, err
 	}
 
 	sites, ok := idx.Refs[name]

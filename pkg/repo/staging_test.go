@@ -970,6 +970,74 @@ func TestAdd_EntityProgressEvents(t *testing.T) {
 	}
 }
 
+type blockingAddHookTestError struct {
+	msg   string
+	block bool
+}
+
+func (e blockingAddHookTestError) Error() string {
+	return e.msg
+}
+
+func (e blockingAddHookTestError) BlocksAdd() bool {
+	return e.block
+}
+
+func TestAdd_BlockingAddHookErrorAborts(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+
+	r.AddHook = func(path string, entityKeys []string) error {
+		return blockingAddHookTestError{msg: "block add", block: true}
+	}
+
+	err = r.AddWithOptions([]string{"main.go"}, nil, AddOptions{})
+	if err == nil {
+		t.Fatal("expected add to abort on blocking hook error")
+	}
+
+	stg, readErr := r.ReadStaging()
+	if readErr != nil {
+		t.Fatalf("ReadStaging: %v", readErr)
+	}
+	if len(stg.Entries) != 0 {
+		t.Fatalf("expected no staged entries after aborted add, got %d", len(stg.Entries))
+	}
+}
+
+func TestAdd_NonBlockingAddHookErrorIgnored(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+
+	r.AddHook = func(path string, entityKeys []string) error {
+		return fmt.Errorf("warning only")
+	}
+
+	if err := r.AddWithOptions([]string{"main.go"}, nil, AddOptions{}); err != nil {
+		t.Fatalf("AddWithOptions: %v", err)
+	}
+
+	stg, readErr := r.ReadStaging()
+	if readErr != nil {
+		t.Fatalf("ReadStaging: %v", readErr)
+	}
+	if stg.Entries["main.go"] == nil {
+		t.Fatal("expected main.go to be staged")
+	}
+}
+
 // helper: keys of a map.
 func keys(m map[string]*StagingEntry) []string {
 	ks := make([]string, 0, len(m))

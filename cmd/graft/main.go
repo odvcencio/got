@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -12,7 +13,7 @@ var version = "0.2.3-dev"
 
 func main() {
 	root := &cobra.Command{
-		Use:  "graft",
+		Use:   "graft",
 		Short: "Structural version control powered by tree-sitter",
 	}
 
@@ -22,6 +23,7 @@ func main() {
 	root.AddCommand(newResetCmd())
 	root.AddCommand(newRmCmd())
 	root.AddCommand(newStatusCmd())
+	root.AddCommand(newCheckIgnoreCmd())
 	root.AddCommand(newCommitCmd())
 	root.AddCommand(newLogCmd())
 	root.AddCommand(newShowCmd())
@@ -57,13 +59,19 @@ func main() {
 	root.AddCommand(newShortlogCmd())
 	root.AddCommand(newArchiveCmd())
 	root.AddCommand(newModuleCmd())
+	root.AddCommand(newRepairCmd())
 	root.AddCommand(newWorkonCmd())
 	root.AddCommand(newCoordCmd())
+	root.AddCommand(newCoorddCmd())
 	root.AddCommand(newWorkspaceCmd())
 	root.AddCommand(newMCPCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		var exitCoder interface{ ExitCode() int }
+		if errors.As(err, &exitCoder) {
+			os.Exit(exitCoder.ExitCode())
+		}
 		os.Exit(1)
 	}
 }

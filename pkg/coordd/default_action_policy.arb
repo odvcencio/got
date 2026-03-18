@@ -1,0 +1,182 @@
+# Default local coordd action policy.
+#
+# This governs preflight checks for local commands before an agent executes
+# them. Destructive actions are blocked by default. Everything else can be
+# tightened into an explicit allowlist by switching guard mode to enforce.
+
+rule DestructiveAction priority 0 {
+    when {
+        action.destructive == true
+        and action.allowlisted == false
+    }
+    then HardBlock {
+        code: "destructive_action",
+        reason: "destructive action is not allowlisted",
+        profile: "blocked",
+    }
+}
+
+rule RepoRequired priority 10 {
+    when {
+        action.requires_repo == true
+        and repo.present == false
+    }
+    then HardBlock {
+        code: "repo_required",
+        reason: "action requires an open graft repository",
+        profile: "blocked",
+    }
+}
+
+rule ActiveAgentRequired priority 20 {
+    when {
+        action.writes_repo == true
+        and guard.require_active_agent == true
+        and session.active_agent == false
+    }
+    then HardBlock {
+        code: "active_agent_required",
+        reason: "repo-mutating action requires an active coordination agent",
+        profile: "blocked",
+    }
+}
+
+rule AllowlistEnforced priority 30 {
+    when {
+        action.default_allowed == false
+        and action.allowlisted == false
+        and guard.mode == "enforce"
+    }
+    then HardBlock {
+        code: "not_allowlisted",
+        reason: "action is not on the coordd allowlist",
+        profile: "blocked",
+    }
+}
+
+rule AdvisoryReadOnly priority 40 {
+    when {
+        action.default_allowed == false
+        and action.allowlisted == false
+        and guard.mode == "advisory"
+        and action.writes_repo == false
+        and action.writes_filesystem == false
+        and action.writes_coord == false
+        and action.network == false
+    }
+    then Advisory {
+        code: "not_allowlisted",
+        reason: "action is not on the coordd allowlist",
+        profile: "read_only",
+    }
+}
+
+rule AdvisoryRepoWrite priority 41 {
+    when {
+        action.default_allowed == false
+        and action.allowlisted == false
+        and guard.mode == "advisory"
+        and (action.writes_repo == true or action.writes_filesystem == true or action.writes_coord == true)
+        and action.network == false
+    }
+    then Advisory {
+        code: "not_allowlisted",
+        reason: "action is not on the coordd allowlist",
+        profile: "repo_write",
+    }
+}
+
+rule AdvisoryNetworkRead priority 42 {
+    when {
+        action.default_allowed == false
+        and action.allowlisted == false
+        and guard.mode == "advisory"
+        and action.network == true
+        and action.writes_repo == false
+        and action.writes_filesystem == false
+        and action.writes_coord == false
+    }
+    then Advisory {
+        code: "not_allowlisted",
+        reason: "action is not on the coordd allowlist",
+        profile: "network_read",
+    }
+}
+
+rule AdvisoryRepoWriteNetwork priority 43 {
+    when {
+        action.default_allowed == false
+        and action.allowlisted == false
+        and guard.mode == "advisory"
+        and action.network == true
+        and (action.writes_repo == true or action.writes_filesystem == true or action.writes_coord == true)
+    }
+    then Advisory {
+        code: "not_allowlisted",
+        reason: "action is not on the coordd allowlist",
+        profile: "repo_write_network",
+    }
+}
+
+rule AllowReadOnly priority 900 {
+    when {
+        action.writes_repo == false
+        and action.writes_filesystem == false
+        and action.writes_coord == false
+        and action.network == false
+    }
+    then Allow {
+        code: "allow",
+        reason: "action is allowed by coordd policy",
+        profile: "read_only",
+    }
+}
+
+rule AllowRepoWrite priority 910 {
+    when {
+        (action.writes_repo == true or action.writes_filesystem == true or action.writes_coord == true)
+        and action.network == false
+    }
+    then Allow {
+        code: "allow",
+        reason: "action is allowed by coordd policy",
+        profile: "repo_write",
+    }
+}
+
+rule AllowNetworkRead priority 920 {
+    when {
+        action.network == true
+        and action.writes_repo == false
+        and action.writes_filesystem == false
+        and action.writes_coord == false
+    }
+    then Allow {
+        code: "allow",
+        reason: "action is allowed by coordd policy",
+        profile: "network_read",
+    }
+}
+
+rule AllowRepoWriteNetwork priority 930 {
+    when {
+        action.network == true
+        and (action.writes_repo == true or action.writes_filesystem == true or action.writes_coord == true)
+    }
+    then Allow {
+        code: "allow",
+        reason: "action is allowed by coordd policy",
+        profile: "repo_write_network",
+    }
+}
+
+rule DefaultAllow priority 999 {
+    when {
+        true
+    }
+    then Allow {
+        code: "allow",
+        reason: "action is allowed by coordd policy",
+        profile: "read_only",
+    }
+}

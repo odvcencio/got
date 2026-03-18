@@ -1,7 +1,7 @@
 package coord
 
 import (
-	"crypto/sha256"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -29,21 +29,49 @@ type PlanStep struct {
 	Order       int    `json:"order"`
 }
 
-func generatePlanID(title string) string {
-	h := sha256.Sum256([]byte(title + time.Now().Format(time.RFC3339Nano)))
-	return hex.EncodeToString(h[:8])
+// Valid plan statuses.
+var validPlanStatuses = map[string]bool{
+	"draft": true, "active": true, "completed": true, "archived": true,
+}
+
+// Valid step statuses.
+var validStepStatuses = map[string]bool{
+	"pending": true, "in_progress": true, "completed": true, "skipped": true,
+}
+
+func validatePlanStatus(status string) error {
+	if !validPlanStatuses[status] {
+		return fmt.Errorf("invalid plan status %q: must be one of draft, active, completed, archived", status)
+	}
+	return nil
+}
+
+func validateStepStatus(status string) error {
+	if !validStepStatuses[status] {
+		return fmt.Errorf("invalid step status %q: must be one of pending, in_progress, completed, skipped", status)
+	}
+	return nil
+}
+
+func generatePlanID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // CreatePlan stores a new plan under refs/coord/plans/{id}.
 func (c *Coordinator) CreatePlan(plan *Plan) error {
 	if plan.ID == "" {
-		plan.ID = generatePlanID(plan.Title)
+		plan.ID = generatePlanID()
 	}
 	now := time.Now().UTC()
 	plan.CreatedAt = now
 	plan.UpdatedAt = now
 	if plan.Status == "" {
 		plan.Status = "draft"
+	}
+	if err := validatePlanStatus(plan.Status); err != nil {
+		return err
 	}
 	// Assign step IDs and order.
 	for i := range plan.Steps {
@@ -53,6 +81,9 @@ func (c *Coordinator) CreatePlan(plan *Plan) error {
 		plan.Steps[i].Order = i + 1
 		if plan.Steps[i].Status == "" {
 			plan.Steps[i].Status = "pending"
+		}
+		if err := validateStepStatus(plan.Steps[i].Status); err != nil {
+			return fmt.Errorf("step %d: %w", i, err)
 		}
 	}
 
@@ -80,6 +111,14 @@ func (c *Coordinator) GetPlan(id string) (*Plan, error) {
 
 // UpdatePlan overwrites a plan blob and updates the ref.
 func (c *Coordinator) UpdatePlan(plan *Plan) error {
+	if err := validatePlanStatus(plan.Status); err != nil {
+		return err
+	}
+	for i, step := range plan.Steps {
+		if err := validateStepStatus(step.Status); err != nil {
+			return fmt.Errorf("step %d: %w", i, err)
+		}
+	}
 	plan.UpdatedAt = time.Now().UTC()
 	h, err := c.writeJSONBlob(plan)
 	if err != nil {

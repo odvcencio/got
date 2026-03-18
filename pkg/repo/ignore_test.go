@@ -312,6 +312,52 @@ func TestIgnore_RootAnchoredPattern(t *testing.T) {
 	}
 }
 
+func TestIgnore_ExplainReportsFinalRule(t *testing.T) {
+	dir := t.TempDir()
+
+	writeGotignore(t, dir, "*.log\n!important.log\n")
+	ic := NewIgnoreChecker(dir)
+
+	explanation := ic.Explain("important.log")
+	if explanation.Ignored {
+		t.Fatal("important.log should be unignored by the negation rule")
+	}
+	if explanation.Final == nil {
+		t.Fatal("expected a final matching rule")
+	}
+	if explanation.Final.Pattern != "!important.log" {
+		t.Fatalf("final pattern = %q, want %q", explanation.Final.Pattern, "!important.log")
+	}
+	if explanation.Final.Source != ".graftignore" {
+		t.Fatalf("final source = %q, want %q", explanation.Final.Source, ".graftignore")
+	}
+	if explanation.Final.Line != 2 {
+		t.Fatalf("final line = %d, want 2", explanation.Final.Line)
+	}
+	if len(explanation.Matches) != 2 {
+		t.Fatalf("len(matches) = %d, want 2", len(explanation.Matches))
+	}
+}
+
+func TestIgnore_ExplainBuiltins(t *testing.T) {
+	dir := t.TempDir()
+
+	ic := NewIgnoreChecker(dir)
+	explanation := ic.Explain(".graft/HEAD")
+	if !explanation.Ignored {
+		t.Fatal("expected .graft/HEAD to be ignored")
+	}
+	if explanation.Final == nil {
+		t.Fatal("expected builtin rule to be reported")
+	}
+	if explanation.Final.Source != "builtin" {
+		t.Fatalf("final source = %q, want %q", explanation.Final.Source, "builtin")
+	}
+	if explanation.Final.Pattern != ".graft" {
+		t.Fatalf("final pattern = %q, want %q", explanation.Final.Pattern, ".graft")
+	}
+}
+
 func writeGotignore(t *testing.T, dir, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, ".graftignore"), []byte(content), 0o644); err != nil {

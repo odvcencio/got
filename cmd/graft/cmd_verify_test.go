@@ -376,6 +376,55 @@ func TestVerifyCmd_JSON_NoHumanOutput(t *testing.T) {
 	}
 }
 
+func TestVerifyPushLimitsCmdJSON(t *testing.T) {
+	dir := t.TempDir()
+	r, err := repo.Init(dir)
+	if err != nil {
+		t.Fatalf("repo.Init: %v", err)
+	}
+
+	large := bytes.Repeat([]byte("b"), pushObjectByteLimit+1)
+	writeVerifyCmdFile(t, filepath.Join(dir, "large.bin"), large)
+	if err := r.Add([]string{"large.bin"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("large", "tester"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	var out bytes.Buffer
+	cmd := newVerifyCmd()
+	cmd.SilenceUsage = true
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"push-limits", "--json"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result JSONVerifyPushLimitsOutput
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nraw: %s", err, out.String())
+	}
+
+	if result.OK {
+		t.Fatal("ok = true, want false for oversized push set")
+	}
+	if result.ObjectsExamined == 0 {
+		t.Fatal("objectsExamined = 0, want > 0")
+	}
+	if len(result.Blockers) != 1 {
+		t.Fatalf("len(blockers) = %d, want 1", len(result.Blockers))
+	}
+	if result.Blockers[0].SizeBytes != pushObjectByteLimit+1 {
+		t.Fatalf("blocker size = %d, want %d", result.Blockers[0].SizeBytes, pushObjectByteLimit+1)
+	}
+}
+
 func writeVerifyCmdFile(t *testing.T, path string, content []byte) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

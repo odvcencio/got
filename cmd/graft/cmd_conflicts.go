@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/odvcencio/graft/pkg/repo"
@@ -10,7 +9,6 @@ import (
 
 func newConflictsCmd() *cobra.Command {
 	var jsonFlag bool
-	var aiResolveFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "conflicts",
@@ -18,9 +16,7 @@ func newConflictsCmd() *cobra.Command {
 		Long: `Show all conflicted files and entities after a merge or rebase.
 
 For each conflicted file, lists the specific entities (functions, types, etc.)
-that are in conflict and the type of conflict (both modified, delete vs modify).
-
-Use --ai-resolve to attempt AI resolution of all listed conflicts.`,
+that are in conflict and the type of conflict (both modified, delete vs modify).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := repo.Open(".")
@@ -44,49 +40,6 @@ Use --ai-resolve to attempt AI resolution of all listed conflicts.`,
 				return nil
 			}
 
-			if aiResolveFlag {
-				resolver, err := newAIResolverFromConfig()
-				if err != nil {
-					return fmt.Errorf("AI resolve: %w", err)
-				}
-
-				ctx := context.Background()
-				resolved := 0
-				failed := 0
-				for _, c := range conflicts {
-					if c.EntityName == "" {
-						fmt.Fprintf(out, "  %s: skip (text conflict, no entity context)\n", c.Path)
-						failed++
-						continue
-					}
-
-					ok := aiResolveConflict(ctx, resolver, r, c, out)
-					if ok {
-						resolved++
-					} else {
-						failed++
-					}
-				}
-
-				if resolved > 0 {
-					fmt.Fprintf(out, "AI resolved %d conflict", resolved)
-					if resolved != 1 {
-						fmt.Fprint(out, "s")
-					}
-					fmt.Fprintln(out)
-				}
-				if failed > 0 {
-					fmt.Fprintf(out, "%d conflict", failed)
-					if failed != 1 {
-						fmt.Fprint(out, "s")
-					}
-					fmt.Fprintln(out, " could not be resolved")
-				} else if resolved > 0 {
-					fmt.Fprintln(out, "all conflicts resolved by AI — review and run graft commit")
-				}
-				return nil
-			}
-
 			// Group conflicts by path for readable output.
 			var currentPath string
 			for _, c := range conflicts {
@@ -106,7 +59,6 @@ Use --ai-resolve to attempt AI resolution of all listed conflicts.`,
 	}
 
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
-	cmd.Flags().BoolVar(&aiResolveFlag, "ai-resolve", false, "attempt to resolve conflicts using AI")
 
 	return cmd
 }

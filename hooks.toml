@@ -1,0 +1,4 @@
+[post-push.github-mirror]
+type = "mirror"
+remote = "origin"
+branch_filter = ["refs/heads/main"]

@@ -16,18 +16,18 @@ func writeJSON(w io.Writer, v any) error {
 
 // JSONStatusOutput is the top-level JSON output for "graft status --json".
 type JSONStatusOutput struct {
-	Branch    string             `json:"branch"`
-	NoCommits bool               `json:"noCommits"`
-	Conflicts []JSONStatusEntry  `json:"conflicts,omitempty"`
-	Staged    []JSONStatusEntry  `json:"staged,omitempty"`
-	Unstaged  []JSONStatusEntry  `json:"unstaged,omitempty"`
-	Untracked []string           `json:"untracked,omitempty"`
+	Branch    string            `json:"branch"`
+	NoCommits bool              `json:"noCommits"`
+	Conflicts []JSONStatusEntry `json:"conflicts,omitempty"`
+	Staged    []JSONStatusEntry `json:"staged,omitempty"`
+	Unstaged  []JSONStatusEntry `json:"unstaged,omitempty"`
+	Untracked []string          `json:"untracked,omitempty"`
 }
 
 // JSONStatusEntry represents a single file in a status category.
 type JSONStatusEntry struct {
 	Path        string `json:"path"`
-	Status      string `json:"status"`                // "new", "modified", "deleted", "renamed", "conflict", "dirty"
+	Status      string `json:"status"` // "new", "modified", "deleted", "renamed", "conflict", "dirty"
 	RenamedFrom string `json:"renamedFrom,omitempty"`
 }
 
@@ -48,20 +48,20 @@ type JSONDiffOutput struct {
 
 // JSONDiffFile represents a single file's diff.
 type JSONDiffFile struct {
-	Path        string          `json:"path"`
-	Status      string          `json:"status"` // "modified", "added", "deleted", "renamed"
-	RenamedFrom string          `json:"renamedFrom,omitempty"`
-	RenamedTo   string          `json:"renamedTo,omitempty"`
-	Hunks       []JSONDiffHunk  `json:"hunks,omitempty"`
+	Path        string         `json:"path"`
+	Status      string         `json:"status"` // "modified", "added", "deleted", "renamed"
+	RenamedFrom string         `json:"renamedFrom,omitempty"`
+	RenamedTo   string         `json:"renamedTo,omitempty"`
+	Hunks       []JSONDiffHunk `json:"hunks,omitempty"`
 }
 
 // JSONDiffHunk represents a single hunk in a unified diff.
 type JSONDiffHunk struct {
-	OldStart int              `json:"oldStart"`
-	OldCount int              `json:"oldCount"`
-	NewStart int              `json:"newStart"`
-	NewCount int              `json:"newCount"`
-	Lines    []JSONDiffLine   `json:"lines"`
+	OldStart int            `json:"oldStart"`
+	OldCount int            `json:"oldCount"`
+	NewStart int            `json:"newStart"`
+	NewCount int            `json:"newCount"`
+	Lines    []JSONDiffLine `json:"lines"`
 }
 
 // JSONDiffLine represents a single line in a diff hunk.
@@ -93,25 +93,25 @@ type JSONLogEntry struct {
 
 // JSONMergeOutput is the top-level JSON output for "graft merge --json".
 type JSONMergeOutput struct {
-	Action         string              `json:"action"` // "merge", "abort", "preview"
-	Source         string              `json:"source,omitempty"`
-	Target         string              `json:"target,omitempty"`
-	IsFastForward  bool                `json:"isFastForward"`
-	HasConflicts   bool                `json:"hasConflicts"`
-	TotalConflicts int                 `json:"totalConflicts"`
-	MergeCommit    string              `json:"mergeCommit,omitempty"`
-	Files          []JSONMergeFile     `json:"files,omitempty"`
-	Message        string              `json:"message,omitempty"`
+	Action         string          `json:"action"` // "merge", "abort", "preview"
+	Source         string          `json:"source,omitempty"`
+	Target         string          `json:"target,omitempty"`
+	IsFastForward  bool            `json:"isFastForward"`
+	HasConflicts   bool            `json:"hasConflicts"`
+	TotalConflicts int             `json:"totalConflicts"`
+	MergeCommit    string          `json:"mergeCommit,omitempty"`
+	Files          []JSONMergeFile `json:"files,omitempty"`
+	Message        string          `json:"message,omitempty"`
 }
 
 // JSONMergeFile represents the merge status of a single file.
 type JSONMergeFile struct {
-	Path            string                `json:"path"`
-	Status          string                `json:"status"` // "clean", "conflict", "added", "deleted"
-	EntityCount     int                   `json:"entityCount,omitempty"`
-	ConflictCount   int                   `json:"conflictCount,omitempty"`
-	EntityConflicts []JSONEntityConflict  `json:"entityConflicts,omitempty"`
-	Diagnostics     []JSONDiagnostic      `json:"diagnostics,omitempty"`
+	Path            string               `json:"path"`
+	Status          string               `json:"status"` // "clean", "conflict", "added", "deleted"
+	EntityCount     int                  `json:"entityCount,omitempty"`
+	ConflictCount   int                  `json:"conflictCount,omitempty"`
+	EntityConflicts []JSONEntityConflict `json:"entityConflicts,omitempty"`
+	Diagnostics     []JSONDiagnostic     `json:"diagnostics,omitempty"`
 }
 
 // JSONEntityConflict represents a single entity-level conflict within a file.
@@ -132,13 +132,13 @@ type JSONDiagnostic struct {
 
 // JSONShowOutput is the top-level JSON output for "graft show --json".
 type JSONShowOutput struct {
-	Hash    string           `json:"hash"`
-	Author  string           `json:"author"`
-	Date    string           `json:"date"`
-	Timestamp int64          `json:"timestamp"`
-	Message string           `json:"message"`
-	Parents []string         `json:"parents,omitempty"`
-	Changes []JSONShowChange `json:"changes,omitempty"`
+	Hash      string           `json:"hash"`
+	Author    string           `json:"author"`
+	Date      string           `json:"date"`
+	Timestamp int64            `json:"timestamp"`
+	Message   string           `json:"message"`
+	Parents   []string         `json:"parents,omitempty"`
+	Changes   []JSONShowChange `json:"changes,omitempty"`
 }
 
 // JSONShowChange represents a file changed in a commit.
@@ -173,8 +173,8 @@ type JSONConflictsOutput struct {
 
 // JSONConflictFile represents a file with conflicts.
 type JSONConflictFile struct {
-	Path     string                `json:"path"`
-	Entities []JSONConflictEntity  `json:"entities"`
+	Path     string               `json:"path"`
+	Entities []JSONConflictEntity `json:"entities"`
 }
 
 // JSONConflictEntity represents a single entity conflict within a file.
@@ -203,6 +203,30 @@ type JSONVerifyResult struct {
 	SignerKey  string `json:"signerKey,omitempty"`
 	Algorithm  string `json:"algorithm,omitempty"`
 	Error      string `json:"error,omitempty"`
+}
+
+// JSONVerifyPushLimitsOutput is the JSON output for "graft verify push-limits --json".
+type JSONVerifyPushLimitsOutput struct {
+	OK              bool                    `json:"ok"`
+	PushTarget      string                  `json:"pushTarget,omitempty"`
+	Remote          string                  `json:"remote,omitempty"`
+	LocalRef        string                  `json:"localRef,omitempty"`
+	RemoteRef       string                  `json:"remoteRef,omitempty"`
+	LocalHash       string                  `json:"localHash,omitempty"`
+	RemoteHash      string                  `json:"remoteHash,omitempty"`
+	LimitBytes      int64                   `json:"limitBytes"`
+	ObjectsExamined int                     `json:"objectsExamined"`
+	TotalBytes      int64                   `json:"totalBytes,omitempty"`
+	Largest         *JSONVerifySizedObject  `json:"largest,omitempty"`
+	Blockers        []JSONVerifySizedObject `json:"blockers,omitempty"`
+}
+
+// JSONVerifySizedObject describes one object in push-limit output.
+type JSONVerifySizedObject struct {
+	Hash      string `json:"hash"`
+	ShortHash string `json:"shortHash,omitempty"`
+	Type      string `json:"type"`
+	SizeBytes int64  `json:"sizeBytes"`
 }
 
 // --- Entity Search ---

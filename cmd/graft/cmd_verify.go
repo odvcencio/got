@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/odvcencio/graft/pkg/object"
 	"github.com/odvcencio/graft/pkg/repo"
@@ -56,6 +57,7 @@ func newVerifyCmd() *cobra.Command {
 
 	// Add the "commit" subcommand.
 	cmd.AddCommand(newVerifyCommitCmd())
+	cmd.AddCommand(newVerifyPushLimitsCmd())
 
 	return cmd
 }
@@ -92,6 +94,64 @@ func newVerifyCommitCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
 
+	return cmd
+}
+
+func newVerifyPushLimitsCmd() *cobra.Command {
+	var jsonFlag bool
+	var remoteName string
+
+	cmd := &cobra.Command{
+		Use:   "push-limits [ref]",
+		Short: "Check whether a ref can be pushed under the graft object-size limits",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := repo.Open(".")
+			if err != nil {
+				return err
+			}
+
+			refName := ""
+			if len(args) > 0 {
+				refName = args[0]
+			}
+			pushTarget, localRef, remoteRef, err := resolvePushRefNames(r, refName)
+			if err != nil {
+				return err
+			}
+
+			remoteURL := ""
+			if strings.TrimSpace(remoteName) != "" {
+				name, url, transport, err := resolveRemoteNameAndSpec(r, remoteName)
+				if err != nil {
+					return err
+				}
+				if transport == remoteTransportGit {
+					return fmt.Errorf("verify push-limits currently supports orchard/graft remotes only")
+				}
+				remoteName = name
+				remoteURL = url
+			}
+
+			report, err := collectPushLimitReport(cmd.Context(), r, pushTarget, localRef, remoteName, remoteURL, remoteRef)
+			if err != nil {
+				return err
+			}
+
+			if jsonFlag {
+				return writeJSON(cmd.OutOrStdout(), jsonVerifyPushLimitReport(report))
+			}
+
+			if err := pushLimitError(report); err != nil {
+				return err
+			}
+			printPushLimitSummary(cmd.OutOrStdout(), report)
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
+	cmd.Flags().StringVar(&remoteName, "remote", "", "remote name or orchard/graft URL used to compute the push set")
 	return cmd
 }
 

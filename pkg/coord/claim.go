@@ -2,8 +2,11 @@ package coord
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"time"
+
+	graftrepo "github.com/odvcencio/graft/pkg/repo"
 )
 
 const (
@@ -35,6 +38,7 @@ type ClaimConflictError struct {
 	HeldBy    string
 	HeldByID  string
 	Mode      string
+	Decision  *ClaimPolicyDecision `json:"decision,omitempty"`
 }
 
 func (e *ClaimConflictError) Error() string {
@@ -45,6 +49,13 @@ func (e *ClaimConflictError) Error() string {
 func EntityKeyHash(key string) string {
 	h := sha256.Sum256([]byte(key))
 	return fmt.Sprintf("%x", h)
+}
+
+// ForceClaimResult describes what happened when a force acquire succeeded.
+type ForceClaimResult struct {
+	Transferred       bool
+	PreviousAgentID   string
+	PreviousAgentName string
 }
 
 // AcquireClaim attempts to claim an entity for the given agent.
@@ -71,17 +82,20 @@ func (c *Coordinator) AcquireClaim(agentID string, req ClaimRequest) error {
 	ref := refPath("claims", keyHash)
 
 	// Check if already claimed
-	existingHash, err := c.Repo.ResolveRef(ref)
-	if err == nil {
-		// Ref exists -- check who holds it
-		var existing ClaimInfo
-		if err := c.readJSONBlob(existingHash, &existing); err != nil {
-			return fmt.Errorf("read existing claim: %w", err)
-		}
+	existing, err := c.LoadClaim(req.EntityKey)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
 
 		// Same agent reclaiming -- update
 		if existing.Agent == agentID {
 			return c.writeClaimToRef(ref, agentID, req, keyHash)
+		}
+
+		decision, err := c.EvaluateClaimDecision(agentID, req, existing)
+		if err != nil {
+			return fmt.Errorf("evaluate claim decision: %w", err)
 		}
 
 		// Conflict: existing editing claim held by another agent
@@ -90,11 +104,116 @@ func (c *Coordinator) AcquireClaim(agentID string, req ClaimRequest) error {
 			HeldBy:    existing.AgentName,
 			HeldByID:  existing.Agent,
 			Mode:      existing.Mode,
+			Decision:  decision,
 		}
 	}
 
 	// No existing claim -- create
 	return c.writeClaimToRef(ref, agentID, req, keyHash)
+}
+
+// ForceAcquireClaim atomically takes over an editing claim for the requesting
+// agent. Callers should only use this after policy has produced a soft-block
+// decision and the user has explicitly asked to override it.
+func (c *Coordinator) ForceAcquireClaim(agentID string, req ClaimRequest, expectedOwnerID string) (*ForceClaimResult, error) {
+	if req.Mode == ClaimEditing && c.IsEntityProtected(req.EntityKey) {
+		return nil, fmt.Errorf("claim %q: %w", req.EntityKey, ErrEntityProtected)
+	}
+	if req.Mode == ClaimWatching {
+		return &ForceClaimResult{}, c.AcquireClaim(agentID, req)
+	}
+
+	keyHash := EntityKeyHash(req.EntityKey)
+	ref := refPath("claims", keyHash)
+	oldHash, err := c.Repo.ResolveRef(ref)
+	if err != nil {
+		if err := c.writeClaimToRef(ref, agentID, req, keyHash); err != nil {
+			return nil, err
+		}
+		return &ForceClaimResult{}, nil
+	}
+
+	var existing ClaimInfo
+	if err := c.readJSONBlob(oldHash, &existing); err != nil {
+		return nil, fmt.Errorf("read existing claim: %w", err)
+	}
+	if existing.Agent == agentID {
+		if err := c.writeClaimToRef(ref, agentID, req, keyHash); err != nil {
+			return nil, err
+		}
+		return &ForceClaimResult{}, nil
+	}
+	if expectedOwnerID != "" && existing.Agent != expectedOwnerID {
+		decision, decisionErr := c.EvaluateClaimDecision(agentID, req, &existing)
+		if decisionErr != nil {
+			return nil, fmt.Errorf("evaluate claim decision: %w", decisionErr)
+		}
+		return nil, &ClaimConflictError{
+			EntityKey: req.EntityKey,
+			HeldBy:    existing.AgentName,
+			HeldByID:  existing.Agent,
+			Mode:      existing.Mode,
+			Decision:  decision,
+		}
+	}
+
+	agentName := agentID
+	if agent, err := c.GetAgent(agentID); err == nil {
+		agentName = agent.Name
+	}
+	previousAgentID := existing.Agent
+	previousAgentName := existing.AgentName
+
+	existing.File = req.File
+	existing.Mode = req.Mode
+	existing.Agent = agentID
+	existing.AgentName = agentName
+	existing.ClaimedAt = time.Now().UTC()
+
+	newHash, err := c.writeJSONBlob(existing)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.Repo.UpdateRefCAS(ref, newHash, oldHash); err != nil {
+		if errors.Is(err, graftrepo.ErrRefCASMismatch) {
+			current, loadErr := c.LoadClaim(req.EntityKey)
+			if loadErr == nil && current != nil {
+				decision, decisionErr := c.EvaluateClaimDecision(agentID, req, current)
+				if decisionErr != nil {
+					return nil, fmt.Errorf("evaluate claim decision: %w", decisionErr)
+				}
+				return nil, &ClaimConflictError{
+					EntityKey: req.EntityKey,
+					HeldBy:    current.AgentName,
+					HeldByID:  current.Agent,
+					Mode:      current.Mode,
+					Decision:  decision,
+				}
+			}
+		}
+		return nil, err
+	}
+
+	return &ForceClaimResult{
+		Transferred:       true,
+		PreviousAgentID:   previousAgentID,
+		PreviousAgentName: previousAgentName,
+	}, nil
+}
+
+// LoadClaim returns the active editing claim for an entity, if one exists.
+func (c *Coordinator) LoadClaim(entityKey string) (*ClaimInfo, error) {
+	ref := refPath("claims", EntityKeyHash(entityKey))
+	h, err := c.Repo.ResolveRef(ref)
+	if err != nil {
+		return nil, nil
+	}
+
+	var info ClaimInfo
+	if err := c.readJSONBlob(h, &info); err != nil {
+		return nil, fmt.Errorf("read existing claim: %w", err)
+	}
+	return &info, nil
 }
 
 // writeClaimToRef writes a claim blob and updates the given ref.

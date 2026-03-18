@@ -226,6 +226,7 @@ func (s *mcpServer) handleRequest(request mcpRPCRequest) (any, *mcpRPCError) {
 		return map[string]any{}, nil
 	case "tools/list":
 		tools := mcpToolDefs()
+		tools = append(tools, mcpExecToolDefs()...)
 		tools = append(tools, mcpPlanToolDefs()...)
 		tools = append(tools, mcpTaskToolDefs()...)
 		if s.withCodeintel {
@@ -553,6 +554,8 @@ func mcpDispatchAll(withCodeintel bool, name string, args map[string]any) (any, 
 		return mcpDispatchPlanTool(name, args)
 	case strings.HasPrefix(name, "graft_task_"):
 		return mcpDispatchTaskTool(name, args)
+	case strings.HasPrefix(name, "graft_exec"):
+		return mcpDispatchExecTool(name, args)
 	case strings.HasPrefix(name, "graft_ci_"):
 		if !withCodeintel {
 			return nil, fmt.Errorf("unknown tool %q (code intelligence tools require --with-codeintel)", name)
@@ -923,21 +926,42 @@ func mcpToolCoordCheck(_ map[string]any) (any, error) {
 	claims, _ := c.ListClaims()
 
 	type conflict struct {
-		EntityKey string `json:"entity_key"`
-		File      string `json:"file"`
-		HeldBy    string `json:"held_by"`
-		Mode      string `json:"mode"`
+		EntityKey    string `json:"entity_key"`
+		File         string `json:"file"`
+		HeldBy       string `json:"held_by"`
+		Mode         string `json:"mode"`
+		Decision     string `json:"decision,omitempty"`
+		Reason       string `json:"reason,omitempty"`
+		Rule         string `json:"rule,omitempty"`
+		RequireForce bool   `json:"require_force,omitempty"`
 	}
 
 	var conflicts []conflict
 	if activeID != "" {
 		for _, cl := range claims {
 			if cl.Agent != activeID && cl.Mode == coord.ClaimEditing {
-				conflicts = append(conflicts, conflict{
+				req := coord.ClaimRequest{
 					EntityKey: cl.EntityKey,
 					File:      cl.File,
-					HeldBy:    cl.AgentName,
-					Mode:      cl.Mode,
+					Mode:      coord.ClaimEditing,
+				}
+				ctx, decisionErr := c.InspectClaimDecisionWithExisting(activeID, req, &cl)
+				if decisionErr != nil {
+					return nil, fmt.Errorf("evaluate claim decision: %w", decisionErr)
+				}
+				recordCoordDecision(c, io.Discard, "graft mcp coord.check", activeID, req, ctx, coord.DecisionOutcome{
+					Status:  "inspection_reported",
+					Message: coordDecisionMessage(req, ctx),
+				})
+				conflicts = append(conflicts, conflict{
+					EntityKey:    cl.EntityKey,
+					File:         cl.File,
+					HeldBy:       cl.AgentName,
+					Mode:         cl.Mode,
+					Decision:     ctx.Decision.Action,
+					Reason:       ctx.Decision.Reason,
+					Rule:         ctx.Decision.Rule,
+					RequireForce: ctx.Decision.RequireForce,
 				})
 			}
 		}

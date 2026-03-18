@@ -1,0 +1,98 @@
+# Default coordination policy for entity claim decisions.
+#
+# graft owns the surrounding decision graph and persistence. arbiter decides
+# which outcome is selected for a claim attempt given a normalized snapshot.
+
+rule ProtectedEntity priority 0 {
+    when {
+        entity.protected == true
+        and attempt.mode == "editing"
+    }
+    then HardBlock {
+        code: "protected_entity",
+        reason: "entity is protected by coordination policy",
+        require_force: false,
+    }
+}
+
+rule SameAgentClaim priority 5 {
+    when {
+        existing_claim.exists == true
+        and existing_claim.same_agent == true
+    }
+    then Allow {
+        code: "same_agent",
+        reason: "claim is already owned by this agent",
+        require_force: false,
+    }
+}
+
+rule ActiveConflictHardBlock priority 10 {
+    when {
+        existing_claim.exists == true
+        and existing_claim.same_agent == false
+        and existing_claim.mode == "editing"
+        and owner.alive == true
+        and repo.conflict_mode == "hard_block"
+    }
+    then HardBlock {
+        code: "editing_conflict",
+        reason: "active editing claim held by another agent",
+        require_force: false,
+    }
+}
+
+rule ActiveConflictSoftBlock priority 20 {
+    when {
+        existing_claim.exists == true
+        and existing_claim.same_agent == false
+        and existing_claim.mode == "editing"
+        and owner.alive == true
+        and repo.conflict_mode == "soft_block"
+    }
+    then SoftBlock {
+        code: "editing_conflict",
+        reason: "active editing claim held by another agent",
+        require_force: true,
+    }
+}
+
+rule ActiveConflictAdvisory priority 30 {
+    when {
+        existing_claim.exists == true
+        and existing_claim.same_agent == false
+        and existing_claim.mode == "editing"
+        and owner.alive == true
+        and repo.conflict_mode == "advisory"
+    }
+    then Advisory {
+        code: "editing_conflict",
+        reason: "active editing claim held by another agent",
+        require_force: false,
+    }
+}
+
+rule StaleConflict priority 40 {
+    when {
+        existing_claim.exists == true
+        and existing_claim.same_agent == false
+        and existing_claim.mode == "editing"
+        and owner.alive == false
+    }
+    then ReclaimSuggested {
+        code: "stale_claim_owner",
+        reason: "existing claim owner appears stale",
+        require_force: false,
+    }
+}
+
+rule DefaultAllow priority 999 {
+    when {
+        true
+    }
+    then Allow {
+        code: "allow",
+        reason: "no conflicting policy matched",
+        require_force: false,
+    }
+}

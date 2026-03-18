@@ -1,0 +1,176 @@
+# Default local coordd spawn policy.
+#
+# This governs detached child launches. Spawn always requires an active
+# coordination agent so child workstreams remain attributable, and governed
+# children cannot request a broader profile than their governed parent.
+
+rule MissingCommand priority 0 {
+    when {
+        spawn.command_present == false
+    }
+    then HardBlock {
+        code: "missing_command",
+        reason: "spawn requires a child command",
+        profile: "blocked",
+    }
+}
+
+rule ActiveAgentRequired priority 10 {
+    when {
+        session.active_agent == false
+    }
+    then HardBlock {
+        code: "active_agent_required",
+        reason: "spawn requires an active coordination agent",
+        profile: "blocked",
+    }
+}
+
+rule MissingName priority 20 {
+    when {
+        spawn.name_present == false
+    }
+    then HardBlock {
+        code: "missing_name",
+        reason: "spawn requires a child agent name",
+        profile: "blocked",
+    }
+}
+
+rule ActionBlocked priority 30 {
+    when {
+        action.hard_block == true
+    }
+    then HardBlock {
+        code: "action_blocked",
+        reason: "child command is blocked by coordd action policy",
+        profile: "blocked",
+    }
+}
+
+rule InvalidRequestedProfile priority 40 {
+    when {
+        spawn.requested_profile != ""
+        and spawn.requested_valid == false
+    }
+    then HardBlock {
+        code: "invalid_profile",
+        reason: "requested spawn profile is not recognized",
+        profile: "blocked",
+    }
+}
+
+rule RequestedProfileTooNarrow priority 50 {
+    when {
+        spawn.selected_valid == false
+    }
+    then HardBlock {
+        code: "profile_too_narrow",
+        reason: "requested spawn profile is narrower than the child command requires",
+        profile: "blocked",
+    }
+}
+
+rule ParentProfileEscalation priority 60 {
+    when {
+        parent.profile_known == true
+        and spawn.escalates_parent == true
+    }
+    then HardBlock {
+        code: "profile_escalation",
+        reason: "child spawn cannot exceed the governed parent profile",
+        profile: "blocked",
+    }
+}
+
+rule AdvisoryReadOnly priority 900 {
+    when {
+        action.advisory == true
+        and spawn.selected_profile == "read_only"
+    }
+    then Advisory {
+        code: "spawn_allowed",
+        reason: "child spawn is allowed with advisory policy",
+        profile: "read_only",
+    }
+}
+
+rule AdvisoryRepoWrite priority 901 {
+    when {
+        action.advisory == true
+        and spawn.selected_profile == "repo_write"
+    }
+    then Advisory {
+        code: "spawn_allowed",
+        reason: "child spawn is allowed with advisory policy",
+        profile: "repo_write",
+    }
+}
+
+rule AdvisoryNetworkRead priority 902 {
+    when {
+        action.advisory == true
+        and spawn.selected_profile == "network_read"
+    }
+    then Advisory {
+        code: "spawn_allowed",
+        reason: "child spawn is allowed with advisory policy",
+        profile: "network_read",
+    }
+}
+
+rule AdvisoryRepoWriteNetwork priority 903 {
+    when {
+        action.advisory == true
+        and spawn.selected_profile == "repo_write_network"
+    }
+    then Advisory {
+        code: "spawn_allowed",
+        reason: "child spawn is allowed with advisory policy",
+        profile: "repo_write_network",
+    }
+}
+
+rule AllowReadOnly priority 950 {
+    when {
+        spawn.selected_profile == "read_only"
+    }
+    then Allow {
+        code: "spawn_allowed",
+        reason: "child spawn is allowed by coordd policy",
+        profile: "read_only",
+    }
+}
+
+rule AllowRepoWrite priority 951 {
+    when {
+        spawn.selected_profile == "repo_write"
+    }
+    then Allow {
+        code: "spawn_allowed",
+        reason: "child spawn is allowed by coordd policy",
+        profile: "repo_write",
+    }
+}
+
+rule AllowNetworkRead priority 952 {
+    when {
+        spawn.selected_profile == "network_read"
+    }
+    then Allow {
+        code: "spawn_allowed",
+        reason: "child spawn is allowed by coordd policy",
+        profile: "network_read",
+    }
+}
+
+rule AllowRepoWriteNetwork priority 953 {
+    when {
+        spawn.selected_profile == "repo_write_network"
+    }
+    then Allow {
+        code: "spawn_allowed",
+        reason: "child spawn is allowed by coordd policy",
+        profile: "repo_write_network",
+    }
+}
