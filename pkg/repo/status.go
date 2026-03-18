@@ -55,6 +55,7 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 
 	ic := NewIgnoreChecker(r.RootDir)
 	sparseEnabled := r.IsSparseEnabled()
+	trackedPaths, trackedDirs := trackedStatusPaths(stg)
 
 	// Collect all working-tree files (repo-relative paths).
 	workFiles := make(map[string]bool)
@@ -74,12 +75,23 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 			return nil
 		}
 
-		// Skip ignored directories entirely.
+		// Ignore rules should not hide already tracked paths. Otherwise a root
+		// ignore like "orchard" would make tracked files under cmd/orchard/ look
+		// deleted in status output.
 		if ic.IsIgnored(rel) {
-			if d.IsDir() {
-				return fs.SkipDir
+			if _, tracked := trackedPaths[rel]; tracked {
+				// Keep walking/recording tracked paths even if they currently match
+				// an ignore rule.
+			} else if d.IsDir() {
+				if _, keepWalking := trackedDirs[rel]; keepWalking {
+					// An ignored directory still contains tracked content, so it must
+					// remain visible to the status walk.
+				} else {
+					return fs.SkipDir
+				}
+			} else {
+				return nil
 			}
-			return nil
 		}
 
 		// Skip paths excluded by sparse checkout.
@@ -263,6 +275,24 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	}
 
 	return entries, nil
+}
+
+func trackedStatusPaths(stg *Staging) (map[string]struct{}, map[string]struct{}) {
+	trackedPaths := make(map[string]struct{}, len(stg.Entries))
+	trackedDirs := make(map[string]struct{})
+	for path := range stg.Entries {
+		trackedPaths[path] = struct{}{}
+		dir := filepath.ToSlash(filepath.Dir(path))
+		for dir != "." && dir != "" {
+			trackedDirs[dir] = struct{}{}
+			next := filepath.ToSlash(filepath.Dir(dir))
+			if next == dir {
+				break
+			}
+			dir = next
+		}
+	}
+	return trackedPaths, trackedDirs
 }
 
 // headTreeEntries attempts to read the HEAD commit's tree and flatten it

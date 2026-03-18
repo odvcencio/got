@@ -185,6 +185,53 @@ func TestStatus_DeletedFromDisk(t *testing.T) {
 	}
 }
 
+func TestStatus_TrackedFileInsideIgnoredDirectoryRemainsVisible(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, ".graftignore"), []byte("orchard\n"), 0o644); err != nil {
+		t.Fatalf("write .graftignore: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", "orchard"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cmd", "orchard", "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write tracked file: %v", err)
+	}
+
+	if err := r.Add([]string{".graftignore", "cmd/orchard/main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := r.Commit("initial", "test-author"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+
+	var found *StatusEntry
+	for i := range entries {
+		if entries[i].Path == "cmd/orchard/main.go" {
+			found = &entries[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("Status missing entry for tracked file under ignored dir; got %d entries", len(entries))
+	}
+	if found.IndexStatus != StatusClean {
+		t.Fatalf("IndexStatus = %d, want %d", found.IndexStatus, StatusClean)
+	}
+	if found.WorkStatus != StatusClean {
+		t.Fatalf("WorkStatus = %d, want %d", found.WorkStatus, StatusClean)
+	}
+}
+
 // Test 5: Multiple files — mix of untracked, staged, modified.
 func TestStatus_MultipleFiles(t *testing.T) {
 	dir := t.TempDir()
