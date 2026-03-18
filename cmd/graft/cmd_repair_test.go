@@ -97,7 +97,7 @@ func TestRepairReseedPreservesTrackedIgnoredFiles(t *testing.T) {
 		t.Fatalf("Status: %v", err)
 	}
 	if len(statusEntries) != 0 {
-		t.Fatalf("len(statusEntries) = %d, want clean worktree", len(statusEntries))
+		t.Fatalf("len(statusEntries) = %d, want clean worktree: %#v", len(statusEntries), statusEntries)
 	}
 
 	bridge, err := gitbridge.OpenBridge(dir)
