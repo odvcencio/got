@@ -13,6 +13,7 @@ import (
 	"github.com/odvcencio/arbiter/govern"
 	"github.com/odvcencio/arbiter/overrides"
 	"github.com/odvcencio/arbiter/vm"
+	"github.com/odvcencio/graft/pkg/coord"
 	"github.com/odvcencio/graft/pkg/repo"
 )
 
@@ -307,7 +308,7 @@ func RecordPreflightDecision(graftDir string, input ActionPolicyInput, decision 
 	case "Advisory":
 		eventType = "action_preflight_advisory"
 	}
-	return AppendEvent(graftDir, Event{
+	err := AppendEvent(graftDir, Event{
 		ID:        newID(),
 		Type:      eventType,
 		Timestamp: time.Now().UTC(),
@@ -329,6 +330,35 @@ func RecordPreflightDecision(graftDir string, input ActionPolicyInput, decision 
 			"task_id":     taskID,
 		},
 	})
+	if err != nil {
+		return err
+	}
+
+	// Publish claim_blocked to feed when a conflicting claim causes a hard-block
+	if decision.Action == "HardBlock" && decision.Code == "conflicting_claim" && input.Coord.Active {
+		publishClaimBlockedToFeed(graftDir, input)
+	}
+
+	return nil
+}
+
+func publishClaimBlockedToFeed(graftDir string, input ActionPolicyInput) {
+	r, err := repo.Open(filepath.Dir(graftDir))
+	if err != nil {
+		return
+	}
+	c := coord.New(r, coord.DefaultConfig)
+	c.AgentID = input.Coord.AgentID
+
+	detail := map[string]any{}
+	if len(input.Coord.ConflictingClaims) > 0 {
+		cl := input.Coord.ConflictingClaims[0]
+		detail["entity_key"] = cl.EntityKey
+		detail["file"] = cl.File
+		detail["blocked_by_agent"] = cl.AgentID
+		detail["blocked_by_name"] = cl.AgentName
+	}
+	_ = c.PublishToFeed("claim_blocked", detail)
 }
 
 func actionMatchesAllowlist(selector string, patterns []string) bool {

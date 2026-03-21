@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/odvcencio/arbiter/overrides"
+	"github.com/odvcencio/graft/pkg/coord"
 	"github.com/odvcencio/graft/pkg/repo"
 )
 
@@ -480,5 +481,53 @@ func TestPresenceOverlapWrite_Advisory(t *testing.T) {
 	}
 	if decision.Code != "presence_overlap" {
 		t.Errorf("code = %q, want presence_overlap", decision.Code)
+	}
+}
+
+func TestRecordPreflightDecision_PublishesClaimBlocked(t *testing.T) {
+	dir := t.TempDir()
+	r, err := repo.Init(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Register an agent so feed publishing works
+	c := coord.New(r, coord.DefaultConfig)
+	id, _ := c.RegisterAgent(coord.AgentInfo{Name: "maple"})
+
+	input := ActionPolicyInput{
+		Repo: ActionPolicyRepo{Root: r.RootDir},
+		Session: ActionPolicySession{AgentID: id},
+		Coord: ActionPolicyCoord{
+			Active:  true,
+			AgentID: id,
+			ConflictingClaims: []CoordClaimConflict{
+				{AgentID: "other-id", AgentName: "cedar", EntityKey: "file:pkg/foo.go", File: "pkg/foo.go", Mode: "editing"},
+			},
+		},
+	}
+	decision := &ActionPolicyDecision{
+		Action: "HardBlock",
+		Code:   "conflicting_claim",
+	}
+
+	err = RecordPreflightDecision(r.GraftDir, input, decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check feed for claim_blocked event
+	events, _ := c.WalkFeed("", 50)
+	found := false
+	for _, ev := range events {
+		if ev.Event == "claim_blocked" {
+			found = true
+			if ev.Detail["blocked_by_name"] != "cedar" {
+				t.Errorf("blocked_by_name = %v, want cedar", ev.Detail["blocked_by_name"])
+			}
+		}
+	}
+	if !found {
+		t.Error("no claim_blocked event in feed")
 	}
 }
