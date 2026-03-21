@@ -1,0 +1,70 @@
+# Post-action effect policy.
+#
+# Evaluated after process execution with augmented input including exec.* fields.
+# All matching rules fire (not just the first). Handler name is in the reason field.
+# Use Allow action with effect_ code prefix to distinguish from preflight rules.
+
+rule PublishGitCommitToFeed priority 10 {
+    when {
+        action.program == "git"
+        and action.subcommand == "commit"
+        and exec.exit_code == 0
+    }
+    then Allow {
+        code: "effect_publish_commit",
+        reason: "publish_commit_to_feed",
+        profile: "effect",
+    }
+}
+
+rule PublishGitMergeToFeed priority 11 {
+    when {
+        action.program == "git"
+        and action.subcommand == "merge"
+        and exec.exit_code == 0
+    }
+    then Allow {
+        code: "effect_publish_commit",
+        reason: "publish_commit_to_feed",
+        profile: "effect",
+    }
+}
+
+rule PublishGitRebaseToFeed priority 12 {
+    when {
+        action.program == "git"
+        and action.subcommand == "rebase"
+        and exec.exit_code == 0
+    }
+    then Allow {
+        code: "effect_publish_commit",
+        reason: "publish_commit_to_feed",
+        profile: "effect",
+    }
+}
+
+rule RegisterReadPresence priority 20 {
+    when {
+        action.writes_filesystem == false
+        and coord.active == true
+        and coord.files_touched_count > 0
+        and exec.exit_code == 0
+    }
+    then Allow {
+        code: "effect_register_presence",
+        reason: "register_presence",
+        profile: "effect",
+    }
+}
+
+rule RefreshHeartbeat priority 100 {
+    when {
+        coord.active == true
+        and exec.exit_code == 0
+    }
+    then Allow {
+        code: "effect_refresh_heartbeat",
+        reason: "refresh_heartbeat",
+        profile: "effect",
+    }
+}
