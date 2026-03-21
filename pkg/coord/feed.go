@@ -21,13 +21,27 @@ type FeedEntry struct {
 
 // FeedEvent is a single coordination event.
 type FeedEvent struct {
-	Event      string         `json:"event"`
-	AgentID    string         `json:"agent_id"`
-	AgentName  string         `json:"agent_name"`
-	CommitHash string         `json:"commit_hash,omitempty"`
-	Entities   []EntityChange `json:"entities,omitempty"`
-	Impact     *ImpactReport  `json:"impact,omitempty"`
-	FeedHash   string         `json:"-"` // set on read
+	Event      string          `json:"event"`
+	AgentID    string          `json:"agent_id"`
+	AgentName  string          `json:"agent_name"`
+	CommitHash string          `json:"commit_hash,omitempty"`
+	Entities   []EntityChange  `json:"entities,omitempty"`
+	Impact     *ImpactReport   `json:"impact,omitempty"`
+	FeedHash   string          `json:"-"`
+	Detail     map[string]any  `json:"detail,omitempty"`
+	Digest     *ActivityDigest `json:"digest,omitempty"`
+	Source     string          `json:"source,omitempty"`
+}
+
+// ActivityDigest summarizes agent activity over a time period.
+type ActivityDigest struct {
+	ToolCalls    int      `json:"tool_calls"`
+	FilesRead    []string `json:"files_read,omitempty"`
+	FilesWritten []string `json:"files_written,omitempty"`
+	ActiveFiles  []string `json:"active_files"`
+	Period       int      `json:"period_s"`
+	Blocked      int      `json:"blocked,omitempty"`
+	Advisories   int      `json:"advisories,omitempty"`
 }
 
 // EntityChange describes a single entity modification.

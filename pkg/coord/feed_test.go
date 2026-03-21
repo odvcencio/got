@@ -262,3 +262,87 @@ func TestOverflowMerge(t *testing.T) {
 		t.Errorf("expected overflow dir to be empty, got %d files", len(entries))
 	}
 }
+
+// --- Activity feed convenience methods ---
+
+func TestPublishToFeed(t *testing.T) {
+	c := newTestCoordinator(t)
+	_, err := c.RegisterAgent(AgentInfo{Name: "test-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = c.PublishToFeed("claim_acquired", map[string]any{
+		"entity_key": "decl:func::Foo",
+		"file":       "pkg/foo/foo.go",
+		"mode":       "editing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := c.WalkFeed("", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+	if events[0].Event != "claim_acquired" {
+		t.Errorf("event = %q, want %q", events[0].Event, "claim_acquired")
+	}
+	if events[0].Source != "coord" {
+		t.Errorf("source = %q, want %q", events[0].Source, "coord")
+	}
+	if events[0].Detail["entity_key"] != "decl:func::Foo" {
+		t.Errorf("detail missing entity_key")
+	}
+}
+
+func TestPublishToFeed_NoAgent_Noop(t *testing.T) {
+	c := newTestCoordinator(t)
+	// No agent registered — should silently no-op
+	err := c.PublishToFeed("test", nil)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	events, _ := c.WalkFeed("", 10)
+	if len(events) != 0 {
+		t.Fatalf("got %d events, want 0", len(events))
+	}
+}
+
+func TestPublishDigestToFeed(t *testing.T) {
+	c := newTestCoordinator(t)
+	_, err := c.RegisterAgent(AgentInfo{Name: "test-agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	digest := &ActivityDigest{
+		ToolCalls:   5,
+		FilesRead:   []string{"a.go", "b.go"},
+		ActiveFiles: []string{"a.go"},
+		Period:      30,
+	}
+	err = c.PublishDigestToFeed(digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, _ := c.WalkFeed("", 10)
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+	if events[0].Event != "activity_digest" {
+		t.Errorf("event = %q, want %q", events[0].Event, "activity_digest")
+	}
+	if events[0].Source != "mcp" {
+		t.Errorf("source = %q, want %q", events[0].Source, "mcp")
+	}
+	if events[0].Digest == nil {
+		t.Error("digest is nil")
+	} else if events[0].Digest.ToolCalls != 5 {
+		t.Errorf("ToolCalls = %d, want 5", events[0].Digest.ToolCalls)
+	}
+}

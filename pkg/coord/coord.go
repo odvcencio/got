@@ -143,6 +143,7 @@ func (c *Coordinator) OnCommit(commitHash object.Hash, workspaces map[string]str
 		CommitHash: string(commitHash),
 		Entities:   changes,
 		Impact:     impact,
+		Source:     "coord",
 	}
 	if err := c.AppendFeed(event); err != nil {
 		return fmt.Errorf("append feed: %w", err)
@@ -205,6 +206,7 @@ func (c *Coordinator) PostCommitHook(commitHash object.Hash) error {
 		AgentName:  agentName,
 		CommitHash: string(commitHash),
 		Entities:   changes,
+		Source:     "coord",
 	}
 
 	if err := c.AppendFeed(event); err != nil {
@@ -216,6 +218,42 @@ func (c *Coordinator) PostCommitHook(commitHash object.Hash) error {
 	}
 
 	return nil
+}
+
+// PublishToFeed publishes a state-transition event to the feed chain.
+func (c *Coordinator) PublishToFeed(eventType string, detail map[string]any) error {
+	if c.AgentID == "" {
+		return nil
+	}
+	agentName := c.AgentID
+	if agent, err := c.GetAgent(c.AgentID); err == nil {
+		agentName = agent.Name
+	}
+	return c.AppendFeed(FeedEvent{
+		Event:     eventType,
+		AgentID:   c.AgentID,
+		AgentName: agentName,
+		Detail:    detail,
+		Source:    "coord",
+	})
+}
+
+// PublishDigestToFeed publishes an activity digest from the MCP layer.
+func (c *Coordinator) PublishDigestToFeed(digest *ActivityDigest) error {
+	if c.AgentID == "" {
+		return nil
+	}
+	agentName := c.AgentID
+	if agent, err := c.GetAgent(c.AgentID); err == nil {
+		agentName = agent.Name
+	}
+	return c.AppendFeed(FeedEvent{
+		Event:     "activity_digest",
+		AgentID:   c.AgentID,
+		AgentName: agentName,
+		Digest:    digest,
+		Source:    "mcp",
+	})
 }
 
 // diffTrees compares two tree hashes and returns entity changes.
