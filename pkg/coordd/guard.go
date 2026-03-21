@@ -6,24 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/odvcencio/arbiter"
-	arbcompiler "github.com/odvcencio/arbiter/compiler"
+	"github.com/odvcencio/arbiter/govern"
+	"github.com/odvcencio/arbiter/overrides"
+	"github.com/odvcencio/arbiter/vm"
 	"github.com/odvcencio/graft/pkg/repo"
 )
 
 //go:embed default_action_policy.arb
 var defaultActionPolicySource []byte
-
-var (
-	defaultActionPolicyOnce sync.Once
-	defaultActionPolicySet  *arbcompiler.CompiledRuleset
-	defaultActionPolicyErr  error
-)
 
 type GuardConfig struct {
 	Mode               string   `json:"mode,omitempty"`
@@ -39,6 +33,8 @@ type ActionPolicyInput struct {
 	Repo    ActionPolicyRepo    `json:"repo"`
 	Session ActionPolicySession `json:"session"`
 	Guard   GuardPolicy         `json:"guard"`
+	Process ActionPolicyProcess `json:"process,omitempty"`
+	Coord   ActionPolicyCoord   `json:"coord,omitempty"`
 }
 
 type ActionPolicyAction struct {
@@ -72,30 +68,33 @@ type GuardPolicy struct {
 	RequireActiveAgent bool   `json:"require_active_agent"`
 }
 
+type ActionPolicyProcess struct {
+	Label  string `json:"label,omitempty"`
+	Origin string `json:"origin,omitempty"`
+	Point  string `json:"point,omitempty"`
+}
+
 type ActionPolicyTrace struct {
-	Rule          string         `json:"rule"`
-	Matched       bool           `json:"matched,omitempty"`
-	Priority      int            `json:"priority,omitempty"`
-	Action        string         `json:"action,omitempty"`
-	Params        map[string]any `json:"params,omitempty"`
-	Fallback      bool           `json:"fallback,omitempty"`
-	FailedAtInstr uint32         `json:"failed_at_instr,omitempty"`
+	Rule          string              `json:"rule"`
+	Matched       bool                `json:"matched,omitempty"`
+	Priority      int                 `json:"priority,omitempty"`
+	Action        string              `json:"action,omitempty"`
+	Params        map[string]any      `json:"params,omitempty"`
+	Fallback      bool                `json:"fallback,omitempty"`
+	FailedAtInstr uint32              `json:"failed_at_instr,omitempty"`
+	Origin        *PolicySourceOrigin `json:"origin,omitempty"`
 }
 
 type ActionPolicyDecision struct {
-	Action  string              `json:"action"`
-	Code    string              `json:"code,omitempty"`
-	Reason  string              `json:"reason,omitempty"`
-	Rule    string              `json:"rule,omitempty"`
-	Profile string              `json:"profile,omitempty"`
-	Trace   []ActionPolicyTrace `json:"trace,omitempty"`
-}
-
-func defaultActionPolicyRuleset() (*arbcompiler.CompiledRuleset, error) {
-	defaultActionPolicyOnce.Do(func() {
-		defaultActionPolicySet, defaultActionPolicyErr = arbiter.Compile(defaultActionPolicySource)
-	})
-	return defaultActionPolicySet, defaultActionPolicyErr
+	Action     string                 `json:"action"`
+	Code       string                 `json:"code,omitempty"`
+	Reason     string                 `json:"reason,omitempty"`
+	Rule       string                 `json:"rule,omitempty"`
+	RuleOrigin *PolicySourceOrigin    `json:"rule_origin,omitempty"`
+	Profile    string                 `json:"profile,omitempty"`
+	Bundle     PolicyBundleInfo       `json:"bundle"`
+	Trace      []ActionPolicyTrace    `json:"trace,omitempty"`
+	Governance []PolicyGovernanceStep `json:"governance,omitempty"`
 }
 
 func GuardConfigPath(graftDir string) string {
@@ -202,74 +201,66 @@ func InspectShellAction(argv []string) ActionPolicyAction {
 }
 
 func EvaluateActionPolicy(input ActionPolicyInput) (*ActionPolicyDecision, error) {
-	rs, err := defaultActionPolicyRuleset()
+	return evaluateActionPolicyWithView(nil, input, "", nil)
+}
+
+func EvaluateActionPolicyWithRepo(r *repo.Repo, input ActionPolicyInput) (*ActionPolicyDecision, error) {
+	if r == nil {
+		return EvaluateActionPolicy(input)
+	}
+	view, err := loadGuardOverrideView(r.GraftDir)
 	if err != nil {
-		return nil, fmt.Errorf("compile action policy: %w", err)
+		return nil, err
+	}
+	return evaluateActionPolicyWithView(r, input, actionPolicyBundleID, view)
+}
+
+func evaluateActionPolicyWithView(r *repo.Repo, input ActionPolicyInput, bundleID string, view overrides.View) (*ActionPolicyDecision, error) {
+	bundle, err := actionPolicyLoader.load(r)
+	if err != nil {
+		return nil, err
 	}
 
-	dc := arbiter.DataFromMap(actionInputToMap(input), rs)
-	debug := arbiter.EvalDebug(rs, dc)
-	if debug.Error != nil {
-		return nil, fmt.Errorf("evaluate action policy: %w", debug.Error)
+	ctx := actionPolicyContext(input)
+	dc := arbiter.DataFromMap(actionInputToMap(input), bundle.full.Ruleset)
+	var (
+		matched  []vm.MatchedRule
+		govTrace *govern.Trace
+	)
+	if view != nil {
+		matched, govTrace, err = arbiter.EvalGovernedWithOverrides(bundle.full.Ruleset, dc, bundle.full.Segments, ctx, bundleID, view)
+	} else {
+		matched, govTrace, err = arbiter.EvalGoverned(bundle.full.Ruleset, dc, bundle.full.Segments, ctx)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("evaluate action policy: %w", err)
 	}
 
-	decision := &ActionPolicyDecision{}
-	for _, failed := range debug.Failed {
-		decision.Trace = append(decision.Trace, ActionPolicyTrace{
-			Rule:          failed.Name,
-			Matched:       false,
-			FailedAtInstr: failed.FailedAtInstr,
-		})
+	ordered := orderedMatchedRules(matched)
+	decision := &ActionPolicyDecision{
+		Bundle:     bundle.infoCopy(),
+		Trace:      matchedRuleTrace(bundle, matched),
+		Governance: governanceTraceSteps(bundle, govTrace),
 	}
-
-	type matchedRule struct {
-		Name     string
-		Priority int
-		Action   string
-		Params   map[string]any
-		Fallback bool
-	}
-	matched := make([]matchedRule, 0, len(debug.Matched))
-	for _, rule := range debug.Matched {
-		matched = append(matched, matchedRule{
-			Name:     rule.Name,
-			Priority: rule.Priority,
-			Action:   rule.Action,
-			Params:   rule.Params,
-			Fallback: rule.Fallback,
-		})
-	}
-	sort.SliceStable(matched, func(i, j int) bool {
-		if matched[i].Priority == matched[j].Priority {
-			return matched[i].Name < matched[j].Name
-		}
-		return matched[i].Priority < matched[j].Priority
-	})
-
-	for _, rule := range matched {
-		decision.Trace = append(decision.Trace, ActionPolicyTrace{
-			Rule:     rule.Name,
-			Matched:  true,
-			Priority: rule.Priority,
-			Action:   rule.Action,
-			Params:   rule.Params,
-			Fallback: rule.Fallback,
-		})
-	}
-	if len(matched) == 0 {
+	if len(ordered) == 0 {
 		return nil, fmt.Errorf("action policy produced no matched rules")
 	}
 
-	selected := matched[0]
+	selected := ordered[0]
 	decision.Action = selected.Action
 	decision.Code = stringParam(selected.Params, "code")
 	decision.Reason = stringParam(selected.Params, "reason")
 	decision.Rule = selected.Name
+	decision.RuleOrigin = bundle.ruleOrigin(selected.Name)
 	decision.Profile = stringParam(selected.Params, "profile")
 	return decision, nil
 }
 
 func BuildShellActionInput(r *repo.Repo, activeAgentID string, argv []string) (ActionPolicyInput, error) {
+	return BuildShellActionInputWithProcess(r, activeAgentID, argv, ActionPolicyProcess{})
+}
+
+func BuildShellActionInputWithProcess(r *repo.Repo, activeAgentID string, argv []string, process ActionPolicyProcess) (ActionPolicyInput, error) {
 	action := InspectShellAction(argv)
 
 	var cfg *GuardConfig
@@ -279,6 +270,7 @@ func BuildShellActionInput(r *repo.Repo, activeAgentID string, argv []string) (A
 		Guard: GuardPolicy{
 			Mode: "advisory",
 		},
+		Process: process,
 	}
 	if r != nil {
 		cfg, err = LoadGuardConfig(r.GraftDir)
@@ -299,6 +291,7 @@ func BuildShellActionInput(r *repo.Repo, activeAgentID string, argv []string) (A
 			input.Action.Allowlisted = true
 		}
 	}
+	input.Coord = LoadCoordContext(r, activeAgentID, argv)
 	return input, nil
 }
 
@@ -306,6 +299,7 @@ func RecordPreflightDecision(graftDir string, input ActionPolicyInput, decision 
 	if graftDir == "" || decision == nil {
 		return nil
 	}
+	spawnID, taskID := coorddExecutionContextFromEnv()
 	eventType := "action_preflight_allowed"
 	switch decision.Action {
 	case "HardBlock":
@@ -328,6 +322,11 @@ func RecordPreflightDecision(graftDir string, input ActionPolicyInput, decision 
 			"reason":      decision.Reason,
 			"rule":        decision.Rule,
 			"profile":     decision.Profile,
+			"label":       input.Process.Label,
+			"origin":      input.Process.Origin,
+			"point":       input.Process.Point,
+			"spawn_id":    spawnID,
+			"task_id":     taskID,
 		},
 	})
 }
@@ -374,7 +373,36 @@ func actionInputToMap(in ActionPolicyInput) map[string]any {
 			"mode":                 in.Guard.Mode,
 			"require_active_agent": in.Guard.RequireActiveAgent,
 		},
+		"process": map[string]any{
+			"label":  in.Process.Label,
+			"origin": in.Process.Origin,
+			"point":  in.Process.Point,
+		},
+		"coord": map[string]any{
+			"active":                   in.Coord.Active,
+			"agent_id":                 in.Coord.AgentID,
+			"agent_name":               in.Coord.AgentName,
+			"files_touched":            in.Coord.FilesTouched,
+			"files_touched_count":      len(in.Coord.FilesTouched),
+			"conflicting_claims_count": len(in.Coord.ConflictingClaims),
+			"unread_conflicts":         in.Coord.UnreadConflicts,
+			"presence_overlap_count":   len(in.Coord.PresenceOverlap),
+			"watching_claims_count":    in.Coord.WatchingClaims,
+			"last_heartbeat_age_s":     in.Coord.LastHeartbeatAge,
+		},
 	}
+}
+
+func actionPolicyContext(in ActionPolicyInput) map[string]any {
+	ctx := actionInputToMap(in)
+	if agentID := strings.TrimSpace(in.Session.AgentID); agentID != "" {
+		ctx["user.id"] = agentID
+		ctx["user_id"] = agentID
+	}
+	if selector := strings.TrimSpace(in.Action.Selector); selector != "" {
+		ctx["request.id"] = selector
+	}
+	return ctx
 }
 
 func selectorForAction(kind string, argv []string) string {
