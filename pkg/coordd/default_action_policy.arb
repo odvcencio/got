@@ -4,6 +4,34 @@
 # them. Destructive actions are blocked by default. Everything else can be
 # tightened into an explicit allowlist by switching guard mode to enforce.
 
+segment guard_enforce {
+    guard.mode == "enforce"
+}
+
+segment guard_advisory {
+    guard.mode == "advisory"
+}
+
+segment repo_mutation {
+    action.writes_repo == true
+    or action.writes_filesystem == true
+    or action.writes_coord == true
+}
+
+segment read_only_action {
+    action.writes_repo == false
+    and action.writes_filesystem == false
+    and action.writes_coord == false
+    and action.network == false
+}
+
+segment network_read_action {
+    action.network == true
+    and action.writes_repo == false
+    and action.writes_filesystem == false
+    and action.writes_coord == false
+}
+
 rule DestructiveAction priority 0 {
     when {
         action.destructive == true
@@ -29,7 +57,7 @@ rule RepoRequired priority 10 {
 }
 
 rule ActiveAgentRequired priority 20 {
-    when {
+    when segment repo_mutation {
         action.writes_repo == true
         and guard.require_active_agent == true
         and session.active_agent == false
@@ -41,11 +69,23 @@ rule ActiveAgentRequired priority 20 {
     }
 }
 
+rule GovernedSubprocessAllowlist priority 25 {
+    when segment guard_enforce {
+        process.origin != ""
+        and action.default_allowed == false
+        and action.allowlisted == false
+    }
+    then HardBlock {
+        code: "governed_subprocess_not_allowlisted",
+        reason: "governed subprocess action is not on the coordd allowlist",
+        profile: "blocked",
+    }
+}
+
 rule AllowlistEnforced priority 30 {
-    when {
+    when segment guard_enforce {
         action.default_allowed == false
         and action.allowlisted == false
-        and guard.mode == "enforce"
     }
     then HardBlock {
         code: "not_allowlisted",
@@ -54,11 +94,77 @@ rule AllowlistEnforced priority 30 {
     }
 }
 
-rule AdvisoryReadOnly priority 40 {
+# ---- Coordination-aware rules (require coord.active) ----
+
+rule ConflictingEntityWrite priority 5 {
     when {
+        action.writes_repo == true
+        and coord.active == true
+        and coord.conflicting_claims_count > 0
+    }
+    then HardBlock {
+        code: "conflicting_claim",
+        reason: "file claimed by another agent — coordinate or wait",
+        profile: "blocked",
+    }
+}
+
+rule StaleAgentWrite priority 6 {
+    when {
+        action.writes_repo == true
+        and coord.active == true
+        and coord.last_heartbeat_age_s > 120
+    }
+    then HardBlock {
+        code: "stale_agent",
+        reason: "agent heartbeat expired — re-register with graft workon",
+        profile: "blocked",
+    }
+}
+
+rule UnreadConflictsWrite priority 35 {
+    when {
+        action.writes_repo == true
+        and coord.active == true
+        and coord.unread_conflicts > 0
+    }
+    then Advisory {
+        code: "unread_conflicts",
+        reason: "unread coordination events — check feed before proceeding",
+        profile: "repo_write",
+    }
+}
+
+rule PresenceOverlapWrite priority 36 {
+    when {
+        action.writes_filesystem == true
+        and coord.active == true
+        and coord.presence_overlap_count > 0
+    }
+    then Advisory {
+        code: "presence_overlap",
+        reason: "another agent is reading files you are about to modify",
+        profile: "repo_write",
+    }
+}
+
+rule WatchedEntityWrite priority 37 {
+    when {
+        action.writes_repo == true
+        and coord.active == true
+        and coord.watching_claims_count > 0
+    }
+    then Advisory {
+        code: "watched_entity",
+        reason: "file is watched by another agent — they will be notified",
+        profile: "repo_write",
+    }
+}
+
+rule AdvisoryReadOnly priority 40 {
+    when segment guard_advisory {
         action.default_allowed == false
         and action.allowlisted == false
-        and guard.mode == "advisory"
         and action.writes_repo == false
         and action.writes_filesystem == false
         and action.writes_coord == false
@@ -72,10 +178,9 @@ rule AdvisoryReadOnly priority 40 {
 }
 
 rule AdvisoryRepoWrite priority 41 {
-    when {
+    when segment guard_advisory {
         action.default_allowed == false
         and action.allowlisted == false
-        and guard.mode == "advisory"
         and (action.writes_repo == true or action.writes_filesystem == true or action.writes_coord == true)
         and action.network == false
     }
@@ -87,10 +192,9 @@ rule AdvisoryRepoWrite priority 41 {
 }
 
 rule AdvisoryNetworkRead priority 42 {
-    when {
+    when segment guard_advisory {
         action.default_allowed == false
         and action.allowlisted == false
-        and guard.mode == "advisory"
         and action.network == true
         and action.writes_repo == false
         and action.writes_filesystem == false
@@ -104,10 +208,9 @@ rule AdvisoryNetworkRead priority 42 {
 }
 
 rule AdvisoryRepoWriteNetwork priority 43 {
-    when {
+    when segment guard_advisory {
         action.default_allowed == false
         and action.allowlisted == false
-        and guard.mode == "advisory"
         and action.network == true
         and (action.writes_repo == true or action.writes_filesystem == true or action.writes_coord == true)
     }
@@ -119,12 +222,7 @@ rule AdvisoryRepoWriteNetwork priority 43 {
 }
 
 rule AllowReadOnly priority 900 {
-    when {
-        action.writes_repo == false
-        and action.writes_filesystem == false
-        and action.writes_coord == false
-        and action.network == false
-    }
+    when segment read_only_action { true }
     then Allow {
         code: "allow",
         reason: "action is allowed by coordd policy",
@@ -133,9 +231,8 @@ rule AllowReadOnly priority 900 {
 }
 
 rule AllowRepoWrite priority 910 {
-    when {
-        (action.writes_repo == true or action.writes_filesystem == true or action.writes_coord == true)
-        and action.network == false
+    when segment repo_mutation {
+        action.network == false
     }
     then Allow {
         code: "allow",
@@ -145,12 +242,7 @@ rule AllowRepoWrite priority 910 {
 }
 
 rule AllowNetworkRead priority 920 {
-    when {
-        action.network == true
-        and action.writes_repo == false
-        and action.writes_filesystem == false
-        and action.writes_coord == false
-    }
+    when segment network_read_action { true }
     then Allow {
         code: "allow",
         reason: "action is allowed by coordd policy",
