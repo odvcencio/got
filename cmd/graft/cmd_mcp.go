@@ -151,6 +151,7 @@ type mcpServer struct {
 	log           *log.Logger
 	outMu         sync.Mutex
 	withCodeintel bool
+	activity      *mcpActivityAccumulator
 }
 
 func newMCPServer(in io.Reader, out io.Writer, logOut io.Writer) *mcpServer {
@@ -250,9 +251,29 @@ func (s *mcpServer) handleRequest(request mcpRPCRequest) (any, *mcpRPCError) {
 			params.Arguments = map[string]any{}
 		}
 
+		// Lazily initialize the activity accumulator when an active agent is detected.
+		if s.activity == nil {
+			if r, err := repo.Open("."); err == nil {
+				if activeID := readActiveAgentID(r); activeID != "" {
+					agentName := activeID
+					if c := coord.New(r, coord.DefaultConfig); c != nil {
+						if agent, err := c.GetAgent(activeID); err == nil {
+							agentName = agent.Name
+						}
+					}
+					s.activity = newMCPActivityAccumulator(activeID, agentName)
+				}
+			}
+		}
+
 		started := time.Now()
 		result, err := mcpDispatchAll(s.withCodeintel, params.Name, params.Arguments)
 		durationMs := time.Since(started).Milliseconds()
+
+		// Record tool call in accumulator.
+		if s.activity != nil {
+			s.activity.recordToolCall(params.Name)
+		}
 
 		meta := map[string]any{
 			"tool":        params.Name,
@@ -260,9 +281,25 @@ func (s *mcpServer) handleRequest(request mcpRPCRequest) (any, *mcpRPCError) {
 		}
 
 		// Build coord summary for _meta.
-		coordSummary := mcpBuildCoordSummary()
+		coordSummary := mcpBuildCoordSummary(s.activity)
 		if coordSummary != nil {
 			meta["coord"] = coordSummary
+		}
+
+		// Publish activity digest if accumulator is ready.
+		if s.activity != nil && s.activity.shouldPublish() {
+			if r, err := repo.Open("."); err == nil {
+				c := coord.New(r, coord.DefaultConfig)
+				c.AgentID = s.activity.agentID
+				digest := s.activity.buildDigest()
+				_ = c.PublishDigestToFeed(digest)
+				_ = c.Heartbeat(s.activity.agentID)
+				_ = coord.TouchSession(r.GraftDir, &coord.Session{
+					AgentID:   s.activity.agentID,
+					AgentName: s.activity.agentName,
+				})
+				s.activity.reset()
+			}
 		}
 
 		if err != nil {
@@ -605,9 +642,40 @@ func mcpArgBool(args map[string]any, key string) bool {
 	return false
 }
 
+func mcpArgBoolDefault(args map[string]any, key string, defaultValue bool) bool {
+	_, ok := args[key]
+	if !ok {
+		return defaultValue
+	}
+	return mcpArgBool(args, key)
+}
+
+func mcpArgInt(args map[string]any, key string) int {
+	v, ok := args[key]
+	if !ok {
+		return 0
+	}
+	switch value := v.(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	case string:
+		n, _ := strconv.Atoi(strings.TrimSpace(value))
+		return n
+	default:
+		n, _ := strconv.Atoi(strings.TrimSpace(fmt.Sprintf("%v", v)))
+		return n
+	}
+}
+
 // --- Coord summary for _meta ---
 
-func mcpBuildCoordSummary() map[string]any {
+func mcpBuildCoordSummary(activity *mcpActivityAccumulator) map[string]any {
 	r, err := repo.Open(".")
 	if err != nil {
 		return nil
@@ -648,12 +716,18 @@ func mcpBuildCoordSummary() map[string]any {
 		}
 	}
 
-	return map[string]any{
+	result := map[string]any{
 		"active_agents": len(agents),
 		"your_claims":   myClaims,
 		"conflicts":     conflictCount,
 		"unread_feed":   unread,
 	}
+
+	if activity != nil {
+		result["your_activity"] = activity.snapshot()
+	}
+
+	return result
 }
 
 // --- Tool implementations ---
