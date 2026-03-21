@@ -1,6 +1,7 @@
 package coord
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -121,5 +122,88 @@ func TestGCStaleAgents(t *testing.T) {
 	}
 	if len(agents) != 0 {
 		t.Fatalf("expected 0 agents after GC, got %d", len(agents))
+	}
+}
+
+func TestRegisterAgent_PublishesFeedEvent(t *testing.T) {
+	c := newTestCoordinator(t)
+	_, err := c.RegisterAgent(AgentInfo{Name: "cedar", Workspace: "graft", Host: "test-host"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, _ := c.WalkFeed("", 10)
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want 1", len(events))
+	}
+	if events[0].Event != "agent_joined" {
+		t.Errorf("event = %q, want %q", events[0].Event, "agent_joined")
+	}
+	if events[0].Detail["workspace"] != "graft" {
+		t.Errorf("missing workspace in detail")
+	}
+}
+
+func TestDeregisterAgent_PublishesFeedEvent(t *testing.T) {
+	c := newTestCoordinator(t)
+	id, _ := c.RegisterAgent(AgentInfo{Name: "cedar"})
+	err := c.DeregisterAgent(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, _ := c.WalkFeed("", 10)
+	found := false
+	for _, ev := range events {
+		if ev.Event == "agent_left" {
+			found = true
+			if ev.Detail["reason"] != "done" {
+				t.Errorf("reason = %v, want %q", ev.Detail["reason"], "done")
+			}
+		}
+	}
+	if !found {
+		t.Error("no agent_left event found")
+	}
+}
+
+func TestDeregisterAgent_RetriesOnHeartbeatCAS(t *testing.T) {
+	c := newTestCoordinator(t)
+
+	info := AgentInfo{Name: "race-agent", Workspace: "graft", Host: "test"}
+	id, err := c.RegisterAgent(info)
+	if err != nil {
+		t.Fatalf("RegisterAgent: %v", err)
+	}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = c.Heartbeat(id)
+				time.Sleep(time.Millisecond)
+			}
+		}
+	}()
+
+	time.Sleep(5 * time.Millisecond)
+	if err := c.DeregisterAgent(id); err != nil {
+		close(stop)
+		wg.Wait()
+		t.Fatalf("DeregisterAgent: %v", err)
+	}
+	close(stop)
+	wg.Wait()
+
+	agents, err := c.ListAgents()
+	if err != nil {
+		t.Fatalf("ListAgents: %v", err)
+	}
+	if len(agents) != 0 {
+		t.Fatalf("expected 0 agents after deregister, got %d", len(agents))
 	}
 }

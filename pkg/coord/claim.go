@@ -75,7 +75,15 @@ func (c *Coordinator) AcquireClaim(agentID string, req ClaimRequest) error {
 	// Watches always go to the watches namespace (non-exclusive).
 	if req.Mode == ClaimWatching {
 		watchRef := refPath("watches", keyHash, agentID)
-		return c.writeClaimToRef(watchRef, agentID, req, keyHash)
+		if err := c.writeClaimToRef(watchRef, agentID, req, keyHash); err != nil {
+			return err
+		}
+		_ = c.PublishToFeed("claim_acquired", map[string]any{
+			"entity_key": req.EntityKey,
+			"file":       req.File,
+			"mode":       req.Mode,
+		})
+		return nil
 	}
 
 	// Editing claims use the exclusive claims namespace.
@@ -90,7 +98,15 @@ func (c *Coordinator) AcquireClaim(agentID string, req ClaimRequest) error {
 
 		// Same agent reclaiming -- update
 		if existing.Agent == agentID {
-			return c.writeClaimToRef(ref, agentID, req, keyHash)
+			if err := c.writeClaimToRef(ref, agentID, req, keyHash); err != nil {
+				return err
+			}
+			_ = c.PublishToFeed("claim_acquired", map[string]any{
+				"entity_key": req.EntityKey,
+				"file":       req.File,
+				"mode":       req.Mode,
+			})
+			return nil
 		}
 
 		decision, err := c.EvaluateClaimDecision(agentID, req, existing)
@@ -109,7 +125,15 @@ func (c *Coordinator) AcquireClaim(agentID string, req ClaimRequest) error {
 	}
 
 	// No existing claim -- create
-	return c.writeClaimToRef(ref, agentID, req, keyHash)
+	if err := c.writeClaimToRef(ref, agentID, req, keyHash); err != nil {
+		return err
+	}
+	_ = c.PublishToFeed("claim_acquired", map[string]any{
+		"entity_key": req.EntityKey,
+		"file":       req.File,
+		"mode":       req.Mode,
+	})
+	return nil
 }
 
 // ForceAcquireClaim atomically takes over an editing claim for the requesting
@@ -257,6 +281,9 @@ func (c *Coordinator) ReleaseClaim(keyHash string) error {
 	if err := c.readJSONBlob(oldHash, &existing); err != nil {
 		return err
 	}
+	releasedEntityKey := existing.EntityKey
+	releasedFile := existing.File
+
 	existing.Agent = ""
 	existing.AgentName = ""
 	tombstoneHash, err := c.writeJSONBlob(existing)
@@ -268,7 +295,16 @@ func (c *Coordinator) ReleaseClaim(keyHash string) error {
 	}
 
 	// Step 2: Delete the ref
-	return c.Repo.DeleteRefCAS(ref, tombstoneHash)
+	if err := c.Repo.DeleteRefCAS(ref, tombstoneHash); err != nil {
+		return err
+	}
+
+	_ = c.PublishToFeed("claim_released", map[string]any{
+		"entity_key": releasedEntityKey,
+		"file":       releasedFile,
+		"reason":     "released",
+	})
+	return nil
 }
 
 // TransferClaim atomically transfers a claim from the current owner to a target agent.

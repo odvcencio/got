@@ -293,6 +293,60 @@ func TestClaimsForFile(t *testing.T) {
 	}
 }
 
+func TestAcquireClaim_PublishesFeedEvent(t *testing.T) {
+	c := newTestCoordinator(t)
+	id, _ := c.RegisterAgent(AgentInfo{Name: "cedar"})
+	err := c.AcquireClaim(id, ClaimRequest{
+		EntityKey: "decl:func::Foo",
+		File:      "pkg/foo.go",
+		Mode:      ClaimEditing,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, _ := c.WalkFeed("", 10)
+	found := false
+	for _, ev := range events {
+		if ev.Event == "claim_acquired" {
+			found = true
+			if ev.Detail["file"] != "pkg/foo.go" {
+				t.Errorf("file = %v, want %q", ev.Detail["file"], "pkg/foo.go")
+			}
+		}
+	}
+	if !found {
+		t.Error("no claim_acquired event found")
+	}
+}
+
+func TestReleaseClaim_PublishesFeedEvent(t *testing.T) {
+	c := newTestCoordinator(t)
+	id, _ := c.RegisterAgent(AgentInfo{Name: "cedar"})
+	_ = c.AcquireClaim(id, ClaimRequest{
+		EntityKey: "decl:func::Foo",
+		File:      "pkg/foo.go",
+		Mode:      ClaimEditing,
+	})
+	claims, _ := c.ListClaims()
+	if len(claims) == 0 {
+		t.Fatal("no claims found")
+	}
+	err := c.ReleaseClaim(claims[0].EntityKeyHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, _ := c.WalkFeed("", 10)
+	found := false
+	for _, ev := range events {
+		if ev.Event == "claim_released" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("no claim_released event found")
+	}
+}
+
 func TestAcquireClaimConcurrentRace(t *testing.T) {
 	c := newTestCoordinator(t)
 	const numAgents = 10

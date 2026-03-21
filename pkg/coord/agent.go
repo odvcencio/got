@@ -3,10 +3,13 @@ package coord
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
+
+	repopkg "github.com/odvcencio/graft/pkg/repo"
 )
 
 // AgentInfo describes a registered coordination agent.
@@ -50,6 +53,11 @@ func (c *Coordinator) RegisterAgent(info AgentInfo) (string, error) {
 	}
 
 	c.AgentID = id
+	_ = c.PublishToFeed("agent_joined", map[string]any{
+		"workspace": info.Workspace,
+		"mode":      "editing",
+		"host":      info.Host,
+	})
 	return id, nil
 }
 
@@ -145,13 +153,30 @@ func (c *Coordinator) DeregisterAgent(id string) error {
 		}
 	}
 
+	// Publish feed event while agent ref is still resolvable
+	_ = c.PublishToFeed("agent_left", map[string]any{
+		"reason": "done",
+	})
+
 	// Remove agent ref
 	ref := refPath("agents", id)
-	h, err := c.Repo.ResolveRef(ref)
-	if err != nil {
-		return nil // already gone
+	for attempts := 0; attempts < 4; attempts++ {
+		h, err := c.Repo.ResolveRef(ref)
+		if err != nil {
+			return nil // already gone
+		}
+		if err := c.Repo.DeleteRefCAS(ref, h); err != nil {
+			if errors.Is(err, repopkg.ErrRefCASMismatch) {
+				continue
+			}
+			if strings.Contains(err.Error(), "not found") {
+				return nil
+			}
+			return err
+		}
+		return nil
 	}
-	return c.Repo.DeleteRefCAS(ref, h)
+	return fmt.Errorf("deregister agent %s: delete ref %q failed after retries", id, ref)
 }
 
 // GCStaleAgents removes agents whose heartbeat is older than StaleThreshold.

@@ -41,8 +41,9 @@ func TestAppendAndWalkFeed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WalkFeed: %v", err)
 	}
-	if len(events) != 2 {
-		t.Fatalf("expected 2 events, got %d", len(events))
+	// 3 events: agent_joined + 2 entity_changed
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(events))
 	}
 	// Events are newest-first (head of chain)
 	if events[0].Entities[0].File != "bar.go" {
@@ -63,9 +64,10 @@ func TestWalkFeedSince(t *testing.T) {
 	}
 
 	// Get all, grab the hash of event B (second from head = index 1)
+	// With agent_joined, the chain is: C, B, A, agent_joined (newest-first)
 	all, _ := c.WalkFeed("", 10)
-	if len(all) != 3 {
-		t.Fatalf("expected 3, got %d", len(all))
+	if len(all) != 4 {
+		t.Fatalf("expected 4, got %d", len(all))
 	}
 
 	// Walk since B's blob hash -- should only return C (newer than B)
@@ -181,13 +183,13 @@ func TestPruneFeed(t *testing.T) {
 		})
 	}
 
-	// Prune keeping only the 2 newest
+	// Prune keeping only the 2 newest (6 total with agent_joined, so 4 pruned)
 	pruned, err := c.PruneFeed(2)
 	if err != nil {
 		t.Fatalf("PruneFeed: %v", err)
 	}
-	if pruned != 3 {
-		t.Errorf("expected 3 pruned, got %d", pruned)
+	if pruned != 4 {
+		t.Errorf("expected 4 pruned, got %d", pruned)
 	}
 
 	// Walk should return only 2
@@ -285,8 +287,9 @@ func TestPublishToFeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("got %d events, want 1", len(events))
+	// 2 events: agent_joined + claim_acquired (newest-first)
+	if len(events) != 2 {
+		t.Fatalf("got %d events, want 2", len(events))
 	}
 	if events[0].Event != "claim_acquired" {
 		t.Errorf("event = %q, want %q", events[0].Event, "claim_acquired")
@@ -331,8 +334,9 @@ func TestPublishDigestToFeed(t *testing.T) {
 	}
 
 	events, _ := c.WalkFeed("", 10)
-	if len(events) != 1 {
-		t.Fatalf("got %d events, want 1", len(events))
+	// 2 events: agent_joined + activity_digest (newest-first)
+	if len(events) != 2 {
+		t.Fatalf("got %d events, want 2", len(events))
 	}
 	if events[0].Event != "activity_digest" {
 		t.Errorf("event = %q, want %q", events[0].Event, "activity_digest")
