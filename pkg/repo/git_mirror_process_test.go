@@ -35,15 +35,15 @@ func runGitTestCommand(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
-func TestGitStageFiles_ExternalProcessGuardCanBlock(t *testing.T) {
+func TestGitShadowStage_ExternalProcessGuardCanBlock(t *testing.T) {
 	r := initGitBackedRepo(t)
 	if err := os.WriteFile(filepath.Join(r.RootDir, "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
 	prev := SetExternalProcessGuard(func(spec ExternalProcessSpec) error {
-		if spec.Label == "git-stage-files" {
-			return errors.New("blocked git stage")
+		if spec.Label == "git-shadow:stage" {
+			return errors.New("blocked git shadow stage")
 		}
 		return nil
 	})
@@ -51,14 +51,14 @@ func TestGitStageFiles_ExternalProcessGuardCanBlock(t *testing.T) {
 		SetExternalProcessGuard(prev)
 	})
 
-	r.gitStageFiles([]string{"main.go"})
+	r.GitShadowStage([]string{"main.go"})
 	staged := runGitTestCommand(t, r.RootDir, "diff", "--cached", "--name-only")
 	if staged != "" {
 		t.Fatalf("staged output = %q, want empty", staged)
 	}
 }
 
-func TestGitMirrorCommit_ExternalProcessGuardCanBlock(t *testing.T) {
+func TestGitShadowCommit_ExternalProcessGuardCanBlock(t *testing.T) {
 	r := initGitBackedRepo(t)
 	if err := os.WriteFile(filepath.Join(r.RootDir, "main.go"), []byte("package main\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -66,8 +66,8 @@ func TestGitMirrorCommit_ExternalProcessGuardCanBlock(t *testing.T) {
 	runGitTestCommand(t, r.RootDir, "add", "main.go")
 
 	prev := SetExternalProcessGuard(func(spec ExternalProcessSpec) error {
-		if spec.Label == "git-mirror-commit" {
-			return errors.New("blocked git mirror commit")
+		if spec.Label == "git-shadow:commit" {
+			return errors.New("blocked git shadow commit")
 		}
 		return nil
 	})
@@ -75,9 +75,9 @@ func TestGitMirrorCommit_ExternalProcessGuardCanBlock(t *testing.T) {
 		SetExternalProcessGuard(prev)
 	})
 
-	r.gitMirrorCommit("mirror commit", "Test User <test@example.com>")
+	r.GitShadowCommit("mirror commit", "Test User <test@example.com>", false)
 	cmd := exec.Command("git", "-C", r.RootDir, "rev-parse", "--verify", "HEAD")
 	if err := cmd.Run(); err == nil {
-		t.Fatal("expected no git HEAD commit after blocked mirror commit")
+		t.Fatal("expected no git HEAD commit after blocked shadow commit")
 	}
 }

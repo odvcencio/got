@@ -425,31 +425,11 @@ func (r *Repo) add(paths []string, progress AddProgressFunc, opts AddOptions) er
 	}
 
 	// Unified staging: also stage in git if a .git/ directory exists.
-	r.gitStageFiles(toAdd)
+	r.GitShadowStage(toAdd)
 
 	return nil
 }
 
-// gitStageFiles stages files in the colocated git repo (if present).
-// This keeps git and graft staging areas in sync so that either
-// `git commit` or `graft commit` produces consistent results.
-// Errors are silently ignored — git staging is best-effort.
-func (r *Repo) gitStageFiles(paths []string) {
-	gitDir := filepath.Join(r.RootDir, ".git")
-	if _, err := os.Stat(gitDir); err != nil {
-		return // no git repo
-	}
-	if len(paths) == 0 {
-		return
-	}
-	_ = RunExternalProcess(ExternalProcessSpec{
-		Context: context.Background(),
-		Dir:     r.RootDir,
-		Path:    "git",
-		Args:    append([]string{"add", "--"}, paths...),
-		Label:   "git-stage-files",
-	})
-}
 
 // extractAndStoreEntities performs entity extraction for a single blob result,
 // guarded by the source-bytes semaphore. It updates br.entry.EntityListHash
@@ -680,6 +660,7 @@ func (r *Repo) Remove(paths []string, cached bool) error {
 	if err := r.WriteStaging(stg); err != nil {
 		return fmt.Errorf("rm: %w", err)
 	}
+	r.GitShadowRm(toRemove)
 	return nil
 }
 

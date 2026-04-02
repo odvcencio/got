@@ -170,28 +170,10 @@ func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (ob
 	r.InvalidateMergeBaseCache()
 
 	// 7. Mirror to git if a colocated .git/ directory exists.
-	r.gitMirrorCommit(message, author)
+	r.GitShadowCommit(message, author, false)
 
 	// 8. Return commit hash.
 	return commitHash, nil
-}
-
-// gitMirrorCommit creates a corresponding git commit from the currently
-// staged files. This keeps git history in sync with graft so that
-// `git log` and `graft log` show the same commits. Errors are silently
-// ignored — git mirroring is best-effort.
-func (r *Repo) gitMirrorCommit(message, author string) {
-	gitDir := filepath.Join(r.RootDir, ".git")
-	if _, err := os.Stat(gitDir); err != nil {
-		return // no git repo
-	}
-	_ = RunExternalProcess(ExternalProcessSpec{
-		Dir:   r.RootDir,
-		Path:  "git",
-		Args:  []string{"commit", "--allow-empty", "-m", message, "--author", author},
-		Env:   append(os.Environ(), "GIT_COMMITTER_NAME=graft", "GIT_COMMITTER_EMAIL=graft@noreply"),
-		Label: "git-mirror-commit",
-	})
 }
 
 // CommitAmend replaces the current HEAD commit with a new one built from the
@@ -300,6 +282,8 @@ func (r *Repo) CommitAmendWithSigner(message, author string, signer CommitSigner
 	r.invalidateStatusCache()
 	r.InvalidateMergeBaseCache()
 
+	r.GitShadowCommit(message, author, true)
+
 	return commitHash, nil
 }
 
@@ -401,5 +385,6 @@ func (r *Repo) commitFromStaging(p commitStagingParams) (object.Hash, error) {
 	}
 
 	r.invalidateStatusCache()
+	r.GitShadowSyncSnapshot(p.Message, p.Author)
 	return commitHash, nil
 }

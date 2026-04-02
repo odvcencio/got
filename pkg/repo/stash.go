@@ -175,6 +175,8 @@ func (r *Repo) Stash(author string) (*StashEntry, error) {
 		return nil, fmt.Errorf("stash: revert: %w", err)
 	}
 
+	r.GitShadowStash("push")
+
 	return &entry, nil
 }
 
@@ -270,7 +272,11 @@ func (r *Repo) StashPop(index int) error {
 	if err := r.StashApply(index); err != nil {
 		return err
 	}
-	return r.StashDrop(index)
+	if err := r.StashDrop(index); err != nil {
+		return err
+	}
+	r.GitShadowStash("pop")
+	return nil
 }
 
 // StashApply applies the stash at index using a 3-way merge:
@@ -426,7 +432,11 @@ func (r *Repo) StashDrop(index int) error {
 	}
 
 	stack = append(stack[:index], stack[index+1:]...)
-	return r.writeStashStack(stack)
+	if err := r.writeStashStack(stack); err != nil {
+		return err
+	}
+	r.GitShadowStash("drop")
+	return nil
 }
 
 // StashShowEntry describes a single file changed in a stash entry.

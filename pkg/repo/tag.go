@@ -33,6 +33,7 @@ func (r *Repo) CreateTag(name string, target object.Hash, force bool) error {
 	if err := r.UpdateRef(refName, target); err != nil {
 		return fmt.Errorf("create tag: %w", err)
 	}
+	r.GitShadowCreateTag(name)
 	return nil
 }
 
@@ -110,6 +111,7 @@ func (r *Repo) DeleteTag(name string) error {
 		}
 		return fmt.Errorf("delete tag: %w", err)
 	}
+	r.GitShadowDeleteTag(name)
 	return nil
 }
 

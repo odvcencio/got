@@ -76,6 +76,7 @@ func (r *Repo) ResetToCommit(target object.Hash, mode ResetMode) error {
 
 	if mode == ResetSoft {
 		r.invalidateStatusCache()
+		r.GitShadowReset("soft", string(target))
 		return nil
 	}
 
@@ -108,6 +109,7 @@ func (r *Repo) ResetToCommit(target object.Hash, mode ResetMode) error {
 
 	if mode == ResetMixed {
 		r.invalidateStatusCache()
+		r.GitShadowReset("mixed", string(target))
 		return nil
 	}
 
@@ -165,6 +167,7 @@ func (r *Repo) ResetToCommit(target object.Hash, mode ResetMode) error {
 	}
 
 	r.invalidateStatusCache()
+	r.GitShadowReset("hard", string(target))
 	return nil
 }
 
@@ -212,6 +215,7 @@ func (r *Repo) Reset(paths []string) error {
 	if err := r.WriteStaging(stg); err != nil {
 		return fmt.Errorf("reset: %w", err)
 	}
+	r.GitShadowResetPaths(paths)
 	return nil
 }
 

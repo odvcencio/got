@@ -157,6 +157,8 @@ func (r *Repo) Checkout(target string) error {
 	// with 'graft module sync'.
 	_ = r.ModuleSync()
 
+	r.GitShadowCheckout(target)
+
 	return nil
 }
 

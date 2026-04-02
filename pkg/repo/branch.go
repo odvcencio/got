@@ -29,6 +29,7 @@ func (r *Repo) CreateBranch(name string, target object.Hash) error {
 		}
 		return fmt.Errorf("create branch %q: %w", name, err)
 	}
+	r.GitShadowCreateBranch(name)
 	return nil
 }
 
@@ -51,6 +52,7 @@ func (r *Repo) DeleteBranch(name string) error {
 		}
 		return fmt.Errorf("delete branch %q: %w", name, err)
 	}
+	r.GitShadowDeleteBranch(name)
 	return nil
 }
 
