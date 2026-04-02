@@ -2,15 +2,12 @@ package gitbridge
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 )
 
 // GitHEAD returns the current git HEAD commit hash.
 func (b *Bridge) GitHEAD() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "HEAD")
-	cmd.Dir = b.rootDir
-	out, err := cmd.Output()
+	out, err := runGitCapture(b.rootDir, "gitbridge:rev-parse", "rev-parse", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
 	}

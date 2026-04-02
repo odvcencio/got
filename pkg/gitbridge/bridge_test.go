@@ -1,10 +1,14 @@
 package gitbridge
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/odvcencio/graft/pkg/repo"
 )
 
 func TestDetectGitRepo(t *testing.T) {
@@ -57,6 +61,63 @@ func TestInitBridge(t *testing.T) {
 
 	if b.hashMap.Len() == 0 {
 		t.Error("expected hash map to have entries after init")
+	}
+}
+
+func TestInitBridge_ExternalProcessGuardCanBlockImportHEAD(t *testing.T) {
+	dir := t.TempDir()
+
+	cmd := exec.Command("git", "init", dir)
+	if err := cmd.Run(); err != nil {
+		t.Skipf("git not available: %v", err)
+	}
+
+	testFile := filepath.Join(dir, "main.go")
+	os.WriteFile(testFile, []byte("package main\n\nfunc main() {}\n"), 0644)
+	runGit(t, dir, "add", "main.go")
+	runGit(t, dir, "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "initial")
+
+	prev := repo.SetExternalProcessGuard(func(spec repo.ExternalProcessSpec) error {
+		if spec.Label == "gitbridge:ls-files" {
+			return errors.New("blocked git ls-files")
+		}
+		return nil
+	})
+	t.Cleanup(func() {
+		repo.SetExternalProcessGuard(prev)
+	})
+
+	if _, err := InitBridge(dir); err == nil || !strings.Contains(err.Error(), "blocked git ls-files") {
+		t.Fatalf("InitBridge error = %v, want blocked git ls-files", err)
+	}
+}
+
+func TestGitHEAD_ExternalProcessGuardCanBlock(t *testing.T) {
+	dir := t.TempDir()
+
+	cmd := exec.Command("git", "init", dir)
+	if err := cmd.Run(); err != nil {
+		t.Skipf("git not available: %v", err)
+	}
+
+	testFile := filepath.Join(dir, "main.go")
+	os.WriteFile(testFile, []byte("package main\n"), 0644)
+	runGit(t, dir, "add", "main.go")
+	runGit(t, dir, "-c", "user.email=test@test.com", "-c", "user.name=Test", "commit", "-m", "initial")
+
+	prev := repo.SetExternalProcessGuard(func(spec repo.ExternalProcessSpec) error {
+		if spec.Label == "gitbridge:rev-parse" {
+			return errors.New("blocked git rev-parse")
+		}
+		return nil
+	})
+	t.Cleanup(func() {
+		repo.SetExternalProcessGuard(prev)
+	})
+
+	b := &Bridge{rootDir: dir}
+	if _, err := b.GitHEAD(); err == nil || !strings.Contains(err.Error(), "blocked git rev-parse") {
+		t.Fatalf("GitHEAD error = %v, want blocked git rev-parse", err)
 	}
 }
 

@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -125,12 +124,9 @@ func (b *Bridge) addToGitExclude() error {
 // as a graft blob object, extracts entities where possible, and records the
 // git↔graft hash mapping.
 func (b *Bridge) importHEAD() error {
-	cmd := exec.Command("git", "ls-files", "-z")
-	cmd.Dir = b.rootDir
-	out, err := cmd.Output()
+	out, err := runGitCapture(b.rootDir, "gitbridge:ls-files", "ls-files", "-z")
 	if err != nil {
-		// Empty repo or no commits — not an error.
-		return nil
+		return fmt.Errorf("git ls-files: %w", err)
 	}
 
 	if len(out) == 0 {
