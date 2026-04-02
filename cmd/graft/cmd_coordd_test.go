@@ -253,6 +253,108 @@ func TestCoorddExecCmd_RunsAllowedCommand(t *testing.T) {
 	}
 }
 
+func TestCoorddGuardOverrideSetAndList_JSON(t *testing.T) {
+	dir := t.TempDir()
+	_, err := repo.Init(dir)
+	if err != nil {
+		t.Fatalf("repo.Init: %v", err)
+	}
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	if err := func() error {
+		cmd := newCoorddCmd()
+		cmd.SilenceUsage = true
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs([]string{"guard", "override", "set", "action", "AdvisoryReadOnly", "--kill-switch"})
+		return cmd.Execute()
+	}(); err != nil {
+		t.Fatalf("guard override set: %v", err)
+	}
+
+	output := captureCommandStdout(t, func() error {
+		cmd := newCoorddCmd()
+		cmd.SilenceUsage = true
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs([]string{"guard", "override", "list", "--json"})
+		return cmd.Execute()
+	})
+
+	var entries []struct {
+		Policy     string `json:"policy"`
+		Rule       string `json:"rule"`
+		KillSwitch *bool  `json:"kill_switch"`
+	}
+	if err := json.Unmarshal([]byte(output), &entries); err != nil {
+		t.Fatalf("json.Unmarshal: %v\nraw: %s", err, output)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(entries))
+	}
+	if entries[0].Policy != "action" || entries[0].Rule != "AdvisoryReadOnly" {
+		t.Fatalf("entries[0] = %#v", entries[0])
+	}
+	if entries[0].KillSwitch == nil || !*entries[0].KillSwitch {
+		t.Fatalf("expected kill switch override, got %#v", entries[0])
+	}
+}
+
+func TestCoorddGuardShow_JSONIncludesPolicyBundleInfo(t *testing.T) {
+	dir := t.TempDir()
+	r, err := repo.Init(dir)
+	if err != nil {
+		t.Fatalf("repo.Init: %v", err)
+	}
+	policyPath := filepath.Join(coordd.GuardPoliciesDir(r.GraftDir), "action.arb")
+	writeTestFile(t, policyPath, []byte(`rule RepoLocal priority 5 {
+    when { action.selector == "shell:noop" }
+    then Advisory {
+        code: "repo_local",
+        reason: "repo-local action policy",
+        profile: "read_only",
+    }
+}
+
+rule Fallback priority 999 {
+    when { true }
+    then Allow {
+        code: "allow",
+        reason: "fallback",
+        profile: "read_only",
+    }
+}
+`))
+
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	output := captureCommandStdout(t, func() error {
+		cmd := newCoorddCmd()
+		cmd.SilenceUsage = true
+		cmd.SetErr(io.Discard)
+		cmd.SetArgs([]string{"guard", "show", "--json"})
+		return cmd.Execute()
+	})
+
+	var result struct {
+		Policies map[string]coordd.PolicyBundleInfo `json:"policies"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("json.Unmarshal: %v\nraw: %s", err, output)
+	}
+	action, ok := result.Policies["action"]
+	if !ok {
+		t.Fatalf("missing action policy bundle in %#v", result.Policies)
+	}
+	if action.Embedded {
+		t.Fatal("action policy unexpectedly marked embedded")
+	}
+	if action.Root != policyPath {
+		t.Fatalf("action.Root = %q, want %q", action.Root, policyPath)
+	}
+}
+
 func TestCoorddGuardRuntimeAndImagePersist(t *testing.T) {
 	dir := t.TempDir()
 	r, err := repo.Init(dir)
