@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -249,6 +248,37 @@ func entityMemoryBudgetMB() int {
 	return 64
 }
 
+const defaultMaxAddFileSizeMB = 100
+
+func maxAddFileSize() int64 {
+	if v := os.Getenv("GRAFT_MAX_FILE_SIZE_MB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return int64(n) * 1024 * 1024
+		}
+	}
+	return defaultMaxAddFileSizeMB * 1024 * 1024
+}
+
+// maxEntityExtractionSize is the upper bound on file size for entity
+// extraction. Files larger than this are staged as blobs but skipped
+// by tree-sitter to avoid runaway AST allocation.
+const maxEntityExtractionSize int64 = 10 * 1024 * 1024 // 10 MB
+
+// isBinaryContent reports whether data appears to be binary by checking
+// for null bytes in the first 8 KB.
+func isBinaryContent(data []byte) bool {
+	n := len(data)
+	if n > 8192 {
+		n = 8192
+	}
+	for i := 0; i < n; i++ {
+		if data[i] == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Repo) add(paths []string, progress AddProgressFunc, opts AddOptions) error {
 	stg, err := r.ReadStaging()
 	if err != nil {
@@ -319,17 +349,12 @@ func (r *Repo) add(paths []string, progress AddProgressFunc, opts AddOptions) er
 		blobs[i] = blobResult{
 			relPath: relPath,
 			entry:   prepared.entry,
-			content: prepared.content,
+			// Content not retained; Phase 2 re-reads from blob store
+			// to avoid accumulating all file contents in memory.
 		}
 		stg.Entries[relPath] = prepared.entry
 	}
 	<-blobDone
-
-	// Release Phase 1 content references so GC can reclaim before Phase 2.
-	// Phase 2 re-reads from the blob store as needed.
-	for i := range blobs {
-		blobs[i].content = nil
-	}
 
 	// ── Phase 2: Entity extraction (bounded concurrency) ──────────────
 	if !opts.SkipEntities {
@@ -417,11 +442,13 @@ func (r *Repo) gitStageFiles(paths []string) {
 	if len(paths) == 0 {
 		return
 	}
-	// Use git update-index --add --stdin to batch stage files.
-	cmd := exec.Command("git", "add", "--")
-	cmd.Args = append(cmd.Args, paths...)
-	cmd.Dir = r.RootDir
-	_ = cmd.Run()
+	_ = RunExternalProcess(ExternalProcessSpec{
+		Context: context.Background(),
+		Dir:     r.RootDir,
+		Path:    "git",
+		Args:    append([]string{"add", "--"}, paths...),
+		Label:   "git-stage-files",
+	})
 }
 
 // extractAndStoreEntities performs entity extraction for a single blob result,
@@ -442,6 +469,15 @@ func (r *Repo) extractAndStoreEntities(ctx context.Context, sem *sourceBytesSema
 		content = blob.Data
 	}
 	if len(content) == 0 {
+		return nil
+	}
+
+	// Skip binary content and oversized files to prevent tree-sitter
+	// from allocating runaway ASTs.
+	if isBinaryContent(content) {
+		return nil
+	}
+	if int64(len(content)) > maxEntityExtractionSize {
 		return nil
 	}
 
@@ -562,19 +598,26 @@ func addWorkerCount(total int) int {
 	return workers
 }
 
-// prepareBlobEntry performs Phase 1 work for a single file: read, stat, LFS
+// prepareBlobEntry performs Phase 1 work for a single file: stat, read, LFS
 // check, and blob write. It returns the staging entry (with BlobHash set,
 // EntityListHash empty) and the raw content for Phase 2 entity extraction.
+// Binary files are staged but return nil content to skip entity extraction.
 func (r *Repo) prepareBlobEntry(relPath string, opts AddOptions) (*StagingEntry, []byte, error) {
 	absPath := filepath.Join(r.RootDir, filepath.FromSlash(relPath))
-	content, err := os.ReadFile(absPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read %q: %w", relPath, err)
-	}
 
+	// Stat first to check size before reading into memory.
 	info, err := os.Stat(absPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("stat %q: %w", relPath, err)
+	}
+	if limit := maxAddFileSize(); info.Size() > limit {
+		return nil, nil, fmt.Errorf("file %q too large (%d bytes, limit %d); set GRAFT_MAX_FILE_SIZE_MB to override or add to .graftignore",
+			relPath, info.Size(), limit)
+	}
+
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read %q: %w", relPath, err)
 	}
 
 	// LFS: if file is tracked via .graftattributes filter=lfs,
@@ -597,6 +640,12 @@ func (r *Repo) prepareBlobEntry(relPath string, opts AddOptions) (*StagingEntry,
 		BlobHash: blobHash,
 	}
 	setStagingEntryStat(entry, info, modeFromFileInfo(info))
+
+	// Binary files: write the blob but skip entity extraction.
+	if isBinaryContent(content) {
+		return entry, nil, nil
+	}
+
 	return entry, content, nil
 }
 
