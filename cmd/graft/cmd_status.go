@@ -12,9 +12,10 @@ import (
 
 func newStatusCmd() *cobra.Command {
 	var jsonFlag bool
+	var shortFlag bool
 
 	cmd := &cobra.Command{
-		Use:   "status",
+		Use:   "status [-s|--short] [--json]",
 		Short: "Show working tree status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -43,8 +44,16 @@ func newStatusCmd() *cobra.Command {
 				}
 			}
 
+			if jsonFlag && shortFlag {
+				return fmt.Errorf("--json and --short cannot be used together")
+			}
+
 			if jsonFlag {
 				return statusJSON(cmd, entries, branch, noCommits)
+			}
+
+			if shortFlag {
+				return statusShort(cmd, entries)
 			}
 
 			out := cmd.OutOrStdout()
@@ -145,6 +154,7 @@ func newStatusCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonFlag, "json", false, "output in JSON format")
+	cmd.Flags().BoolVarP(&shortFlag, "short", "s", false, "output in short format")
 
 	return cmd
 }
@@ -206,4 +216,67 @@ func statusJSON(cmd *cobra.Command, entries []repo.StatusEntry, branch string, n
 	}
 
 	return writeJSON(cmd.OutOrStdout(), result)
+}
+
+func statusShort(cmd *cobra.Command, entries []repo.StatusEntry) error {
+	out := cmd.OutOrStdout()
+	for _, entry := range entries {
+		line := shortStatusLine(entry)
+		if line == "" {
+			continue
+		}
+		if _, err := fmt.Fprintln(out, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func shortStatusLine(entry repo.StatusEntry) string {
+	path := filepath.ToSlash(entry.Path)
+	if entry.IndexStatus == repo.StatusConflict || entry.WorkStatus == repo.StatusConflict {
+		return fmt.Sprintf("UU %s", path)
+	}
+	if entry.IndexStatus == repo.StatusUntracked && entry.WorkStatus != repo.StatusRenamed {
+		return fmt.Sprintf("?? %s", path)
+	}
+
+	indexCode := shortIndexStatusCode(entry.IndexStatus)
+	workCode := shortWorkStatusCode(entry.IndexStatus, entry.WorkStatus)
+	if indexCode == ' ' && workCode == ' ' {
+		return ""
+	}
+	if entry.RenamedFrom != "" && (indexCode == 'R' || workCode == 'R') {
+		return fmt.Sprintf("%c%c %s -> %s", indexCode, workCode, filepath.ToSlash(entry.RenamedFrom), path)
+	}
+	return fmt.Sprintf("%c%c %s", indexCode, workCode, path)
+}
+
+func shortIndexStatusCode(status repo.FileStatus) byte {
+	switch status {
+	case repo.StatusNew:
+		return 'A'
+	case repo.StatusModified:
+		return 'M'
+	case repo.StatusRenamed:
+		return 'R'
+	case repo.StatusDeleted:
+		return 'D'
+	default:
+		return ' '
+	}
+}
+
+func shortWorkStatusCode(indexStatus, workStatus repo.FileStatus) byte {
+	switch workStatus {
+	case repo.StatusDirty:
+		return 'M'
+	case repo.StatusRenamed:
+		return 'R'
+	case repo.StatusDeleted:
+		if indexStatus != repo.StatusUntracked {
+			return 'D'
+		}
+	}
+	return ' '
 }
