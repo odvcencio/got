@@ -81,8 +81,11 @@ func (r *Repo) Checkout(target string) error {
 		r.removeEmptyParents(filepath.Dir(absPath))
 	}
 
-	// 5. Write all files from target tree (skip files excluded by sparse checkout).
+	// 5. Write all files from target tree (skip sidecar dirs and sparse-excluded files).
 	for _, f := range targetFiles {
+		if isSidecarPath(f.Path) {
+			continue // sidecar files are restored separately after HEAD update
+		}
 		if sparseEnabled && !r.matchesSparsePatterns(f.Path) {
 			continue
 		}
@@ -116,9 +119,12 @@ func (r *Repo) Checkout(target string) error {
 		}
 	}
 
-	// 6. Update staging to match the new tree (only materialized files).
+	// 6. Update staging to match the new tree (only materialized files, excluding sidecars).
 	stg := &Staging{Entries: make(map[string]*StagingEntry, len(targetFiles))}
 	for _, f := range targetFiles {
+		if isSidecarPath(f.Path) {
+			continue // sidecar files are not tracked in staging
+		}
 		if sparseEnabled && !r.matchesSparsePatterns(f.Path) {
 			continue
 		}
@@ -151,6 +157,9 @@ func (r *Repo) Checkout(target string) error {
 			return fmt.Errorf("checkout: update HEAD: %w", err)
 		}
 	}
+
+	// 8. Restore sidecar directories (.gts/) from the committed tree.
+	r.restoreSidecarsFromTree(commit.TreeHash)
 
 	// Sync modules if the new commit has module configuration.
 	// Module sync failure is non-fatal during checkout — the user can retry

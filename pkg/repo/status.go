@@ -241,6 +241,12 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 	// For each HEAD entry not in staging → deleted from index.
 	for path := range headEntries {
 		if _, inStaging := stg.Entries[path]; !inStaging {
+			// Sidecar directories (.gts/) are injected into the commit
+			// tree but never placed in staging; they are not user-tracked
+			// files and should not appear as deleted.
+			if isSidecarPath(path) {
+				continue
+			}
 			// When sparse checkout is enabled, files excluded from
 			// sparse patterns are intentionally absent from staging;
 			// do not report them as deleted.
