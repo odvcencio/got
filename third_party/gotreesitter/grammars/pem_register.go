@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "pem",
-		Extensions:     []string{".pem"},
-		Language:       PemLanguage,
-		HighlightQuery: pemHighlightQuery,
+		Name:               "pem",
+		Extensions:         []string{".pem"},
+		Language:           PemLanguage,
+		HighlightQuery:     pemHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("pem"),
 	})
 }

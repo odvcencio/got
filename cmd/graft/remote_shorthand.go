@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	defaultOrchardBaseURL    = "https://orchard.dev"
+	defaultOrchardBaseURL   = "https://orchard.dev"
 	defaultGitHubBaseURL    = "https://github.com"
 	defaultGitLabBaseURL    = "https://gitlab.com"
 	defaultBitbucketBaseURL = "https://bitbucket.org"

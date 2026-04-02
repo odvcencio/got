@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "bicep",
-		Extensions:     nil,
-		Language:       BicepLanguage,
-		HighlightQuery: bicepHighlightQuery,
+		Name:               "bicep",
+		Extensions:         nil,
+		Language:           BicepLanguage,
+		HighlightQuery:     bicepHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("bicep"),
 	})
 }

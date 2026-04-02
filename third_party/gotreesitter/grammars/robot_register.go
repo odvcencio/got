@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "robot",
-		Extensions:     []string{".robot"},
-		Language:       RobotLanguage,
-		HighlightQuery: robotHighlightQuery,
+		Name:               "robot",
+		Extensions:         []string{".robot"},
+		Language:           RobotLanguage,
+		HighlightQuery:     robotHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("robot"),
 	})
 }

@@ -99,4 +99,3 @@ func (r *Repo) Shortlog(opts ShortlogOptions) ([]ShortlogEntry, error) {
 
 	return entries, nil
 }
-

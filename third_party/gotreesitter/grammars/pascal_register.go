@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "pascal",
-		Extensions:     []string{".pas", ".pp", ".inc"},
-		Language:       PascalLanguage,
-		HighlightQuery: pascalHighlightQuery,
+		Name:               "pascal",
+		Extensions:         []string{".pas", ".pp", ".inc"},
+		Language:           PascalLanguage,
+		HighlightQuery:     pascalHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("pascal"),
 	})
 }

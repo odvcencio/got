@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "java",
-		Extensions:     []string{".java"},
-		Language:       JavaLanguage,
-		HighlightQuery: javaHighlightQuery,
+		Name:               "java",
+		Extensions:         []string{".java"},
+		Language:           JavaLanguage,
+		HighlightQuery:     javaHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("java"),
 	})
 }

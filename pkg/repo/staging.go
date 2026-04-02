@@ -430,7 +430,6 @@ func (r *Repo) add(paths []string, progress AddProgressFunc, opts AddOptions) er
 	return nil
 }
 
-
 // extractAndStoreEntities performs entity extraction for a single blob result,
 // guarded by the source-bytes semaphore. It updates br.entry.EntityListHash
 // in place and calls the AddHook if set.

@@ -9,88 +9,88 @@ import (
 
 // External token indexes for the Perl grammar.
 const (
-	plTokApostrophe          = 0  // start_delimiter  '
-	plTokDoubleQuote         = 1  // end_delimiter    "
-	plTokBacktick            = 2  // start_delimiter2  `
-	plTokSearchSlash         = 3  // end_delimiter2    /
-	plTokNoSearchSlashPlz    = 4  // _no_search_slash_plz
-	plTokOpenReadlineBracket = 5  // <  (heredoc-like)
-	plTokOpenFileglobBracket = 6  // <  (heredoc-like2)
-	plTokPerlySemicolon      = 7  // _PERLY_SEMICOLON
-	plTokPerlyHeredoc        = 8  // _PERLY_HEREDOC
-	plTokCtrlZ               = 9  // eof_marker
-	plTokQuotelikeBegin      = 10 // start_delimiter3  '
+	plTokApostrophe           = 0  // start_delimiter  '
+	plTokDoubleQuote          = 1  // end_delimiter    "
+	plTokBacktick             = 2  // start_delimiter2  `
+	plTokSearchSlash          = 3  // end_delimiter2    /
+	plTokNoSearchSlashPlz     = 4  // _no_search_slash_plz
+	plTokOpenReadlineBracket  = 5  // <  (heredoc-like)
+	plTokOpenFileglobBracket  = 6  // <  (heredoc-like2)
+	plTokPerlySemicolon       = 7  // _PERLY_SEMICOLON
+	plTokPerlyHeredoc         = 8  // _PERLY_HEREDOC
+	plTokCtrlZ                = 9  // eof_marker
+	plTokQuotelikeBegin       = 10 // start_delimiter3  '
 	plTokQuotelikeMiddleClose = 11 // end_delimiter3    '
-	plTokQuotelikeMiddleSkip = 12 // _quotelike_middle_skip
-	plTokQuotelikeEndZW      = 13 // _quotelike_end_zw
-	plTokQuotelikeEnd        = 14 // start_delimiter4  '
-	plTokQStringContent      = 15 // _q_string_content
-	plTokQQStringContent     = 16 // _qq_string_content
-	plTokEscapeSequence      = 17 // escape_sequence
-	plTokEscapedDelimiter    = 18 // escaped_delimiter
-	plTokDollarInRegexp      = 19 // _dollar_in_regexp
-	plTokPod                 = 20 // pod
-	plTokGobbledContent      = 21 // _gobbled_content
-	plTokAttributeValueBegin = 22 // _attribute_value_begin
-	plTokAttributeValue      = 23 // attribute_value
-	plTokPrototype           = 24 // prototype
-	plTokSignatureStart      = 25 // (
-	plTokHeredocDelim        = 26 // _heredoc_delimiter
-	plTokCommandHeredocDelim = 27 // _command_heredoc_delimiter
-	plTokHeredocStart        = 28 // _heredoc_start
-	plTokHeredocMiddle       = 29 // _heredoc_middle
-	plTokHeredocEnd          = 30 // heredoc_end
-	plTokFatCommaAutoquoted  = 31 // _fat_comma_autoquoted
-	plTokFiletest            = 32 // -x
-	plTokBraceAutoquoted     = 33 // varname
-	plTokBraceEndZW          = 34 // _brace_end_zw
-	plTokDollarIdentZW       = 35 // _dollar_ident_zw
+	plTokQuotelikeMiddleSkip  = 12 // _quotelike_middle_skip
+	plTokQuotelikeEndZW       = 13 // _quotelike_end_zw
+	plTokQuotelikeEnd         = 14 // start_delimiter4  '
+	plTokQStringContent       = 15 // _q_string_content
+	plTokQQStringContent      = 16 // _qq_string_content
+	plTokEscapeSequence       = 17 // escape_sequence
+	plTokEscapedDelimiter     = 18 // escaped_delimiter
+	plTokDollarInRegexp       = 19 // _dollar_in_regexp
+	plTokPod                  = 20 // pod
+	plTokGobbledContent       = 21 // _gobbled_content
+	plTokAttributeValueBegin  = 22 // _attribute_value_begin
+	plTokAttributeValue       = 23 // attribute_value
+	plTokPrototype            = 24 // prototype
+	plTokSignatureStart       = 25 // (
+	plTokHeredocDelim         = 26 // _heredoc_delimiter
+	plTokCommandHeredocDelim  = 27 // _command_heredoc_delimiter
+	plTokHeredocStart         = 28 // _heredoc_start
+	plTokHeredocMiddle        = 29 // _heredoc_middle
+	plTokHeredocEnd           = 30 // heredoc_end
+	plTokFatCommaAutoquoted   = 31 // _fat_comma_autoquoted
+	plTokFiletest             = 32 // -x
+	plTokBraceAutoquoted      = 33 // varname
+	plTokBraceEndZW           = 34 // _brace_end_zw
+	plTokDollarIdentZW        = 35 // _dollar_ident_zw
 	plTokNoInterpWhitespaceZW = 36 // _no_interp_whitespace_zw
-	plTokNonassoc            = 37 // _NONASSOC
-	plTokError               = 38 // _ERROR
+	plTokNonassoc             = 37 // _NONASSOC
+	plTokError                = 38 // _ERROR
 )
 
 // Symbol constants for the Perl grammar.
 const (
-	plSymApostrophe          gotreesitter.Symbol = 252
-	plSymDoubleQuote         gotreesitter.Symbol = 253
-	plSymBacktick            gotreesitter.Symbol = 254
-	plSymSearchSlash         gotreesitter.Symbol = 255
-	plSymNoSearchSlashPlz    gotreesitter.Symbol = 256
-	plSymOpenReadlineBracket gotreesitter.Symbol = 257
-	plSymOpenFileglobBracket gotreesitter.Symbol = 258
-	plSymPerlySemicolon      gotreesitter.Symbol = 259
-	plSymPerlyHeredoc        gotreesitter.Symbol = 260
-	plSymCtrlZ               gotreesitter.Symbol = 261
-	plSymQuotelikeBegin      gotreesitter.Symbol = 262
+	plSymApostrophe           gotreesitter.Symbol = 252
+	plSymDoubleQuote          gotreesitter.Symbol = 253
+	plSymBacktick             gotreesitter.Symbol = 254
+	plSymSearchSlash          gotreesitter.Symbol = 255
+	plSymNoSearchSlashPlz     gotreesitter.Symbol = 256
+	plSymOpenReadlineBracket  gotreesitter.Symbol = 257
+	plSymOpenFileglobBracket  gotreesitter.Symbol = 258
+	plSymPerlySemicolon       gotreesitter.Symbol = 259
+	plSymPerlyHeredoc         gotreesitter.Symbol = 260
+	plSymCtrlZ                gotreesitter.Symbol = 261
+	plSymQuotelikeBegin       gotreesitter.Symbol = 262
 	plSymQuotelikeMiddleClose gotreesitter.Symbol = 263
-	plSymQuotelikeMiddleSkip gotreesitter.Symbol = 264
-	plSymQuotelikeEndZW      gotreesitter.Symbol = 265
-	plSymQuotelikeEnd        gotreesitter.Symbol = 266
-	plSymQStringContent      gotreesitter.Symbol = 267
-	plSymQQStringContent     gotreesitter.Symbol = 268
-	plSymEscapeSequence      gotreesitter.Symbol = 269
-	plSymEscapedDelimiter    gotreesitter.Symbol = 270
-	plSymDollarInRegexp      gotreesitter.Symbol = 271
-	plSymPod                 gotreesitter.Symbol = 272
-	plSymGobbledContent      gotreesitter.Symbol = 273
-	plSymAttributeValueBegin gotreesitter.Symbol = 274
-	plSymAttributeValue      gotreesitter.Symbol = 275
-	plSymPrototype           gotreesitter.Symbol = 276
-	plSymSignatureStart      gotreesitter.Symbol = 277
-	plSymHeredocDelim        gotreesitter.Symbol = 278
-	plSymCommandHeredocDelim gotreesitter.Symbol = 279
-	plSymHeredocStart        gotreesitter.Symbol = 280
-	plSymHeredocMiddle       gotreesitter.Symbol = 281
-	plSymHeredocEnd          gotreesitter.Symbol = 282
-	plSymFatCommaAutoquoted  gotreesitter.Symbol = 283
-	plSymFiletest            gotreesitter.Symbol = 284
-	plSymBraceAutoquoted     gotreesitter.Symbol = 285
-	plSymBraceEndZW          gotreesitter.Symbol = 286
-	plSymDollarIdentZW       gotreesitter.Symbol = 287
+	plSymQuotelikeMiddleSkip  gotreesitter.Symbol = 264
+	plSymQuotelikeEndZW       gotreesitter.Symbol = 265
+	plSymQuotelikeEnd         gotreesitter.Symbol = 266
+	plSymQStringContent       gotreesitter.Symbol = 267
+	plSymQQStringContent      gotreesitter.Symbol = 268
+	plSymEscapeSequence       gotreesitter.Symbol = 269
+	plSymEscapedDelimiter     gotreesitter.Symbol = 270
+	plSymDollarInRegexp       gotreesitter.Symbol = 271
+	plSymPod                  gotreesitter.Symbol = 272
+	plSymGobbledContent       gotreesitter.Symbol = 273
+	plSymAttributeValueBegin  gotreesitter.Symbol = 274
+	plSymAttributeValue       gotreesitter.Symbol = 275
+	plSymPrototype            gotreesitter.Symbol = 276
+	plSymSignatureStart       gotreesitter.Symbol = 277
+	plSymHeredocDelim         gotreesitter.Symbol = 278
+	plSymCommandHeredocDelim  gotreesitter.Symbol = 279
+	plSymHeredocStart         gotreesitter.Symbol = 280
+	plSymHeredocMiddle        gotreesitter.Symbol = 281
+	plSymHeredocEnd           gotreesitter.Symbol = 282
+	plSymFatCommaAutoquoted   gotreesitter.Symbol = 283
+	plSymFiletest             gotreesitter.Symbol = 284
+	plSymBraceAutoquoted      gotreesitter.Symbol = 285
+	plSymBraceEndZW           gotreesitter.Symbol = 286
+	plSymDollarIdentZW        gotreesitter.Symbol = 287
 	plSymNoInterpWhitespaceZW gotreesitter.Symbol = 288
-	plSymNonassoc            gotreesitter.Symbol = 289
-	plSymError               gotreesitter.Symbol = 290
+	plSymNonassoc             gotreesitter.Symbol = 289
+	plSymError                gotreesitter.Symbol = 290
 )
 
 // Token index to symbol mapping.
@@ -183,7 +183,7 @@ type plQuote struct {
 type plHeredocState int
 
 const (
-	plHeredocNone     plHeredocState = iota
+	plHeredocNone plHeredocState = iota
 	plHeredocStart
 	plHeredocUnknown
 	plHeredocContinue

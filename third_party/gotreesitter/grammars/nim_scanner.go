@@ -173,15 +173,15 @@ func (ctx *nimContext) indent() uint8 {
 // ---------------------------------------------------------------------------
 // Character classification helpers
 // ---------------------------------------------------------------------------
-func nimIsDigit(ch rune) bool  { return ch >= '0' && ch <= '9' }
-func nimIsLower(ch rune) bool  { return ch >= 'a' && ch <= 'z' }
-func nimIsUpper(ch rune) bool  { return ch >= 'A' && ch <= 'Z' }
-func nimIsKeyword(ch rune) bool { return nimIsLower(ch) || nimIsUpper(ch) || ch == '_' }
+func nimIsDigit(ch rune) bool      { return ch >= '0' && ch <= '9' }
+func nimIsLower(ch rune) bool      { return ch >= 'a' && ch <= 'z' }
+func nimIsUpper(ch rune) bool      { return ch >= 'A' && ch <= 'Z' }
+func nimIsKeyword(ch rune) bool    { return nimIsLower(ch) || nimIsUpper(ch) || ch == '_' }
 func nimIsIdentifier(ch rune) bool { return nimIsKeyword(ch) || nimIsDigit(ch) }
 
 func nimToUpper(ch rune) rune {
 	if nimIsLower(ch) {
-		return ch & ^rune(1 << 5)
+		return ch & ^rune(1<<5)
 	}
 	return ch
 }
@@ -191,13 +191,13 @@ func nimChrCaseEq(a, b rune) bool {
 }
 
 var nimOperatorChars = []rune{
-	'$', '^',             // OP10
+	'$', '^', // OP10
 	'*', '%', '\\', '/', // OP9
-	'+', '-', '~', '|',  // OP8
-	'&',                  // OP7
-	'.',                  // OP6
-	'=', '<', '>', '!',  // OP5
-	':', '?', '@',        // OP2
+	'+', '-', '~', '|', // OP8
+	'&',                // OP7
+	'.',                // OP6
+	'=', '<', '>', '!', // OP5
+	':', '?', '@', // OP2
 }
 
 var nimUnicodeOperatorChars = []rune{
@@ -610,7 +610,7 @@ func nimLexInlineLayout(ctx *nimContext) bool {
 // ---------------------------------------------------------------------------
 
 const (
-	nimOSRegular    = iota
+	nimOSRegular = iota
 	nimOSColon
 	nimOSColonColon
 	nimOSDot

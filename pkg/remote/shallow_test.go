@@ -196,7 +196,7 @@ func TestObjectFilter_Parse(t *testing.T) {
 		wantErr   bool
 	}{
 		{
-			spec:    "blob:none",
+			spec:     "blob:none",
 			wantType: "blob:none",
 			wantStr:  "blob:none",
 		},

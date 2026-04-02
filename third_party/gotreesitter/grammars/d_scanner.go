@@ -8,13 +8,13 @@ import (
 
 // External token indexes for the D grammar (must match grammar.js externals).
 const (
-	dTokDirective    = 0
-	dTokIntLiteral   = 1
-	dTokFloatLiteral = 2
-	dTokString       = 3
-	dTokNotIn        = 4
-	dTokNotIs        = 5
-	dTokAfterEof     = 6
+	dTokDirective     = 0
+	dTokIntLiteral    = 1
+	dTokFloatLiteral  = 2
+	dTokString        = 3
+	dTokNotIn         = 4
+	dTokNotIs         = 5
+	dTokAfterEof      = 6
 	dTokErrorSentinel = 7
 )
 

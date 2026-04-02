@@ -250,9 +250,9 @@ func TestTreeBuild_CommitRoundTrip(t *testing.T) {
 
 	// Create nested files, commit, then verify the tree from the commit.
 	files := map[string][]byte{
-		"src/main.go":  []byte("package main\n\nfunc main() {}\n"),
-		"src/util.go":  []byte("package main\n\nfunc util() {}\n"),
-		"README.md":    []byte("# readme"),
+		"src/main.go":   []byte("package main\n\nfunc main() {}\n"),
+		"src/util.go":   []byte("package main\n\nfunc util() {}\n"),
+		"README.md":     []byte("# readme"),
 		"lib/helper.go": []byte("package lib\n\nfunc Helper() {}\n"),
 	}
 	for name, data := range files {

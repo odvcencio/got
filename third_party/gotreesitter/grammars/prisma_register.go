@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "prisma",
-		Extensions:     []string{".prisma"},
-		Language:       PrismaLanguage,
-		HighlightQuery: prismaHighlightQuery,
+		Name:               "prisma",
+		Extensions:         []string{".prisma"},
+		Language:           PrismaLanguage,
+		HighlightQuery:     prismaHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("prisma"),
 	})
 }

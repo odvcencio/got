@@ -4,7 +4,7 @@ import gotreesitter "github.com/odvcencio/gotreesitter"
 
 // External token indexes for the gleam grammar.
 const (
-	gleamTokQuotedContent    = 0 // "quoted_content" — string literal interior
+	gleamTokQuotedContent     = 0 // "quoted_content" — string literal interior
 	gleamTokDocCommentContent = 1 // "doc_comment_content" — doc comment line
 )
 

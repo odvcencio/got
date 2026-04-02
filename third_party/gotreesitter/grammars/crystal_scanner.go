@@ -18,61 +18,61 @@ import (
 // and are therefore omitted.
 // ---------------------------------------------------------------------------
 const (
-	cryTokLineBreak          = iota // 0
-	cryTokLineContinuation          // 1
-	cryTokStartOfBraceBlock         // 2
-	cryTokStartOfHashOrTuple        // 3
-	cryTokStartOfNamedTuple         // 4
-	cryTokStartOfTupleType          // 5
-	cryTokStartOfNamedTupleType     // 6
-	cryTokStartOfIndexOperator      // 7
-	cryTokEndOfWithExpression       // 8
-	cryTokUnaryPlus                 // 9
-	cryTokUnaryMinus                // 10
-	cryTokBinaryPlus                // 11
-	cryTokBinaryMinus               // 12
-	cryTokUnaryWrappingPlus         // 13
-	cryTokUnaryWrappingMinus        // 14
-	cryTokBinaryWrappingPlus        // 15
-	cryTokBinaryWrappingMinus       // 16
-	cryTokPointerStar               // 17
-	cryTokUnaryStar                 // 18
+	cryTokLineBreak             = iota // 0
+	cryTokLineContinuation             // 1
+	cryTokStartOfBraceBlock            // 2
+	cryTokStartOfHashOrTuple           // 3
+	cryTokStartOfNamedTuple            // 4
+	cryTokStartOfTupleType             // 5
+	cryTokStartOfNamedTupleType        // 6
+	cryTokStartOfIndexOperator         // 7
+	cryTokEndOfWithExpression          // 8
+	cryTokUnaryPlus                    // 9
+	cryTokUnaryMinus                   // 10
+	cryTokBinaryPlus                   // 11
+	cryTokBinaryMinus                  // 12
+	cryTokUnaryWrappingPlus            // 13
+	cryTokUnaryWrappingMinus           // 14
+	cryTokBinaryWrappingPlus           // 15
+	cryTokBinaryWrappingMinus          // 16
+	cryTokPointerStar                  // 17
+	cryTokUnaryStar                    // 18
 	// NOTE: BINARY_STAR is not in the binary grammar (merged/removed)
-	cryTokUnaryDoubleStar   // 19
-	cryTokBinaryDoubleStar  // 20
-	cryTokBlockAmpersand    // 21
-	cryTokBinaryAmpersand   // 22
+	cryTokUnaryDoubleStar        // 19
+	cryTokBinaryDoubleStar       // 20
+	cryTokBlockAmpersand         // 21
+	cryTokBinaryAmpersand        // 22
 	cryTokBeginlessRangeOperator // 23
-	cryTokRegexStart        // 24
-	cryTokBinarySlash       // 25
-	cryTokBinaryDoubleSlash // 26
-	cryTokRegularIfKeyword  // 27
-	cryTokModifierIfKeyword // 28
-	cryTokRegularUnlessKeyword  // 29
-	cryTokModifierUnlessKeyword // 30
-	cryTokRegularRescueKeyword  // 31
-	cryTokModifierRescueKeyword // 32
-	cryTokRegularEnsureKeyword  // 33
-	cryTokModifierEnsureKeyword // 34
-	cryTokModuloOperator        // 35
+	cryTokRegexStart             // 24
+	cryTokBinarySlash            // 25
+	cryTokBinaryDoubleSlash      // 26
+	cryTokRegularIfKeyword       // 27
+	cryTokModifierIfKeyword      // 28
+	cryTokRegularUnlessKeyword   // 29
+	cryTokModifierUnlessKeyword  // 30
+	cryTokRegularRescueKeyword   // 31
+	cryTokModifierRescueKeyword  // 32
+	cryTokRegularEnsureKeyword   // 33
+	cryTokModifierEnsureKeyword  // 34
+	cryTokModuloOperator         // 35
 	// NOTE: START_OF_SYMBOL, UNQUOTED_SYMBOL_CONTENT, TYPE_FIELD_COLON not in binary
-	cryTokStringLiteralStart            // 36
-	cryTokDelimitedStringContents       // 37
-	cryTokStringLiteralEnd              // 38
+	cryTokStringLiteralStart      // 36
+	cryTokDelimitedStringContents // 37
+	cryTokStringLiteralEnd        // 38
 	// NOTE: COMMAND_LITERAL_START, COMMAND_LITERAL_END not in binary
-	cryTokStringPercentLiteralStart     // 39
-	cryTokCommandPercentLiteralStart    // 40
+	cryTokStringPercentLiteralStart      // 39
+	cryTokCommandPercentLiteralStart     // 40
 	cryTokStringArrayPercentLiteralStart // 41
 	cryTokSymbolArrayPercentLiteralStart // 42
-	cryTokRegexPercentLiteralStart      // 43
-	cryTokPercentLiteralEnd             // 44
-	cryTokDelimitedArrayElementStart    // 45
-	cryTokDelimitedArrayElementEnd      // 46
-	cryTokHeredocStart                  // 47
-	cryTokHeredocBodyStart              // 48
-	cryTokHeredocContent                // 49
-	cryTokHeredocEnd                    // 50
-	cryTokRegexModifier                 // 51
+	cryTokRegexPercentLiteralStart       // 43
+	cryTokPercentLiteralEnd              // 44
+	cryTokDelimitedArrayElementStart     // 45
+	cryTokDelimitedArrayElementEnd       // 46
+	cryTokHeredocStart                   // 47
+	cryTokHeredocBodyStart               // 48
+	cryTokHeredocContent                 // 49
+	cryTokHeredocEnd                     // 50
+	cryTokRegexModifier                  // 51
 	// NOTE: MACRO_* tokens not in binary
 	cryTokStartOfParenlessArgs // 52
 	cryTokEndOfRange           // 53
@@ -204,12 +204,12 @@ var crySymTable = [cryTokNone + 1]gotreesitter.Symbol{
 // Literal types (for percent / string / heredoc literals)
 // ---------------------------------------------------------------------------
 const (
-	cryLitString        = 0
-	cryLitStringNoEsc   = 1
-	cryLitCommand       = 2
-	cryLitStringArray   = 3
-	cryLitSymbolArray   = 4
-	cryLitRegex         = 5
+	cryLitString      = 0
+	cryLitStringNoEsc = 1
+	cryLitCommand     = 2
+	cryLitStringArray = 3
+	cryLitSymbolArray = 4
+	cryLitRegex       = 5
 )
 
 // ---------------------------------------------------------------------------
@@ -235,8 +235,8 @@ type cryHeredoc struct {
 }
 
 type cryScannerState struct {
-	hasLeadingWhitespace     bool
-	previousLineContinued    bool
+	hasLeadingWhitespace  bool
+	previousLineContinued bool
 
 	// Nested delimited literals (percent strings, strings, etc.)
 	literals []cryPercentLiteral
@@ -249,8 +249,8 @@ type cryScannerState struct {
 // Scan result type (mirrors C ScanResult enum)
 // ---------------------------------------------------------------------------
 const (
-	crySRContinue     = 0
-	crySRStop         = 1
+	crySRContinue      = 0
+	crySRStop          = 1
 	crySRStopNoContent = 2
 )
 

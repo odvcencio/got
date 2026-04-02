@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "nim",
-		Extensions:     []string{".nim", ".nims"},
-		Language:       NimLanguage,
-		HighlightQuery: nimHighlightQuery,
+		Name:               "nim",
+		Extensions:         []string{".nim", ".nims"},
+		Language:           NimLanguage,
+		HighlightQuery:     nimHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("nim"),
 	})
 }

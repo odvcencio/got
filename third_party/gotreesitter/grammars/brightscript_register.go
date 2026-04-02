@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "brightscript",
-		Extensions:     nil,
-		Language:       BrightscriptLanguage,
-		HighlightQuery: brightscriptHighlightQuery,
+		Name:               "brightscript",
+		Extensions:         nil,
+		Language:           BrightscriptLanguage,
+		HighlightQuery:     brightscriptHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("brightscript"),
 	})
 }

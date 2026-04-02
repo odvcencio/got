@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "solidity",
-		Extensions:     []string{".sol"},
-		Language:       SolidityLanguage,
-		HighlightQuery: solidityHighlightQuery,
+		Name:               "solidity",
+		Extensions:         []string{".sol"},
+		Language:           SolidityLanguage,
+		HighlightQuery:     solidityHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("solidity"),
 	})
 }

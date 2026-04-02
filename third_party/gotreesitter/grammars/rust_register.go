@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "rust",
-		Extensions:     []string{".rs"},
-		Language:       RustLanguage,
-		HighlightQuery: rustHighlightQuery,
+		Name:               "rust",
+		Extensions:         []string{".rs"},
+		Language:           RustLanguage,
+		HighlightQuery:     rustHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("rust"),
 	})
 }

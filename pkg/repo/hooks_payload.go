@@ -55,20 +55,20 @@ type PostCommitPayload struct {
 
 // PrePushPayload is the JSON payload sent to pre-push hooks.
 type PrePushPayload struct {
-	Hook       string      `json:"hook"`
-	Repo       string      `json:"repo"`
-	Remote     string      `json:"remote"`
-	RemoteURL  string      `json:"remote_url"`
+	Hook       string          `json:"hook"`
+	Repo       string          `json:"repo"`
+	Remote     string          `json:"remote"`
+	RemoteURL  string          `json:"remote_url"`
 	Refs       []HookRefUpdate `json:"refs,omitempty"`
 	Commits    []string        `json:"commits,omitempty"`
-	EntityDiff *EntityDiff `json:"entity_diff,omitempty"`
+	EntityDiff *EntityDiff     `json:"entity_diff,omitempty"`
 }
 
 // PostPushPayload is the JSON payload sent to post-push hooks.
 type PostPushPayload struct {
-	Hook          string      `json:"hook"`
-	Remote        string      `json:"remote"`
-	RemoteURL     string      `json:"remote_url"`
+	Hook          string          `json:"hook"`
+	Remote        string          `json:"remote"`
+	RemoteURL     string          `json:"remote_url"`
 	Refs          []HookRefUpdate `json:"refs,omitempty"`
 	ObjectsPushed int             `json:"objects_pushed"`
 }

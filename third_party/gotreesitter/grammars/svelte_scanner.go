@@ -8,42 +8,42 @@ import (
 
 // External token indexes for the Svelte grammar.
 const (
-	svelteTokStartTagName              = 0  // tag_name (start)
-	svelteTokScriptStartTagName        = 1  // tag_name (script)
-	svelteTokStyleStartTagName         = 2  // tag_name (style)
-	svelteTokEndTagName                = 3  // tag_name (end)
-	svelteTokErroneousEndTagName       = 4  // erroneous_end_tag_name
-	svelteTokSelfClosingTagDelim       = 5  // />
-	svelteTokImplicitEndTag            = 6  // _implicit_end_tag
-	svelteTokRawText                   = 7  // raw_text
-	svelteTokComment                   = 8  // comment
-	svelteTokSvelteRawText             = 9  // svelte_raw_text (first variant)
-	svelteTokSvelteRawTextEach         = 10 // svelte_raw_text (each variant)
-	svelteTokSvelteRawTextSnippetArgs  = 11 // svelte_raw_text (snippet arguments)
-	svelteTokAt                        = 12 // @
-	svelteTokHash                      = 13 // #
-	svelteTokSlash                     = 14 // /
-	svelteTokColon                     = 15 // :
+	svelteTokStartTagName             = 0  // tag_name (start)
+	svelteTokScriptStartTagName       = 1  // tag_name (script)
+	svelteTokStyleStartTagName        = 2  // tag_name (style)
+	svelteTokEndTagName               = 3  // tag_name (end)
+	svelteTokErroneousEndTagName      = 4  // erroneous_end_tag_name
+	svelteTokSelfClosingTagDelim      = 5  // />
+	svelteTokImplicitEndTag           = 6  // _implicit_end_tag
+	svelteTokRawText                  = 7  // raw_text
+	svelteTokComment                  = 8  // comment
+	svelteTokSvelteRawText            = 9  // svelte_raw_text (first variant)
+	svelteTokSvelteRawTextEach        = 10 // svelte_raw_text (each variant)
+	svelteTokSvelteRawTextSnippetArgs = 11 // svelte_raw_text (snippet arguments)
+	svelteTokAt                       = 12 // @
+	svelteTokHash                     = 13 // #
+	svelteTokSlash                    = 14 // /
+	svelteTokColon                    = 15 // :
 )
 
 // Symbol IDs matching the grammar's node-type table.
 const (
-	svelteSymStartTagName              gotreesitter.Symbol = 41
-	svelteSymScriptStartTagName        gotreesitter.Symbol = 42
-	svelteSymStyleStartTagName         gotreesitter.Symbol = 43
-	svelteSymEndTagName                gotreesitter.Symbol = 44
-	svelteSymErroneousEndTagName       gotreesitter.Symbol = 45
-	svelteSymSelfClosingTagDelim       gotreesitter.Symbol = 6
-	svelteSymImplicitEndTag            gotreesitter.Symbol = 46
-	svelteSymRawText                   gotreesitter.Symbol = 47
-	svelteSymComment                   gotreesitter.Symbol = 48
-	svelteSymSvelteRawText             gotreesitter.Symbol = 49
-	svelteSymSvelteRawTextEach         gotreesitter.Symbol = 50
-	svelteSymSvelteRawTextSnippetArgs  gotreesitter.Symbol = 51
-	svelteSymAt                        gotreesitter.Symbol = 36
-	svelteSymHash                      gotreesitter.Symbol = 17
-	svelteSymSlash                     gotreesitter.Symbol = 24
-	svelteSymColon                     gotreesitter.Symbol = 21
+	svelteSymStartTagName             gotreesitter.Symbol = 41
+	svelteSymScriptStartTagName       gotreesitter.Symbol = 42
+	svelteSymStyleStartTagName        gotreesitter.Symbol = 43
+	svelteSymEndTagName               gotreesitter.Symbol = 44
+	svelteSymErroneousEndTagName      gotreesitter.Symbol = 45
+	svelteSymSelfClosingTagDelim      gotreesitter.Symbol = 6
+	svelteSymImplicitEndTag           gotreesitter.Symbol = 46
+	svelteSymRawText                  gotreesitter.Symbol = 47
+	svelteSymComment                  gotreesitter.Symbol = 48
+	svelteSymSvelteRawText            gotreesitter.Symbol = 49
+	svelteSymSvelteRawTextEach        gotreesitter.Symbol = 50
+	svelteSymSvelteRawTextSnippetArgs gotreesitter.Symbol = 51
+	svelteSymAt                       gotreesitter.Symbol = 36
+	svelteSymHash                     gotreesitter.Symbol = 17
+	svelteSymSlash                    gotreesitter.Symbol = 24
+	svelteSymColon                    gotreesitter.Symbol = 21
 )
 
 type svelteState struct {
@@ -55,8 +55,8 @@ type svelteState struct {
 // and special sigil characters (@, #, /, :).
 type SvelteExternalScanner struct{}
 
-func (SvelteExternalScanner) Create() any  { return &svelteState{} }
-func (SvelteExternalScanner) Destroy(any)  {}
+func (SvelteExternalScanner) Create() any { return &svelteState{} }
+func (SvelteExternalScanner) Destroy(any) {}
 
 func (SvelteExternalScanner) Serialize(payload any, buf []byte) int {
 	s := payload.(*svelteState)

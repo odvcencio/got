@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "enforce",
-		Extensions:     nil,
-		Language:       EnforceLanguage,
-		HighlightQuery: enforceHighlightQuery,
+		Name:               "enforce",
+		Extensions:         nil,
+		Language:           EnforceLanguage,
+		HighlightQuery:     enforceHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("enforce"),
 	})
 }

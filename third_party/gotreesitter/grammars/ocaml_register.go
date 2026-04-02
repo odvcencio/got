@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "ocaml",
-		Extensions:     []string{".ml", ".mli"},
-		Language:       OcamlLanguage,
-		HighlightQuery: ocamlHighlightQuery,
+		Name:               "ocaml",
+		Extensions:         []string{".ml", ".mli"},
+		Language:           OcamlLanguage,
+		HighlightQuery:     ocamlHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("ocaml"),
 	})
 }

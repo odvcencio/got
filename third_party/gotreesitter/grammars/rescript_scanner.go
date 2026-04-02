@@ -8,34 +8,34 @@ import (
 
 // External token indexes for the rescript grammar.
 const (
-	rescriptTokNewline          = 0  // _newline
-	rescriptTokComment          = 1  // comment (line comment)
+	rescriptTokNewline           = 0  // _newline
+	rescriptTokComment           = 1  // comment (line comment)
 	rescriptTokNewlineAndComment = 2  // comment (block comment / newline+comment)
-	rescriptTokQuote            = 3  // "
-	rescriptTokBacktick         = 4  // `
-	rescriptTokTemplateChars    = 5  // _template_chars
-	rescriptTokLParen           = 6  // _lparen
-	rescriptTokRParen           = 7  // _rparen
-	rescriptTokListConstructor  = 8  // _list_constructor
-	rescriptTokDictConstructor  = 9  // dict
-	rescriptTokDecorator        = 10 // decorator_identifier (with parens)
-	rescriptTokDecoratorInline  = 11 // decorator_identifier (inline)
+	rescriptTokQuote             = 3  // "
+	rescriptTokBacktick          = 4  // `
+	rescriptTokTemplateChars     = 5  // _template_chars
+	rescriptTokLParen            = 6  // _lparen
+	rescriptTokRParen            = 7  // _rparen
+	rescriptTokListConstructor   = 8  // _list_constructor
+	rescriptTokDictConstructor   = 9  // dict
+	rescriptTokDecorator         = 10 // decorator_identifier (with parens)
+	rescriptTokDecoratorInline   = 11 // decorator_identifier (inline)
 )
 
 // Concrete symbol IDs from the generated rescript grammar ExternalSymbols.
 const (
-	rescriptSymNewline          gotreesitter.Symbol = 105
-	rescriptSymComment          gotreesitter.Symbol = 106
+	rescriptSymNewline           gotreesitter.Symbol = 105
+	rescriptSymComment           gotreesitter.Symbol = 106
 	rescriptSymNewlineAndComment gotreesitter.Symbol = 107
-	rescriptSymQuote            gotreesitter.Symbol = 94
-	rescriptSymBacktick         gotreesitter.Symbol = 98
-	rescriptSymTemplateChars    gotreesitter.Symbol = 108
-	rescriptSymLParen           gotreesitter.Symbol = 109
-	rescriptSymRParen           gotreesitter.Symbol = 110
-	rescriptSymListConstructor  gotreesitter.Symbol = 111
-	rescriptSymDictConstructor  gotreesitter.Symbol = 112
-	rescriptSymDecorator        gotreesitter.Symbol = 113
-	rescriptSymDecoratorInline  gotreesitter.Symbol = 114
+	rescriptSymQuote             gotreesitter.Symbol = 94
+	rescriptSymBacktick          gotreesitter.Symbol = 98
+	rescriptSymTemplateChars     gotreesitter.Symbol = 108
+	rescriptSymLParen            gotreesitter.Symbol = 109
+	rescriptSymRParen            gotreesitter.Symbol = 110
+	rescriptSymListConstructor   gotreesitter.Symbol = 111
+	rescriptSymDictConstructor   gotreesitter.Symbol = 112
+	rescriptSymDecorator         gotreesitter.Symbol = 113
+	rescriptSymDecoratorInline   gotreesitter.Symbol = 114
 )
 
 // rescriptState holds the mutable scanner state that persists across calls

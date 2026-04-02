@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "gitcommit",
-		Extensions:     nil,
-		Language:       GitcommitLanguage,
-		HighlightQuery: gitcommitHighlightQuery,
+		Name:               "gitcommit",
+		Extensions:         nil,
+		Language:           GitcommitLanguage,
+		HighlightQuery:     gitcommitHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("gitcommit"),
 	})
 }

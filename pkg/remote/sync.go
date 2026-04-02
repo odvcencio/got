@@ -43,10 +43,10 @@ type FetchConfig struct {
 	MaxBatchObjects           int
 	MaxBatchHaveHashes        int
 	MaxBatchNegotiationRounds int
-	Depth                     int            // shallow clone depth (0 = full)
-	Deepen                    int            // deepen an existing shallow clone by N commits
-	Filter                    string         // partial clone filter (e.g., "blob:none")
-	ShallowState              *ShallowState  // existing shallow boundaries (read from .graft/shallow)
+	Depth                     int           // shallow clone depth (0 = full)
+	Deepen                    int           // deepen an existing shallow clone by N commits
+	Filter                    string        // partial clone filter (e.g., "blob:none")
+	ShallowState              *ShallowState // existing shallow boundaries (read from .graft/shallow)
 }
 
 // DefaultFetchConfig returns the default FetchIntoStore settings.

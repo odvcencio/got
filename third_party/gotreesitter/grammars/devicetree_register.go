@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "devicetree",
-		Extensions:     nil,
-		Language:       DevicetreeLanguage,
-		HighlightQuery: devicetreeHighlightQuery,
+		Name:               "devicetree",
+		Extensions:         nil,
+		Language:           DevicetreeLanguage,
+		HighlightQuery:     devicetreeHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("devicetree"),
 	})
 }

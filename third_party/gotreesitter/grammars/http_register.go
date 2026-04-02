@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "http",
-		Extensions:     []string{".http"},
-		Language:       HttpLanguage,
-		HighlightQuery: httpHighlightQuery,
+		Name:               "http",
+		Extensions:         []string{".http"},
+		Language:           HttpLanguage,
+		HighlightQuery:     httpHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("http"),
 	})
 }

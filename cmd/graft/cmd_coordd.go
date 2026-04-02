@@ -1142,10 +1142,10 @@ func newCoorddGuardOverrideClearCmd() *cobra.Command {
 }
 
 type coorddRuleOverrideView struct {
-	Policy     string `json:"policy"`
-	BundleID   string `json:"bundle_id"`
-	Rule       string `json:"rule"`
-	KillSwitch *bool  `json:"kill_switch,omitempty"`
+	Policy     string  `json:"policy"`
+	BundleID   string  `json:"bundle_id"`
+	Rule       string  `json:"rule"`
+	KillSwitch *bool   `json:"kill_switch,omitempty"`
 	Rollout    *uint16 `json:"rollout,omitempty"`
 }
 

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "squirrel",
-		Extensions:     []string{".nut"},
-		Language:       SquirrelLanguage,
-		HighlightQuery: squirrelHighlightQuery,
+		Name:               "squirrel",
+		Extensions:         []string{".nut"},
+		Language:           SquirrelLanguage,
+		HighlightQuery:     squirrelHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("squirrel"),
 	})
 }

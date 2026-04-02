@@ -8,33 +8,33 @@ import (
 
 // External token indexes for the Vue grammar.
 const (
-	vueTokStartTagName        = 0
-	vueTokScriptStartTagName  = 1
-	vueTokStyleStartTagName   = 2
-	vueTokEndTagName          = 3
-	vueTokErroneousEndTagName = 4
-	vueTokSelfClosingTagDelim = 5
-	vueTokImplicitEndTag      = 6
-	vueTokRawText             = 7
-	vueTokComment             = 8
+	vueTokStartTagName         = 0
+	vueTokScriptStartTagName   = 1
+	vueTokStyleStartTagName    = 2
+	vueTokEndTagName           = 3
+	vueTokErroneousEndTagName  = 4
+	vueTokSelfClosingTagDelim  = 5
+	vueTokImplicitEndTag       = 6
+	vueTokRawText              = 7
+	vueTokComment              = 8
 	vueTokTemplateStartTagName = 9
-	vueTokTextFragment        = 10
-	vueTokInterpolationText   = 11
+	vueTokTextFragment         = 10
+	vueTokInterpolationText    = 11
 )
 
 const (
-	vueSymStartTagName        gotreesitter.Symbol = 30
-	vueSymScriptStartTagName  gotreesitter.Symbol = 31
-	vueSymStyleStartTagName   gotreesitter.Symbol = 32
-	vueSymEndTagName          gotreesitter.Symbol = 33
-	vueSymErroneousEndTagName gotreesitter.Symbol = 34
-	vueSymSelfClosingTagDelim gotreesitter.Symbol = 6
-	vueSymImplicitEndTag      gotreesitter.Symbol = 35
-	vueSymRawText             gotreesitter.Symbol = 36
-	vueSymComment             gotreesitter.Symbol = 37
+	vueSymStartTagName         gotreesitter.Symbol = 30
+	vueSymScriptStartTagName   gotreesitter.Symbol = 31
+	vueSymStyleStartTagName    gotreesitter.Symbol = 32
+	vueSymEndTagName           gotreesitter.Symbol = 33
+	vueSymErroneousEndTagName  gotreesitter.Symbol = 34
+	vueSymSelfClosingTagDelim  gotreesitter.Symbol = 6
+	vueSymImplicitEndTag       gotreesitter.Symbol = 35
+	vueSymRawText              gotreesitter.Symbol = 36
+	vueSymComment              gotreesitter.Symbol = 37
 	vueSymTemplateStartTagName gotreesitter.Symbol = 38
-	vueSymTextFragment        gotreesitter.Symbol = 39
-	vueSymInterpolationText   gotreesitter.Symbol = 40
+	vueSymTextFragment         gotreesitter.Symbol = 39
+	vueSymInterpolationText    gotreesitter.Symbol = 40
 )
 
 type vueState struct {
@@ -44,7 +44,7 @@ type vueState struct {
 // VueExternalScanner handles HTML tag tracking plus Vue-specific text fragments and interpolation.
 type VueExternalScanner struct{}
 
-func (VueExternalScanner) Create() any { return &vueState{} }
+func (VueExternalScanner) Create() any         { return &vueState{} }
 func (VueExternalScanner) Destroy(payload any) {}
 
 func (VueExternalScanner) Serialize(payload any, buf []byte) int {

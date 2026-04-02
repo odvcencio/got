@@ -8,21 +8,21 @@ import (
 
 // External token indexes for the liquid grammar.
 const (
-	liquidTokInlineCommentContent     = 0
-	liquidTokPairedCommentContent     = 1
-	liquidTokPairedCommentContentLiq  = 2
-	liquidTokRawContent               = 3
-	liquidTokFrontMatter              = 4
-	liquidTokErrorSentinel            = 5
+	liquidTokInlineCommentContent    = 0
+	liquidTokPairedCommentContent    = 1
+	liquidTokPairedCommentContentLiq = 2
+	liquidTokRawContent              = 3
+	liquidTokFrontMatter             = 4
+	liquidTokErrorSentinel           = 5
 )
 
 const (
-	liquidSymInlineCommentContent     gotreesitter.Symbol = 96
-	liquidSymPairedCommentContent     gotreesitter.Symbol = 97
-	liquidSymPairedCommentContentLiq  gotreesitter.Symbol = 98
-	liquidSymRawContent               gotreesitter.Symbol = 99
-	liquidSymFrontMatter              gotreesitter.Symbol = 100
-	liquidSymErrorSentinel            gotreesitter.Symbol = 101
+	liquidSymInlineCommentContent    gotreesitter.Symbol = 96
+	liquidSymPairedCommentContent    gotreesitter.Symbol = 97
+	liquidSymPairedCommentContentLiq gotreesitter.Symbol = 98
+	liquidSymRawContent              gotreesitter.Symbol = 99
+	liquidSymFrontMatter             gotreesitter.Symbol = 100
+	liquidSymErrorSentinel           gotreesitter.Symbol = 101
 )
 
 // LiquidExternalScanner handles comment content, raw blocks, and front matter for Liquid templates.

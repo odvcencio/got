@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "dart",
-		Extensions:     nil,
-		Language:       DartLanguage,
-		HighlightQuery: dartHighlightQuery,
+		Name:               "dart",
+		Extensions:         nil,
+		Language:           DartLanguage,
+		HighlightQuery:     dartHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("dart"),
 	})
 }

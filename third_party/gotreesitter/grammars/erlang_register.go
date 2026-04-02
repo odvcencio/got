@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "erlang",
-		Extensions:     nil,
-		Language:       ErlangLanguage,
-		HighlightQuery: erlangHighlightQuery,
+		Name:               "erlang",
+		Extensions:         nil,
+		Language:           ErlangLanguage,
+		HighlightQuery:     erlangHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("erlang"),
 	})
 }

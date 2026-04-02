@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "disassembly",
-		Extensions:     []string{".dis", ".dump"},
-		Language:       DisassemblyLanguage,
-		HighlightQuery: disassemblyHighlightQuery,
+		Name:               "disassembly",
+		Extensions:         []string{".dis", ".dump"},
+		Language:           DisassemblyLanguage,
+		HighlightQuery:     disassemblyHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("disassembly"),
 	})
 }

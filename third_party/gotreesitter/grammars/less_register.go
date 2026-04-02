@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "less",
-		Extensions:     []string{".less"},
-		Language:       LessLanguage,
-		HighlightQuery: lessHighlightQuery,
+		Name:               "less",
+		Extensions:         []string{".less"},
+		Language:           LessLanguage,
+		HighlightQuery:     lessHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("less"),
 	})
 }

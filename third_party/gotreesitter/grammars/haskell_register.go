@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "haskell",
-		Extensions:     []string{".hs", ".lhs"},
-		Language:       HaskellLanguage,
-		HighlightQuery: haskellHighlightQuery,
+		Name:               "haskell",
+		Extensions:         []string{".hs", ".lhs"},
+		Language:           HaskellLanguage,
+		HighlightQuery:     haskellHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("haskell"),
 	})
 }

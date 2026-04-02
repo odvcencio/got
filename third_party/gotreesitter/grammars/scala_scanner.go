@@ -8,42 +8,42 @@ import (
 
 // External token indexes for the Scala grammar.
 const (
-	scaTokAutoSemicolon          = 0
-	scaTokIndent                 = 1
-	scaTokOutdent                = 2
-	scaTokSimpleStringStart      = 3
-	scaTokSimpleStringMiddle     = 4
-	scaTokSimpleMultiStringStart = 5
-	scaTokInterpStringMiddle     = 6
+	scaTokAutoSemicolon           = 0
+	scaTokIndent                  = 1
+	scaTokOutdent                 = 2
+	scaTokSimpleStringStart       = 3
+	scaTokSimpleStringMiddle      = 4
+	scaTokSimpleMultiStringStart  = 5
+	scaTokInterpStringMiddle      = 6
 	scaTokInterpMultiStringMiddle = 7
-	scaTokRawStringStart         = 8
-	scaTokRawStringMiddle        = 9
-	scaTokRawMultiStringMiddle   = 10
-	scaTokSingleLineStringEnd    = 11
-	scaTokMultilineStringEnd     = 12
-	scaTokElse                   = 13
-	scaTokCatch                  = 14
-	scaTokFinally                = 15
-	scaTokExtends                = 16
-	scaTokDerives                = 17
-	scaTokWith                   = 18
-	scaTokErrorSentinel          = 19
+	scaTokRawStringStart          = 8
+	scaTokRawStringMiddle         = 9
+	scaTokRawMultiStringMiddle    = 10
+	scaTokSingleLineStringEnd     = 11
+	scaTokMultilineStringEnd      = 12
+	scaTokElse                    = 13
+	scaTokCatch                   = 14
+	scaTokFinally                 = 15
+	scaTokExtends                 = 16
+	scaTokDerives                 = 17
+	scaTokWith                    = 18
+	scaTokErrorSentinel           = 19
 )
 
 const (
-	scaSymAutoSemicolon          gotreesitter.Symbol = 104
-	scaSymIndent                 gotreesitter.Symbol = 105
-	scaSymOutdent                gotreesitter.Symbol = 106
-	scaSymSimpleStringStart      gotreesitter.Symbol = 107
-	scaSymSimpleStringMiddle     gotreesitter.Symbol = 108
-	scaSymSimpleMultiStringStart gotreesitter.Symbol = 109
-	scaSymInterpStringMiddle     gotreesitter.Symbol = 110
+	scaSymAutoSemicolon           gotreesitter.Symbol = 104
+	scaSymIndent                  gotreesitter.Symbol = 105
+	scaSymOutdent                 gotreesitter.Symbol = 106
+	scaSymSimpleStringStart       gotreesitter.Symbol = 107
+	scaSymSimpleStringMiddle      gotreesitter.Symbol = 108
+	scaSymSimpleMultiStringStart  gotreesitter.Symbol = 109
+	scaSymInterpStringMiddle      gotreesitter.Symbol = 110
 	scaSymInterpMultiStringMiddle gotreesitter.Symbol = 111
-	scaSymRawStringStart         gotreesitter.Symbol = 112
-	scaSymRawStringMiddle        gotreesitter.Symbol = 113
-	scaSymRawMultiStringMiddle   gotreesitter.Symbol = 114
-	scaSymSingleLineStringEnd    gotreesitter.Symbol = 115
-	scaSymMultilineStringEnd     gotreesitter.Symbol = 116
+	scaSymRawStringStart          gotreesitter.Symbol = 112
+	scaSymRawStringMiddle         gotreesitter.Symbol = 113
+	scaSymRawMultiStringMiddle    gotreesitter.Symbol = 114
+	scaSymSingleLineStringEnd     gotreesitter.Symbol = 115
+	scaSymMultilineStringEnd      gotreesitter.Symbol = 116
 )
 
 type scalaState struct {

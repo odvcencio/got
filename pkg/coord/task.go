@@ -13,7 +13,7 @@ type Task struct {
 	ID          string    `json:"id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description,omitempty"`
-	Status      string    `json:"status"`                // pending, in_progress, completed, blocked
+	Status      string    `json:"status"`                 // pending, in_progress, completed, blocked
 	AssignedTo  string    `json:"assigned_to,omitempty"`  // agent name or ID
 	Workspace   string    `json:"workspace,omitempty"`    // which repo this task targets
 	PlanID      string    `json:"plan_id,omitempty"`      // optional link to parent plan

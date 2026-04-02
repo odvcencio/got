@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "arduino",
-		Extensions:     nil,
-		Language:       ArduinoLanguage,
-		HighlightQuery: arduinoHighlightQuery,
+		Name:               "arduino",
+		Extensions:         nil,
+		Language:           ArduinoLanguage,
+		HighlightQuery:     arduinoHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("arduino"),
 	})
 }

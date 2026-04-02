@@ -135,9 +135,9 @@ func (s *mergeBaseTraversalState) generationCacheSize() int {
 // index of the next parent to process, and the running maximum parent
 // generation seen so far.
 type generationFrame struct {
-	hash              object.Hash
-	parents           []object.Hash
-	nextParent        int
+	hash                object.Hash
+	parents             []object.Hash
+	nextParent          int
 	maxParentGeneration uint64
 }
 

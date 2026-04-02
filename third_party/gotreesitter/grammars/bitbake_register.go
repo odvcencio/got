@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "bitbake",
-		Extensions:     nil,
-		Language:       BitbakeLanguage,
-		HighlightQuery: bitbakeHighlightQuery,
+		Name:               "bitbake",
+		Extensions:         nil,
+		Language:           BitbakeLanguage,
+		HighlightQuery:     bitbakeHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("bitbake"),
 	})
 }

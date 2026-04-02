@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "glsl",
-		Extensions:     []string{".glsl", ".vert", ".frag"},
-		Language:       GlslLanguage,
-		HighlightQuery: glslHighlightQuery,
+		Name:               "glsl",
+		Extensions:         []string{".glsl", ".vert", ".frag"},
+		Language:           GlslLanguage,
+		HighlightQuery:     glslHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("glsl"),
 	})
 }

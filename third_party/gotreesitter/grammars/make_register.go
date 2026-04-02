@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "make",
-		Extensions:     nil,
-		Language:       MakeLanguage,
-		HighlightQuery: makeHighlightQuery,
+		Name:               "make",
+		Extensions:         nil,
+		Language:           MakeLanguage,
+		HighlightQuery:     makeHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("make"),
 	})
 }

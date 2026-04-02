@@ -84,9 +84,9 @@ func NewGenericTokenSource(src []byte, lang *gotreesitter.Language) (*GenericTok
 	}
 
 	ts := &GenericTokenSource{
-		src:            src,
-		lang:           lang,
-		cur:            newSourceCursor(src),
+		src:  src,
+		lang: lang,
+		cur:  newSourceCursor(src),
 	}
 
 	ts.buildSymbolTables()

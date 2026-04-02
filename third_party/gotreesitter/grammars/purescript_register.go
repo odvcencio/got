@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "purescript",
-		Extensions:     []string{".purs"},
-		Language:       PurescriptLanguage,
-		HighlightQuery: purescriptHighlightQuery,
+		Name:               "purescript",
+		Extensions:         []string{".purs"},
+		Language:           PurescriptLanguage,
+		HighlightQuery:     purescriptHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("purescript"),
 	})
 }

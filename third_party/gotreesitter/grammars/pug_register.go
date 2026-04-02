@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "pug",
-		Extensions:     []string{".pug", ".jade"},
-		Language:       PugLanguage,
-		HighlightQuery: pugHighlightQuery,
+		Name:               "pug",
+		Extensions:         []string{".pug", ".jade"},
+		Language:           PugLanguage,
+		HighlightQuery:     pugHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("pug"),
 	})
 }

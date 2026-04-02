@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "regex",
-		Extensions:     []string{".regex"},
-		Language:       RegexLanguage,
-		HighlightQuery: regexHighlightQuery,
+		Name:               "regex",
+		Extensions:         []string{".regex"},
+		Language:           RegexLanguage,
+		HighlightQuery:     regexHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("regex"),
 	})
 }

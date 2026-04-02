@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "javascript",
-		Extensions:     []string{".js", ".mjs", ".cjs"},
-		Language:       JavascriptLanguage,
-		HighlightQuery: javascriptHighlightQuery,
+		Name:               "javascript",
+		Extensions:         []string{".js", ".mjs", ".cjs"},
+		Language:           JavascriptLanguage,
+		HighlightQuery:     javascriptHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("javascript"),
 	})
 }

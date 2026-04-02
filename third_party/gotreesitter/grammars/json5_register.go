@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "json5",
-		Extensions:     []string{".json5"},
-		Language:       Json5Language,
-		HighlightQuery: json5HighlightQuery,
+		Name:               "json5",
+		Extensions:         []string{".json5"},
+		Language:           Json5Language,
+		HighlightQuery:     json5HighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("json5"),
 	})
 }

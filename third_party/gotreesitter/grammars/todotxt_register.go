@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "todotxt",
-		Extensions:     nil,
-		Language:       TodotxtLanguage,
-		HighlightQuery: todotxtHighlightQuery,
+		Name:               "todotxt",
+		Extensions:         nil,
+		Language:           TodotxtLanguage,
+		HighlightQuery:     todotxtHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("todotxt"),
 	})
 }

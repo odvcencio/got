@@ -9,10 +9,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/odvcencio/graft/pkg/entity"
-	"github.com/odvcencio/graft/pkg/object"
 	"github.com/odvcencio/gotreesitter/grammars"
 	tsgrep "github.com/odvcencio/gotreesitter/grep"
+	"github.com/odvcencio/graft/pkg/entity"
+	"github.com/odvcencio/graft/pkg/object"
 )
 
 // StructuralGrepOptions configures a structural (AST-aware) code search.
@@ -25,8 +25,8 @@ type StructuralGrepOptions struct {
 
 // StructuralGrepResult represents a single structural match with entity context.
 type StructuralGrepResult struct {
-	Path        string            // file path relative to repo root
-	StartLine   int               // 1-based
+	Path        string // file path relative to repo root
+	StartLine   int    // 1-based
 	EndLine     int
 	StartByte   uint32
 	EndByte     uint32
@@ -222,10 +222,10 @@ type HistoryGrepOptions struct {
 
 // HistoryGrepResult represents a single structural match found in a historical commit.
 type HistoryGrepResult struct {
-	CommitHash  string            // commit where the match was found
-	CommitMsg   string            // first line of commit message
-	Path        string            // file path relative to repo root
-	StartLine   int               // 1-based
+	CommitHash  string // commit where the match was found
+	CommitMsg   string // first line of commit message
+	Path        string // file path relative to repo root
+	StartLine   int    // 1-based
 	EndLine     int
 	MatchedText string            // full matched source text
 	Captures    map[string]string // capture name -> matched text
@@ -397,4 +397,3 @@ func (r *Repo) HistoryGrep(opts HistoryGrepOptions) ([]HistoryGrepResult, error)
 
 	return results, nil
 }
-

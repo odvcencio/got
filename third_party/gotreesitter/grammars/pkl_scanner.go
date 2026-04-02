@@ -6,40 +6,40 @@ import (
 
 // External token indexes for the Pkl grammar.
 const (
-	pklTokSlStringChars  = 0
-	pklTokSl1StringChars = 1
-	pklTokSl2StringChars = 2
-	pklTokSl3StringChars = 3
-	pklTokSl4StringChars = 4
-	pklTokSl5StringChars = 5
-	pklTokSl6StringChars = 6
-	pklTokMlStringChars  = 7
-	pklTokMl1StringChars = 8
-	pklTokMl2StringChars = 9
-	pklTokMl3StringChars = 10
-	pklTokMl4StringChars = 11
-	pklTokMl5StringChars = 12
-	pklTokMl6StringChars = 13
+	pklTokSlStringChars        = 0
+	pklTokSl1StringChars       = 1
+	pklTokSl2StringChars       = 2
+	pklTokSl3StringChars       = 3
+	pklTokSl4StringChars       = 4
+	pklTokSl5StringChars       = 5
+	pklTokSl6StringChars       = 6
+	pklTokMlStringChars        = 7
+	pklTokMl1StringChars       = 8
+	pklTokMl2StringChars       = 9
+	pklTokMl3StringChars       = 10
+	pklTokMl4StringChars       = 11
+	pklTokMl5StringChars       = 12
+	pklTokMl6StringChars       = 13
 	pklTokOpenSubscriptBracket = 14
 	pklTokOpenArgumentParen    = 15
 	pklTokBinaryMinus          = 16
 )
 
 const (
-	pklSymSlStringChars  gotreesitter.Symbol = 127
-	pklSymSl1StringChars gotreesitter.Symbol = 128
-	pklSymSl2StringChars gotreesitter.Symbol = 129
-	pklSymSl3StringChars gotreesitter.Symbol = 130
-	pklSymSl4StringChars gotreesitter.Symbol = 131
-	pklSymSl5StringChars gotreesitter.Symbol = 132
-	pklSymSl6StringChars gotreesitter.Symbol = 133
-	pklSymMlStringChars  gotreesitter.Symbol = 134
-	pklSymMl1StringChars gotreesitter.Symbol = 135
-	pklSymMl2StringChars gotreesitter.Symbol = 136
-	pklSymMl3StringChars gotreesitter.Symbol = 137
-	pklSymMl4StringChars gotreesitter.Symbol = 138
-	pklSymMl5StringChars gotreesitter.Symbol = 139
-	pklSymMl6StringChars gotreesitter.Symbol = 140
+	pklSymSlStringChars        gotreesitter.Symbol = 127
+	pklSymSl1StringChars       gotreesitter.Symbol = 128
+	pklSymSl2StringChars       gotreesitter.Symbol = 129
+	pklSymSl3StringChars       gotreesitter.Symbol = 130
+	pklSymSl4StringChars       gotreesitter.Symbol = 131
+	pklSymSl5StringChars       gotreesitter.Symbol = 132
+	pklSymSl6StringChars       gotreesitter.Symbol = 133
+	pklSymMlStringChars        gotreesitter.Symbol = 134
+	pklSymMl1StringChars       gotreesitter.Symbol = 135
+	pklSymMl2StringChars       gotreesitter.Symbol = 136
+	pklSymMl3StringChars       gotreesitter.Symbol = 137
+	pklSymMl4StringChars       gotreesitter.Symbol = 138
+	pklSymMl5StringChars       gotreesitter.Symbol = 139
+	pklSymMl6StringChars       gotreesitter.Symbol = 140
 	pklSymOpenSubscriptBracket gotreesitter.Symbol = 141
 	pklSymOpenArgumentParen    gotreesitter.Symbol = 142
 	pklSymBinaryMinus          gotreesitter.Symbol = 143

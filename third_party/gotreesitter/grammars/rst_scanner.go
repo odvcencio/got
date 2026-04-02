@@ -145,16 +145,16 @@ var rstTokToSym = [41]gotreesitter.Symbol{
 // Inline markup type bitmask constants.
 // ---------------------------------------------------------------------------
 const (
-	rstIMEmphasis            uint = 1 << 0
-	rstIMStrong              uint = 1 << 1
-	rstIMInterpretedText     uint = 1 << 2
-	rstIMInterpretedTextPfx  uint = 1 << 3
-	rstIMLiteral             uint = 1 << 4
-	rstIMSubstitutionRef     uint = 1 << 5
-	rstIMInlineTarget        uint = 1 << 6
-	rstIMFootnoteRef         uint = 1 << 7
-	rstIMCitationRef         uint = 1 << 8
-	rstIMReference           uint = 1 << 9
+	rstIMEmphasis           uint = 1 << 0
+	rstIMStrong             uint = 1 << 1
+	rstIMInterpretedText    uint = 1 << 2
+	rstIMInterpretedTextPfx uint = 1 << 3
+	rstIMLiteral            uint = 1 << 4
+	rstIMSubstitutionRef    uint = 1 << 5
+	rstIMInlineTarget       uint = 1 << 6
+	rstIMFootnoteRef        uint = 1 << 7
+	rstIMCitationRef        uint = 1 << 8
+	rstIMReference          uint = 1 << 9
 )
 
 // ---------------------------------------------------------------------------
@@ -166,13 +166,13 @@ const (
 	rstCharCarriageReturn = '\r'
 	rstCharNBSP           = 160
 
-	rstCharSpace      = ' '
-	rstCharFormFeed   = '\f'
-	rstCharTab        = '\t'
-	rstCharVertTab    = '\v'
-	rstTabStop        = 8
-	rstCharEmDash     = 8212
-	rstStackMax       = 99
+	rstCharSpace    = ' '
+	rstCharFormFeed = '\f'
+	rstCharTab      = '\t'
+	rstCharVertTab  = '\v'
+	rstTabStop      = 8
+	rstCharEmDash   = 8212
+	rstStackMax     = 99
 )
 
 // ---------------------------------------------------------------------------
@@ -191,10 +191,10 @@ func rstIsSpace(c rune) bool {
 	return rstIsNewline(c)
 }
 
-func rstIsNumber(c rune) bool { return c >= '0' && c <= '9' }
-func rstIsABCLower(c rune) bool { return c >= 'a' && c <= 'z' }
-func rstIsABCUpper(c rune) bool { return c >= 'A' && c <= 'Z' }
-func rstIsABC(c rune) bool     { return rstIsABCLower(c) || rstIsABCUpper(c) }
+func rstIsNumber(c rune) bool       { return c >= '0' && c <= '9' }
+func rstIsABCLower(c rune) bool     { return c >= 'a' && c <= 'z' }
+func rstIsABCUpper(c rune) bool     { return c >= 'A' && c <= 'Z' }
+func rstIsABC(c rune) bool          { return rstIsABCLower(c) || rstIsABCUpper(c) }
 func rstIsAlphanumeric(c rune) bool { return rstIsABC(c) || rstIsNumber(c) }
 
 func rstIsAdornmentChar(c rune) bool {

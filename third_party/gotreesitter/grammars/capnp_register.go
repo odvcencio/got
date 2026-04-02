@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "capnp",
-		Extensions:     nil,
-		Language:       CapnpLanguage,
-		HighlightQuery: capnpHighlightQuery,
+		Name:               "capnp",
+		Extensions:         nil,
+		Language:           CapnpLanguage,
+		HighlightQuery:     capnpHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("capnp"),
 	})
 }

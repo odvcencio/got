@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "elixir",
-		Extensions:     []string{".ex", ".exs"},
-		Language:       ElixirLanguage,
-		HighlightQuery: elixirHighlightQuery,
+		Name:               "elixir",
+		Extensions:         []string{".ex", ".exs"},
+		Language:           ElixirLanguage,
+		HighlightQuery:     elixirHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("elixir"),
 	})
 }

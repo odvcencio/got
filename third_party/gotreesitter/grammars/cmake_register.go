@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "cmake",
-		Extensions:     nil,
-		Language:       CmakeLanguage,
-		HighlightQuery: cmakeHighlightQuery,
+		Name:               "cmake",
+		Extensions:         nil,
+		Language:           CmakeLanguage,
+		HighlightQuery:     cmakeHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("cmake"),
 	})
 }

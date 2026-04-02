@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "uxntal",
-		Extensions:     []string{".tal"},
-		Language:       UxntalLanguage,
-		HighlightQuery: uxntalHighlightQuery,
+		Name:               "uxntal",
+		Extensions:         []string{".tal"},
+		Language:           UxntalLanguage,
+		HighlightQuery:     uxntalHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("uxntal"),
 	})
 }

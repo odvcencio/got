@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "ron",
-		Extensions:     []string{".ron"},
-		Language:       RonLanguage,
-		HighlightQuery: ronHighlightQuery,
+		Name:               "ron",
+		Extensions:         []string{".ron"},
+		Language:           RonLanguage,
+		HighlightQuery:     ronHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("ron"),
 	})
 }

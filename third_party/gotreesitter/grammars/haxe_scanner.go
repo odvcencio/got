@@ -24,7 +24,7 @@ type haxeState struct {
 // detection for Haxe automatic semicolon insertion.
 type HaxeExternalScanner struct{}
 
-func (HaxeExternalScanner) Create() any { return &haxeState{} }
+func (HaxeExternalScanner) Create() any         { return &haxeState{} }
 func (HaxeExternalScanner) Destroy(payload any) {}
 func (HaxeExternalScanner) Serialize(payload any, buf []byte) int {
 	s := payload.(*haxeState)

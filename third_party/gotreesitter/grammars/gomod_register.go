@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "gomod",
-		Extensions:     nil,
-		Language:       GomodLanguage,
-		HighlightQuery: gomodHighlightQuery,
+		Name:               "gomod",
+		Extensions:         nil,
+		Language:           GomodLanguage,
+		HighlightQuery:     gomodHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("gomod"),
 	})
 }

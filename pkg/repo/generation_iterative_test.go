@@ -94,11 +94,11 @@ func TestGeneration_DeepLinearHistory(t *testing.T) {
 
 // TestGeneration_DiamondMergePattern builds a diamond merge graph:
 //
-//	    A
-//	   / \
-//	  B   C
-//	   \ /
-//	    D
+//	  A
+//	 / \
+//	B   C
+//	 \ /
+//	  D
 //
 // and verifies generation numbers are computed correctly.
 func TestGeneration_DiamondMergePattern(t *testing.T) {

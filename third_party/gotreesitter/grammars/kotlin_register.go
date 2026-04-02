@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "kotlin",
-		Extensions:     []string{".kt", ".kts"},
-		Language:       KotlinLanguage,
-		HighlightQuery: kotlinHighlightQuery,
+		Name:               "kotlin",
+		Extensions:         []string{".kt", ".kts"},
+		Language:           KotlinLanguage,
+		HighlightQuery:     kotlinHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("kotlin"),
 	})
 }

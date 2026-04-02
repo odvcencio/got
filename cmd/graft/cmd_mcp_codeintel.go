@@ -336,9 +336,9 @@ func mcpToolCIReferences(args map[string]any) (any, error) {
 		sort.Strings(partialMatches)
 		// Return partial matches as suggestions.
 		return map[string]any{
-			"name":       name,
-			"count":      0,
-			"references": []coord.XrefCallSite{},
+			"name":        name,
+			"count":       0,
+			"references":  []coord.XrefCallSite{},
 			"suggestions": partialMatches,
 		}, nil
 	}

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "foam",
-		Extensions:     nil,
-		Language:       FoamLanguage,
-		HighlightQuery: foamHighlightQuery,
+		Name:               "foam",
+		Extensions:         nil,
+		Language:           FoamLanguage,
+		HighlightQuery:     foamHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("foam"),
 	})
 }

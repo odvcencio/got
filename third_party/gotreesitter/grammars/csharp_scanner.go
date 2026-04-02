@@ -8,18 +8,18 @@ import (
 
 // External token indexes for the C# grammar.
 const (
-	csTokOptSemi               = 0
-	csTokInterpRegularStart    = 1
-	csTokInterpVerbatimStart   = 2
-	csTokInterpRawStart        = 3
-	csTokInterpStartQuote      = 4
-	csTokInterpEndQuote        = 5
-	csTokInterpOpenBrace       = 6
-	csTokInterpCloseBrace      = 7
-	csTokInterpStringContent   = 8
-	csTokRawStringStart        = 9
-	csTokRawStringEnd          = 10
-	csTokRawStringContent      = 11
+	csTokOptSemi             = 0
+	csTokInterpRegularStart  = 1
+	csTokInterpVerbatimStart = 2
+	csTokInterpRawStart      = 3
+	csTokInterpStartQuote    = 4
+	csTokInterpEndQuote      = 5
+	csTokInterpOpenBrace     = 6
+	csTokInterpCloseBrace    = 7
+	csTokInterpStringContent = 8
+	csTokRawStringStart      = 9
+	csTokRawStringEnd        = 10
+	csTokRawStringContent    = 11
 )
 
 const (
@@ -39,16 +39,16 @@ const (
 
 // String type flags for C# interpolated strings.
 const (
-	csStrRegular = 1 << 0
+	csStrRegular  = 1 << 0
 	csStrVerbatim = 1 << 1
-	csStrRaw     = 1 << 2
+	csStrRaw      = 1 << 2
 )
 
 type csInterpolation struct {
-	dollarCount   uint8
+	dollarCount    uint8
 	openBraceCount uint8
-	quoteCount    uint8
-	stringType    uint8
+	quoteCount     uint8
+	stringType     uint8
 }
 
 type csState struct {
@@ -103,10 +103,10 @@ func (CSharpExternalScanner) Deserialize(payload any, buf []byte) {
 	n++
 	for i := 0; i < stackLen && n+3 < len(buf); i++ {
 		interp := csInterpolation{
-			dollarCount:   buf[n],
+			dollarCount:    buf[n],
 			openBraceCount: buf[n+1],
-			quoteCount:    buf[n+2],
-			stringType:    buf[n+3],
+			quoteCount:     buf[n+2],
+			stringType:     buf[n+3],
 		}
 		n += 4
 		s.interpolationStack = append(s.interpolationStack, interp)

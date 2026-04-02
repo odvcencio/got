@@ -9,32 +9,32 @@ import (
 
 // External token indexes for the PHP grammar.
 const (
-	phpTokAutoSemicolon                    = 0
-	phpTokEncapsedStringChars              = 1
-	phpTokEncapsedStringCharsAfterVar      = 2
-	phpTokExecutionStringChars             = 3
-	phpTokExecutionStringCharsAfterVar     = 4
-	phpTokEncapsedStringCharsHeredoc       = 5
-	phpTokEncapsedStringCharsAfterVarHdoc  = 6
-	phpTokEOF                              = 7
-	phpTokHeredocStart                     = 8
-	phpTokHeredocEnd                       = 9
-	phpTokNowdocString                     = 10
-	phpTokSentinelError                    = 11
+	phpTokAutoSemicolon                   = 0
+	phpTokEncapsedStringChars             = 1
+	phpTokEncapsedStringCharsAfterVar     = 2
+	phpTokExecutionStringChars            = 3
+	phpTokExecutionStringCharsAfterVar    = 4
+	phpTokEncapsedStringCharsHeredoc      = 5
+	phpTokEncapsedStringCharsAfterVarHdoc = 6
+	phpTokEOF                             = 7
+	phpTokHeredocStart                    = 8
+	phpTokHeredocEnd                      = 9
+	phpTokNowdocString                    = 10
+	phpTokSentinelError                   = 11
 )
 
 const (
-	phpSymAutoSemicolon                    gotreesitter.Symbol = 185
-	phpSymEncapsedStringChars              gotreesitter.Symbol = 186
-	phpSymEncapsedStringCharsAfterVar      gotreesitter.Symbol = 187
-	phpSymExecutionStringChars             gotreesitter.Symbol = 188
-	phpSymExecutionStringCharsAfterVar     gotreesitter.Symbol = 189
-	phpSymEncapsedStringCharsHeredoc       gotreesitter.Symbol = 190
-	phpSymEncapsedStringCharsAfterVarHdoc  gotreesitter.Symbol = 191
-	phpSymEOF                              gotreesitter.Symbol = 192
-	phpSymHeredocStart                     gotreesitter.Symbol = 193
-	phpSymHeredocEnd                       gotreesitter.Symbol = 194
-	phpSymNowdocString                     gotreesitter.Symbol = 195
+	phpSymAutoSemicolon                   gotreesitter.Symbol = 185
+	phpSymEncapsedStringChars             gotreesitter.Symbol = 186
+	phpSymEncapsedStringCharsAfterVar     gotreesitter.Symbol = 187
+	phpSymExecutionStringChars            gotreesitter.Symbol = 188
+	phpSymExecutionStringCharsAfterVar    gotreesitter.Symbol = 189
+	phpSymEncapsedStringCharsHeredoc      gotreesitter.Symbol = 190
+	phpSymEncapsedStringCharsAfterVarHdoc gotreesitter.Symbol = 191
+	phpSymEOF                             gotreesitter.Symbol = 192
+	phpSymHeredocStart                    gotreesitter.Symbol = 193
+	phpSymHeredocEnd                      gotreesitter.Symbol = 194
+	phpSymNowdocString                    gotreesitter.Symbol = 195
 )
 
 type phpHeredoc struct {

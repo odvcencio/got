@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "firrtl",
-		Extensions:     nil,
-		Language:       FirrtlLanguage,
-		HighlightQuery: firrtlHighlightQuery,
+		Name:               "firrtl",
+		Extensions:         nil,
+		Language:           FirrtlLanguage,
+		HighlightQuery:     firrtlHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("firrtl"),
 	})
 }

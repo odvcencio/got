@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "promql",
-		Extensions:     []string{".promql"},
-		Language:       PromqlLanguage,
-		HighlightQuery: promqlHighlightQuery,
+		Name:               "promql",
+		Extensions:         []string{".promql"},
+		Language:           PromqlLanguage,
+		HighlightQuery:     promqlHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("promql"),
 	})
 }

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "nickel",
-		Extensions:     []string{".ncl"},
-		Language:       NickelLanguage,
-		HighlightQuery: nickelHighlightQuery,
+		Name:               "nickel",
+		Extensions:         []string{".ncl"},
+		Language:           NickelLanguage,
+		HighlightQuery:     nickelHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("nickel"),
 	})
 }

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "jsdoc",
-		Extensions:     nil,
-		Language:       JsdocLanguage,
-		HighlightQuery: jsdocHighlightQuery,
+		Name:               "jsdoc",
+		Extensions:         nil,
+		Language:           JsdocLanguage,
+		HighlightQuery:     jsdocHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("jsdoc"),
 	})
 }

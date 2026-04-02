@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "chatito",
-		Extensions:     nil,
-		Language:       ChatitoLanguage,
-		HighlightQuery: chatitoHighlightQuery,
+		Name:               "chatito",
+		Extensions:         nil,
+		Language:           ChatitoLanguage,
+		HighlightQuery:     chatitoHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("chatito"),
 	})
 }

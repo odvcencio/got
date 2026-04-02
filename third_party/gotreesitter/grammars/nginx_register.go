@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "nginx",
-		Extensions:     nil,
-		Language:       NginxLanguage,
-		HighlightQuery: nginxHighlightQuery,
+		Name:               "nginx",
+		Extensions:         nil,
+		Language:           NginxLanguage,
+		HighlightQuery:     nginxHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("nginx"),
 	})
 }

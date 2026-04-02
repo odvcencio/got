@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "liquid",
-		Extensions:     []string{".liquid"},
-		Language:       LiquidLanguage,
-		HighlightQuery: liquidHighlightQuery,
+		Name:               "liquid",
+		Extensions:         []string{".liquid"},
+		Language:           LiquidLanguage,
+		HighlightQuery:     liquidHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("liquid"),
 	})
 }

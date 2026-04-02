@@ -64,4 +64,3 @@ func newRevertCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&abortFlag, "abort", false, "abort revert in progress")
 	return cmd
 }
-

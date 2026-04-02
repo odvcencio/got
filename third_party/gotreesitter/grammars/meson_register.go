@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "meson",
-		Extensions:     nil,
-		Language:       MesonLanguage,
-		HighlightQuery: mesonHighlightQuery,
+		Name:               "meson",
+		Extensions:         nil,
+		Language:           MesonLanguage,
+		HighlightQuery:     mesonHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("meson"),
 	})
 }

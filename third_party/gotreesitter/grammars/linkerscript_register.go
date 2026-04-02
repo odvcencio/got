@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "linkerscript",
-		Extensions:     []string{".ld", ".lds"},
-		Language:       LinkerscriptLanguage,
-		HighlightQuery: linkerscriptHighlightQuery,
+		Name:               "linkerscript",
+		Extensions:         []string{".ld", ".lds"},
+		Language:           LinkerscriptLanguage,
+		HighlightQuery:     linkerscriptHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("linkerscript"),
 	})
 }

@@ -429,4 +429,3 @@ func orderMembers(merged map[string]interfaceMember, base, ours, theirs []interf
 
 	return result
 }
-

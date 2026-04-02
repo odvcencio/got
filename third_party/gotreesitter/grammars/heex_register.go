@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "heex",
-		Extensions:     []string{".heex"},
-		Language:       HeexLanguage,
-		HighlightQuery: heexHighlightQuery,
+		Name:               "heex",
+		Extensions:         []string{".heex"},
+		Language:           HeexLanguage,
+		HighlightQuery:     heexHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("heex"),
 	})
 }

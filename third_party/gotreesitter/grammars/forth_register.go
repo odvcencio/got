@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "forth",
-		Extensions:     []string{".fs", ".fth", ".4th"},
-		Language:       ForthLanguage,
-		HighlightQuery: forthHighlightQuery,
+		Name:               "forth",
+		Extensions:         []string{".fs", ".fth", ".4th"},
+		Language:           ForthLanguage,
+		HighlightQuery:     forthHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("forth"),
 	})
 }

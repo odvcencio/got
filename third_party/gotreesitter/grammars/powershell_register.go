@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "powershell",
-		Extensions:     []string{".ps1", ".psm1", ".psd1"},
-		Language:       PowershellLanguage,
-		HighlightQuery: powershellHighlightQuery,
+		Name:               "powershell",
+		Extensions:         []string{".ps1", ".psm1", ".psd1"},
+		Language:           PowershellLanguage,
+		HighlightQuery:     powershellHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("powershell"),
 	})
 }

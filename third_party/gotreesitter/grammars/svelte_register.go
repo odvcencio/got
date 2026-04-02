@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "svelte",
-		Extensions:     []string{".svelte"},
-		Language:       SvelteLanguage,
-		HighlightQuery: svelteHighlightQuery,
+		Name:               "svelte",
+		Extensions:         []string{".svelte"},
+		Language:           SvelteLanguage,
+		HighlightQuery:     svelteHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("svelte"),
 	})
 }

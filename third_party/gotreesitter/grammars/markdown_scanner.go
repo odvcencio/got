@@ -9,53 +9,53 @@ import (
 
 // External token indexes for the Markdown grammar.
 const (
-	mdTokLineEnding                       = 0
-	mdTokSoftLineEnding                   = 1
-	mdTokBlockClose                       = 2
-	mdTokBlockContinuation                = 3
-	mdTokBlockQuoteStart                  = 4
-	mdTokIndentedChunkStart               = 5
-	mdTokAtxH1Marker                      = 6
-	mdTokAtxH2Marker                      = 7
-	mdTokAtxH3Marker                      = 8
-	mdTokAtxH4Marker                      = 9
-	mdTokAtxH5Marker                      = 10
-	mdTokAtxH6Marker                      = 11
-	mdTokSetextH1Underline                = 12
-	mdTokSetextH2Underline                = 13
-	mdTokThematicBreak                    = 14
-	mdTokListMarkerMinus                  = 15
-	mdTokListMarkerPlus                   = 16
-	mdTokListMarkerStar                   = 17
-	mdTokListMarkerParenthesis            = 18
-	mdTokListMarkerDot                    = 19
-	mdTokListMarkerMinusDontInterrupt     = 20
-	mdTokListMarkerPlusDontInterrupt      = 21
-	mdTokListMarkerStarDontInterrupt      = 22
+	mdTokLineEnding                         = 0
+	mdTokSoftLineEnding                     = 1
+	mdTokBlockClose                         = 2
+	mdTokBlockContinuation                  = 3
+	mdTokBlockQuoteStart                    = 4
+	mdTokIndentedChunkStart                 = 5
+	mdTokAtxH1Marker                        = 6
+	mdTokAtxH2Marker                        = 7
+	mdTokAtxH3Marker                        = 8
+	mdTokAtxH4Marker                        = 9
+	mdTokAtxH5Marker                        = 10
+	mdTokAtxH6Marker                        = 11
+	mdTokSetextH1Underline                  = 12
+	mdTokSetextH2Underline                  = 13
+	mdTokThematicBreak                      = 14
+	mdTokListMarkerMinus                    = 15
+	mdTokListMarkerPlus                     = 16
+	mdTokListMarkerStar                     = 17
+	mdTokListMarkerParenthesis              = 18
+	mdTokListMarkerDot                      = 19
+	mdTokListMarkerMinusDontInterrupt       = 20
+	mdTokListMarkerPlusDontInterrupt        = 21
+	mdTokListMarkerStarDontInterrupt        = 22
 	mdTokListMarkerParenthesisDontInterrupt = 23
-	mdTokListMarkerDotDontInterrupt       = 24
-	mdTokFencedCodeBlockStartBacktick     = 25
-	mdTokFencedCodeBlockStartTilde        = 26
-	mdTokBlankLineStart                   = 27
-	mdTokFencedCodeBlockEndBacktick       = 28
-	mdTokFencedCodeBlockEndTilde          = 29
-	mdTokHTMLBlock1Start                  = 30
-	mdTokHTMLBlock1End                    = 31
-	mdTokHTMLBlock2Start                  = 32
-	mdTokHTMLBlock3Start                  = 33
-	mdTokHTMLBlock4Start                  = 34
-	mdTokHTMLBlock5Start                  = 35
-	mdTokHTMLBlock6Start                  = 36
-	mdTokHTMLBlock7Start                  = 37
-	mdTokCloseBlock                       = 38
-	mdTokNoIndentedChunk                  = 39
-	mdTokError                            = 40
-	mdTokTriggerError                     = 41
-	mdTokEOF                              = 42
-	mdTokMinusMetadata                    = 43
-	mdTokPlusMetadata                     = 44
-	mdTokPipeTableStart                   = 45
-	mdTokPipeTableLineEnding              = 46
+	mdTokListMarkerDotDontInterrupt         = 24
+	mdTokFencedCodeBlockStartBacktick       = 25
+	mdTokFencedCodeBlockStartTilde          = 26
+	mdTokBlankLineStart                     = 27
+	mdTokFencedCodeBlockEndBacktick         = 28
+	mdTokFencedCodeBlockEndTilde            = 29
+	mdTokHTMLBlock1Start                    = 30
+	mdTokHTMLBlock1End                      = 31
+	mdTokHTMLBlock2Start                    = 32
+	mdTokHTMLBlock3Start                    = 33
+	mdTokHTMLBlock4Start                    = 34
+	mdTokHTMLBlock5Start                    = 35
+	mdTokHTMLBlock6Start                    = 36
+	mdTokHTMLBlock7Start                    = 37
+	mdTokCloseBlock                         = 38
+	mdTokNoIndentedChunk                    = 39
+	mdTokError                              = 40
+	mdTokTriggerError                       = 41
+	mdTokEOF                                = 42
+	mdTokMinusMetadata                      = 43
+	mdTokPlusMetadata                       = 44
+	mdTokPipeTableStart                     = 45
+	mdTokPipeTableLineEnding                = 46
 )
 
 const (
@@ -106,7 +106,7 @@ const (
 type mdBlock uint8
 
 const (
-	mdBlockQuote              mdBlock = iota
+	mdBlockQuote mdBlock = iota
 	mdIndentedCodeBlock
 	mdListItem
 	mdListItem1Indent
@@ -154,14 +154,14 @@ var mdHTMLTagNamesRule7 = []string{
 // Tokens that can interrupt a paragraph.
 var mdParagraphInterruptSymbols = []bool{
 	false, false, false, false, true, false, // LINE_ENDING..INDENTED_CHUNK_START
-	true, true, true, true, true, true,      // ATX_H1..ATX_H6
-	true, true, true,                        // SETEXT_H1, SETEXT_H2, THEMATIC
-	true, true, true, true, true,            // LIST_MARKER (interrupting)
-	false, false, false, false, false,        // LIST_MARKER (dont_interrupt)
-	true, true, true, false, false,          // FENCED_CODE start/BLANK/end
+	true, true, true, true, true, true, // ATX_H1..ATX_H6
+	true, true, true, // SETEXT_H1, SETEXT_H2, THEMATIC
+	true, true, true, true, true, // LIST_MARKER (interrupting)
+	false, false, false, false, false, // LIST_MARKER (dont_interrupt)
+	true, true, true, false, false, // FENCED_CODE start/BLANK/end
 	true, false, true, true, true, true, true, false, // HTML blocks
-	false, false, false, false, false, false, false,   // CLOSE_BLOCK..PLUS_META
-	true, false,                             // PIPE_TABLE_START, PIPE_TABLE_LINE_ENDING
+	false, false, false, false, false, false, false, // CLOSE_BLOCK..PLUS_META
+	true, false, // PIPE_TABLE_START, PIPE_TABLE_LINE_ENDING
 }
 
 type mdState struct {

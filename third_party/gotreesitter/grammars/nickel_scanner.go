@@ -8,25 +8,25 @@ import (
 
 // External token indexes for the nickel grammar.
 const (
-	nickelTokMultstrStart      = 0
-	nickelTokMultstrEnd        = 1
-	nickelTokStrStart          = 2
-	nickelTokStrEnd            = 3
-	nickelTokInterpStart       = 4
-	nickelTokInterpEnd         = 5
+	nickelTokMultstrStart       = 0
+	nickelTokMultstrEnd         = 1
+	nickelTokStrStart           = 2
+	nickelTokStrEnd             = 3
+	nickelTokInterpStart        = 4
+	nickelTokInterpEnd          = 5
 	nickelTokQuotedEnumTagStart = 6
-	nickelTokComment           = 7
+	nickelTokComment            = 7
 )
 
 const (
-	nickelSymMultstrStart      gotreesitter.Symbol = 74
-	nickelSymMultstrEnd        gotreesitter.Symbol = 75
-	nickelSymStrStart          gotreesitter.Symbol = 76
-	nickelSymStrEnd            gotreesitter.Symbol = 77
-	nickelSymInterpStart       gotreesitter.Symbol = 78
-	nickelSymInterpEnd         gotreesitter.Symbol = 79
+	nickelSymMultstrStart       gotreesitter.Symbol = 74
+	nickelSymMultstrEnd         gotreesitter.Symbol = 75
+	nickelSymStrStart           gotreesitter.Symbol = 76
+	nickelSymStrEnd             gotreesitter.Symbol = 77
+	nickelSymInterpStart        gotreesitter.Symbol = 78
+	nickelSymInterpEnd          gotreesitter.Symbol = 79
 	nickelSymQuotedEnumTagStart gotreesitter.Symbol = 80
-	nickelSymComment           gotreesitter.Symbol = 81
+	nickelSymComment            gotreesitter.Symbol = 81
 )
 
 // nickelState tracks the percent count stack for nested strings.
@@ -37,7 +37,7 @@ type nickelState struct {
 // NickelExternalScanner handles Nickel's multi-line strings, interpolation, and comments.
 type NickelExternalScanner struct{}
 
-func (NickelExternalScanner) Create() any { return &nickelState{} }
+func (NickelExternalScanner) Create() any         { return &nickelState{} }
 func (NickelExternalScanner) Destroy(payload any) {}
 
 func (NickelExternalScanner) Serialize(payload any, buf []byte) int {

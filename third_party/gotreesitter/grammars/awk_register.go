@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "awk",
-		Extensions:     nil,
-		Language:       AwkLanguage,
-		HighlightQuery: awkHighlightQuery,
+		Name:               "awk",
+		Extensions:         nil,
+		Language:           AwkLanguage,
+		HighlightQuery:     awkHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("awk"),
 	})
 }

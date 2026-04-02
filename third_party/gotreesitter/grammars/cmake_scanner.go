@@ -8,23 +8,23 @@ import (
 
 // External token indexes for the cmake grammar.
 const (
-	cmakeTokBracketArgOpen     = 0
-	cmakeTokBracketArgContent  = 1
-	cmakeTokBracketArgClose    = 2
-	cmakeTokBracketComOpen     = 3
-	cmakeTokBracketComContent  = 4
-	cmakeTokBracketComClose    = 5
-	cmakeTokLineComment        = 6
+	cmakeTokBracketArgOpen    = 0
+	cmakeTokBracketArgContent = 1
+	cmakeTokBracketArgClose   = 2
+	cmakeTokBracketComOpen    = 3
+	cmakeTokBracketComContent = 4
+	cmakeTokBracketComClose   = 5
+	cmakeTokLineComment       = 6
 )
 
 const (
-	cmakeSymBracketArgOpen     gotreesitter.Symbol = 36
-	cmakeSymBracketArgContent  gotreesitter.Symbol = 37
-	cmakeSymBracketArgClose    gotreesitter.Symbol = 38
-	cmakeSymBracketComOpen     gotreesitter.Symbol = 39
-	cmakeSymBracketComContent  gotreesitter.Symbol = 40
-	cmakeSymBracketComClose    gotreesitter.Symbol = 41
-	cmakeSymLineComment        gotreesitter.Symbol = 42
+	cmakeSymBracketArgOpen    gotreesitter.Symbol = 36
+	cmakeSymBracketArgContent gotreesitter.Symbol = 37
+	cmakeSymBracketArgClose   gotreesitter.Symbol = 38
+	cmakeSymBracketComOpen    gotreesitter.Symbol = 39
+	cmakeSymBracketComContent gotreesitter.Symbol = 40
+	cmakeSymBracketComClose   gotreesitter.Symbol = 41
+	cmakeSymLineComment       gotreesitter.Symbol = 42
 )
 
 // cmakeState tracks the bracket level and last token type.
@@ -36,7 +36,7 @@ type cmakeState struct {
 // CmakeExternalScanner handles CMake bracket arguments, bracket comments, and line comments.
 type CmakeExternalScanner struct{}
 
-func (CmakeExternalScanner) Create() any { return &cmakeState{} }
+func (CmakeExternalScanner) Create() any         { return &cmakeState{} }
 func (CmakeExternalScanner) Destroy(payload any) {}
 
 func (CmakeExternalScanner) Serialize(payload any, buf []byte) int {

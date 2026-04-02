@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "rescript",
-		Extensions:     []string{".res", ".resi"},
-		Language:       RescriptLanguage,
-		HighlightQuery: rescriptHighlightQuery,
+		Name:               "rescript",
+		Extensions:         []string{".res", ".resi"},
+		Language:           RescriptLanguage,
+		HighlightQuery:     rescriptHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("rescript"),
 	})
 }

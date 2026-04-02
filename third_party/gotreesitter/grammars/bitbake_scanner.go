@@ -8,31 +8,31 @@ import (
 
 // External token indexes for the BitBake grammar.
 const (
-	bbTokConcat       = 0
-	bbTokNewline      = 1
-	bbTokIndent       = 2
-	bbTokDedent       = 3
-	bbTokStringStart  = 4
+	bbTokConcat        = 0
+	bbTokNewline       = 1
+	bbTokIndent        = 2
+	bbTokDedent        = 3
+	bbTokStringStart   = 4
 	bbTokStringContent = 5
-	bbTokEscapeInterp = 6
-	bbTokStringEnd    = 7
-	bbTokComment      = 8
-	bbTokCloseParen   = 9
-	bbTokCloseBracket = 10
-	bbTokCloseBrace   = 11
-	bbTokShellContent = 12
+	bbTokEscapeInterp  = 6
+	bbTokStringEnd     = 7
+	bbTokComment       = 8
+	bbTokCloseParen    = 9
+	bbTokCloseBracket  = 10
+	bbTokCloseBrace    = 11
+	bbTokShellContent  = 12
 )
 
 const (
-	bbSymConcat       gotreesitter.Symbol = 140
-	bbSymNewline      gotreesitter.Symbol = 141
-	bbSymIndent       gotreesitter.Symbol = 142
-	bbSymDedent       gotreesitter.Symbol = 143
-	bbSymStringStart  gotreesitter.Symbol = 144
+	bbSymConcat        gotreesitter.Symbol = 140
+	bbSymNewline       gotreesitter.Symbol = 141
+	bbSymIndent        gotreesitter.Symbol = 142
+	bbSymDedent        gotreesitter.Symbol = 143
+	bbSymStringStart   gotreesitter.Symbol = 144
 	bbSymStringContent gotreesitter.Symbol = 145
-	bbSymEscapeInterp gotreesitter.Symbol = 146
-	bbSymStringEnd    gotreesitter.Symbol = 147
-	bbSymShellContent gotreesitter.Symbol = 148
+	bbSymEscapeInterp  gotreesitter.Symbol = 146
+	bbSymStringEnd     gotreesitter.Symbol = 147
+	bbSymShellContent  gotreesitter.Symbol = 148
 )
 
 // BitbakeExternalScanner handles Python-like indent/dedent, strings, concat, and shell content.

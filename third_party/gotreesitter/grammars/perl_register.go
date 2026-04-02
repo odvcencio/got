@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "perl",
-		Extensions:     []string{".pl", ".pm"},
-		Language:       PerlLanguage,
-		HighlightQuery: perlHighlightQuery,
+		Name:               "perl",
+		Extensions:         []string{".pl", ".pm"},
+		Language:           PerlLanguage,
+		HighlightQuery:     perlHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("perl"),
 	})
 }

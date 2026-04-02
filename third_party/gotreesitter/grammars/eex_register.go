@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "eex",
-		Extensions:     nil,
-		Language:       EexLanguage,
-		HighlightQuery: eexHighlightQuery,
+		Name:               "eex",
+		Extensions:         nil,
+		Language:           EexLanguage,
+		HighlightQuery:     eexHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("eex"),
 	})
 }

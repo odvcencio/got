@@ -47,7 +47,7 @@ type justState struct {
 // JustExternalScanner handles indent/dedent/newline/text for justfiles.
 type JustExternalScanner struct{}
 
-func (JustExternalScanner) Create() any { return &justState{} }
+func (JustExternalScanner) Create() any         { return &justState{} }
 func (JustExternalScanner) Destroy(payload any) {}
 
 func (JustExternalScanner) Serialize(payload any, buf []byte) int {

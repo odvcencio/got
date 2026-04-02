@@ -821,8 +821,8 @@ func buildJSONDiffFile(path string, before, after []byte) JSONDiffFile {
 	}
 
 	return JSONDiffFile{
-		Path:  path,
+		Path:   path,
 		Status: status,
-		Hunks: jsonHunks,
+		Hunks:  jsonHunks,
 	}
 }

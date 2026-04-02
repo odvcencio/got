@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "starlark",
-		Extensions:     []string{".star", ".bzl"},
-		Language:       StarlarkLanguage,
-		HighlightQuery: starlarkHighlightQuery,
+		Name:               "starlark",
+		Extensions:         []string{".star", ".bzl"},
+		Language:           StarlarkLanguage,
+		HighlightQuery:     starlarkHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("starlark"),
 	})
 }

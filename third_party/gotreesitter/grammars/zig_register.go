@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "zig",
-		Extensions:     []string{".zig"},
-		Language:       ZigLanguage,
-		HighlightQuery: zigHighlightQuery,
+		Name:               "zig",
+		Extensions:         []string{".zig"},
+		Language:           ZigLanguage,
+		HighlightQuery:     zigHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("zig"),
 	})
 }

@@ -405,13 +405,13 @@ func TestContainsReference(t *testing.T) {
 		{"mylib.Helper(x)", "Helper", true},
 		{"// Helper is useful", "Helper", true},
 		{"HelperFunc()", "Helper", false},        // Helper is prefix, not word
-		{"BigHelper()", "Helper", false},          // Helper is suffix, not word
-		{"_Helper_", "Helper", false},             // underscore is an ident char
-		{"func DoWork() {}", "DoWork", true},      // exact match
-		{"func DoWorkNow() {}", "DoWork", false},  // DoWork is prefix
-		{"", "Helper", false},                     // empty content
-		{"x := Helper\n", "Helper", true},         // at end of line
-		{"Helper", "Helper", true},                // exact content
+		{"BigHelper()", "Helper", false},         // Helper is suffix, not word
+		{"_Helper_", "Helper", false},            // underscore is an ident char
+		{"func DoWork() {}", "DoWork", true},     // exact match
+		{"func DoWorkNow() {}", "DoWork", false}, // DoWork is prefix
+		{"", "Helper", false},                    // empty content
+		{"x := Helper\n", "Helper", true},        // at end of line
+		{"Helper", "Helper", true},               // exact content
 	}
 
 	for _, tt := range tests {

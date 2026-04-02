@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "ruby",
-		Extensions:     []string{".rb"},
-		Language:       RubyLanguage,
-		HighlightQuery: rubyHighlightQuery,
+		Name:               "ruby",
+		Extensions:         []string{".rb"},
+		Language:           RubyLanguage,
+		HighlightQuery:     rubyHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("ruby"),
 	})
 }

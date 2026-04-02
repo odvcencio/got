@@ -6,40 +6,40 @@ import (
 
 // External token indexes for the markdown_inline grammar.
 const (
-	mdiTokError               = 0
-	mdiTokTriggerError        = 1
-	mdiTokCodeSpanStart       = 2
-	mdiTokCodeSpanClose       = 3
-	mdiTokEmphasisOpenStar    = 4
-	mdiTokEmphasisOpenUnderscore = 5
-	mdiTokEmphasisCloseStar   = 6
+	mdiTokError                   = 0
+	mdiTokTriggerError            = 1
+	mdiTokCodeSpanStart           = 2
+	mdiTokCodeSpanClose           = 3
+	mdiTokEmphasisOpenStar        = 4
+	mdiTokEmphasisOpenUnderscore  = 5
+	mdiTokEmphasisCloseStar       = 6
 	mdiTokEmphasisCloseUnderscore = 7
-	mdiTokLastTokenWhitespace = 8
-	mdiTokLastTokenPunctuation = 9
-	mdiTokStrikethroughOpen   = 10
-	mdiTokStrikethroughClose  = 11
-	mdiTokLatexSpanStart      = 12
-	mdiTokLatexSpanClose      = 13
-	mdiTokUnclosedSpan        = 14
+	mdiTokLastTokenWhitespace     = 8
+	mdiTokLastTokenPunctuation    = 9
+	mdiTokStrikethroughOpen       = 10
+	mdiTokStrikethroughClose      = 11
+	mdiTokLatexSpanStart          = 12
+	mdiTokLatexSpanClose          = 13
+	mdiTokUnclosedSpan            = 14
 )
 
 // Symbol constants for the markdown_inline grammar.
 const (
-	mdiSymError               gotreesitter.Symbol = 52
-	mdiSymTriggerError        gotreesitter.Symbol = 53
-	mdiSymCodeSpanStart       gotreesitter.Symbol = 54
-	mdiSymCodeSpanClose       gotreesitter.Symbol = 55
-	mdiSymEmphasisOpenStar    gotreesitter.Symbol = 56
-	mdiSymEmphasisOpenUnderscore gotreesitter.Symbol = 57
-	mdiSymEmphasisCloseStar   gotreesitter.Symbol = 58
+	mdiSymError                   gotreesitter.Symbol = 52
+	mdiSymTriggerError            gotreesitter.Symbol = 53
+	mdiSymCodeSpanStart           gotreesitter.Symbol = 54
+	mdiSymCodeSpanClose           gotreesitter.Symbol = 55
+	mdiSymEmphasisOpenStar        gotreesitter.Symbol = 56
+	mdiSymEmphasisOpenUnderscore  gotreesitter.Symbol = 57
+	mdiSymEmphasisCloseStar       gotreesitter.Symbol = 58
 	mdiSymEmphasisCloseUnderscore gotreesitter.Symbol = 59
-	mdiSymLastTokenWhitespace gotreesitter.Symbol = 60
-	mdiSymLastTokenPunctuation gotreesitter.Symbol = 61
-	mdiSymStrikethroughOpen   gotreesitter.Symbol = 62
-	mdiSymStrikethroughClose  gotreesitter.Symbol = 63
-	mdiSymLatexSpanStart      gotreesitter.Symbol = 64
-	mdiSymLatexSpanClose      gotreesitter.Symbol = 65
-	mdiSymUnclosedSpan        gotreesitter.Symbol = 66
+	mdiSymLastTokenWhitespace     gotreesitter.Symbol = 60
+	mdiSymLastTokenPunctuation    gotreesitter.Symbol = 61
+	mdiSymStrikethroughOpen       gotreesitter.Symbol = 62
+	mdiSymStrikethroughClose      gotreesitter.Symbol = 63
+	mdiSymLatexSpanStart          gotreesitter.Symbol = 64
+	mdiSymLatexSpanClose          gotreesitter.Symbol = 65
+	mdiSymUnclosedSpan            gotreesitter.Symbol = 66
 )
 
 // State bitflags used with mdiState.state

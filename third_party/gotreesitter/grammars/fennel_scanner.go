@@ -8,23 +8,23 @@ import (
 
 // External token indexes for the fennel grammar.
 const (
-	fennelTokHashfn              = 0
-	fennelTokQuote               = 1
-	fennelTokQuasiQuote          = 2
-	fennelTokUnquote             = 3
-	fennelTokReaderMacroCount    = 4 // sentinel, not produced
-	fennelTokColonStringStartMk  = 5 // not produced by scanner
-	fennelTokColonStringEndMk    = 6 // not produced by scanner
-	fennelTokShebang             = 7
-	fennelTokCount               = 8 // error sentinel
+	fennelTokHashfn             = 0
+	fennelTokQuote              = 1
+	fennelTokQuasiQuote         = 2
+	fennelTokUnquote            = 3
+	fennelTokReaderMacroCount   = 4 // sentinel, not produced
+	fennelTokColonStringStartMk = 5 // not produced by scanner
+	fennelTokColonStringEndMk   = 6 // not produced by scanner
+	fennelTokShebang            = 7
+	fennelTokCount              = 8 // error sentinel
 )
 
 const (
-	fennelSymHashfn    gotreesitter.Symbol = 72
-	fennelSymQuote     gotreesitter.Symbol = 73
-	fennelSymQuasiQt   gotreesitter.Symbol = 74
-	fennelSymUnquote   gotreesitter.Symbol = 75
-	fennelSymShebang   gotreesitter.Symbol = 79
+	fennelSymHashfn  gotreesitter.Symbol = 72
+	fennelSymQuote   gotreesitter.Symbol = 73
+	fennelSymQuasiQt gotreesitter.Symbol = 74
+	fennelSymUnquote gotreesitter.Symbol = 75
+	fennelSymShebang gotreesitter.Symbol = 79
 )
 
 // Reader macro characters indexed by token index.

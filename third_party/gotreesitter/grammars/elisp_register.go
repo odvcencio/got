@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "elisp",
-		Extensions:     []string{".el"},
-		Language:       ElispLanguage,
-		HighlightQuery: elispHighlightQuery,
+		Name:               "elisp",
+		Extensions:         []string{".el"},
+		Language:           ElispLanguage,
+		HighlightQuery:     elispHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("elisp"),
 	})
 }

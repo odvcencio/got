@@ -384,4 +384,3 @@ func TestMergeGoInterfaceMembersEmptyBase(t *testing.T) {
 		t.Errorf("merged output missing 'Close()'\nmerged:\n%s", s)
 	}
 }
-

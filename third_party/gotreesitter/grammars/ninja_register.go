@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "ninja",
-		Extensions:     []string{".ninja"},
-		Language:       NinjaLanguage,
-		HighlightQuery: ninjaHighlightQuery,
+		Name:               "ninja",
+		Extensions:         []string{".ninja"},
+		Language:           NinjaLanguage,
+		HighlightQuery:     ninjaHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("ninja"),
 	})
 }

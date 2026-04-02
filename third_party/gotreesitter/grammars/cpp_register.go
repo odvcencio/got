@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "cpp",
-		Extensions:     []string{".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx", ".h"},
-		Language:       CppLanguage,
-		HighlightQuery: cppHighlightQuery,
+		Name:               "cpp",
+		Extensions:         []string{".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx", ".h"},
+		Language:           CppLanguage,
+		HighlightQuery:     cppHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("cpp"),
 	})
 }

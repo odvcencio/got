@@ -71,16 +71,16 @@ func (s *hclState) inContextType(ct hclContextType) bool {
 	return s.back().ctxType == ct
 }
 
-func (s *hclState) inQuotedContext() bool   { return s.inContextType(hclCtxQuotedTemplate) }
-func (s *hclState) inHeredocContext() bool   { return s.inContextType(hclCtxHeredocTemplate) }
-func (s *hclState) inTemplateContext() bool  { return s.inQuotedContext() || s.inHeredocContext() }
+func (s *hclState) inQuotedContext() bool        { return s.inContextType(hclCtxQuotedTemplate) }
+func (s *hclState) inHeredocContext() bool       { return s.inContextType(hclCtxHeredocTemplate) }
+func (s *hclState) inTemplateContext() bool      { return s.inQuotedContext() || s.inHeredocContext() }
 func (s *hclState) inInterpolationContext() bool { return s.inContextType(hclCtxTemplateInterpolation) }
-func (s *hclState) inDirectiveContext() bool { return s.inContextType(hclCtxTemplateDirective) }
+func (s *hclState) inDirectiveContext() bool     { return s.inContextType(hclCtxTemplateDirective) }
 
 // HclExternalScanner implements gotreesitter.ExternalScanner for the HCL grammar.
 type HclExternalScanner struct{}
 
-func (HclExternalScanner) Create() any { return &hclState{} }
+func (HclExternalScanner) Create() any         { return &hclState{} }
 func (HclExternalScanner) Destroy(payload any) {}
 
 func (HclExternalScanner) Serialize(payload any, buf []byte) int {

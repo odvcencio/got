@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "tlaplus",
-		Extensions:     []string{".tla"},
-		Language:       TlaplusLanguage,
-		HighlightQuery: tlaplusHighlightQuery,
+		Name:               "tlaplus",
+		Extensions:         []string{".tla"},
+		Language:           TlaplusLanguage,
+		HighlightQuery:     tlaplusHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("tlaplus"),
 	})
 }

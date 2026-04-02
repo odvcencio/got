@@ -30,10 +30,10 @@ type LFSBatchResponse struct {
 // LFSBatchResponseObject describes the server's response for one LFS object,
 // including action URLs and optional per-object errors.
 type LFSBatchResponseObject struct {
-	OID     string                `json:"oid"`
-	Size    int64                 `json:"size"`
-	Actions map[string]LFSAction  `json:"actions,omitempty"`
-	Error   *LFSObjectError       `json:"error,omitempty"`
+	OID     string               `json:"oid"`
+	Size    int64                `json:"size"`
+	Actions map[string]LFSAction `json:"actions,omitempty"`
+	Error   *LFSObjectError      `json:"error,omitempty"`
 }
 
 // LFSAction describes an upload, download, or verify action returned by the
@@ -77,10 +77,10 @@ func NewLFSClientFromURL(baseURL, token string) *LFSClient {
 }
 
 const (
-	lfsMediaType      = "application/vnd.graft-lfs+json"
-	lfsBatchPath      = "/lfs/objects/batch"
-	lfsResponseLimit  = 8 << 20 // 8MB
-	lfsDownloadLimit  = 256 << 20 // 256MB per object
+	lfsMediaType     = "application/vnd.graft-lfs+json"
+	lfsBatchPath     = "/lfs/objects/batch"
+	lfsResponseLimit = 8 << 20   // 8MB
+	lfsDownloadLimit = 256 << 20 // 256MB per object
 )
 
 // BatchRequest sends a batch request to the LFS endpoint and returns the

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "pkl",
-		Extensions:     []string{".pkl"},
-		Language:       PklLanguage,
-		HighlightQuery: pklHighlightQuery,
+		Name:               "pkl",
+		Extensions:         []string{".pkl"},
+		Language:           PklLanguage,
+		HighlightQuery:     pklHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("pkl"),
 	})
 }

@@ -496,7 +496,7 @@ func TestRecordPreflightDecision_PublishesClaimBlocked(t *testing.T) {
 	id, _ := c.RegisterAgent(coord.AgentInfo{Name: "maple"})
 
 	input := ActionPolicyInput{
-		Repo: ActionPolicyRepo{Root: r.RootDir},
+		Repo:    ActionPolicyRepo{Root: r.RootDir},
 		Session: ActionPolicySession{AgentID: id},
 		Coord: ActionPolicyCoord{
 			Active:  true,

@@ -24,9 +24,9 @@ const dockerfileMaxHeredocs = 10
 
 // dockerfileScannerState manages the heredoc delimiter stack.
 type dockerfileScannerState struct {
-	inHeredoc  bool
-	stripping  bool     // <<- mode (strip leading tabs)
-	heredocs   []string // stack of delimiter strings
+	inHeredoc bool
+	stripping bool     // <<- mode (strip leading tabs)
+	heredocs  []string // stack of delimiter strings
 }
 
 // DockerfileExternalScanner implements gotreesitter.ExternalScanner for tree-sitter-dockerfile.

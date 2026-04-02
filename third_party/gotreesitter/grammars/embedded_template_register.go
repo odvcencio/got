@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "embedded_template",
-		Extensions:     []string{".erb", ".ejs"},
-		Language:       EmbeddedTemplateLanguage,
-		HighlightQuery: embeddedTemplateHighlightQuery,
+		Name:               "embedded_template",
+		Extensions:         []string{".erb", ".ejs"},
+		Language:           EmbeddedTemplateLanguage,
+		HighlightQuery:     embeddedTemplateHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("embedded_template"),
 	})
 }

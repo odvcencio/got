@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "elm",
-		Extensions:     nil,
-		Language:       ElmLanguage,
-		HighlightQuery: elmHighlightQuery,
+		Name:               "elm",
+		Extensions:         nil,
+		Language:           ElmLanguage,
+		HighlightQuery:     elmHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("elm"),
 	})
 }

@@ -146,14 +146,14 @@ const (
 
 // norgState is the persistent scanner state.
 type norgState struct {
-	previous         rune
-	current          rune
-	tagContext       norgTagType
-	tagLevel         int
-	inLinkLocation   bool
-	lastToken        int
-	parsedChars      int
-	activeModifiers  uint16 // bitset for (BOLD..INLINE_MACRO) open/close pairs
+	previous        rune
+	current         rune
+	tagContext      norgTagType
+	tagLevel        int
+	inLinkLocation  bool
+	lastToken       int
+	parsedChars     int
+	activeModifiers uint16 // bitset for (BOLD..INLINE_MACRO) open/close pairs
 }
 
 const norgSymBase gotreesitter.Symbol = 3
@@ -179,7 +179,7 @@ func (s *norgState) resetMods() { s.activeModifiers = 0 }
 // NorgExternalScanner handles norg markup disambiguation.
 type NorgExternalScanner struct{}
 
-func (NorgExternalScanner) Create() any  { return &norgState{tagContext: norgTagNone} }
+func (NorgExternalScanner) Create() any   { return &norgState{tagContext: norgTagNone} }
 func (NorgExternalScanner) Destroy(_ any) {}
 
 func (NorgExternalScanner) Serialize(payload any, buf []byte) int {

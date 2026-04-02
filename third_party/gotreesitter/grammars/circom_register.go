@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "circom",
-		Extensions:     nil,
-		Language:       CircomLanguage,
-		HighlightQuery: circomHighlightQuery,
+		Name:               "circom",
+		Extensions:         nil,
+		Language:           CircomLanguage,
+		HighlightQuery:     circomHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("circom"),
 	})
 }

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "kconfig",
-		Extensions:     nil,
-		Language:       KconfigLanguage,
-		HighlightQuery: kconfigHighlightQuery,
+		Name:               "kconfig",
+		Extensions:         nil,
+		Language:           KconfigLanguage,
+		HighlightQuery:     kconfigHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("kconfig"),
 	})
 }

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "gleam",
-		Extensions:     []string{".gleam"},
-		Language:       GleamLanguage,
-		HighlightQuery: gleamHighlightQuery,
+		Name:               "gleam",
+		Extensions:         []string{".gleam"},
+		Language:           GleamLanguage,
+		HighlightQuery:     gleamHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("gleam"),
 	})
 }

@@ -8,22 +8,22 @@ import (
 
 // External token indexes for the Astro grammar (ext[i] positions).
 const (
-	astroTokStartTagName          = 0  // START_TAG_NAME
-	astroTokScriptStartTagName    = 1  // SCRIPT_START_TAG_NAME
-	astroTokStyleStartTagName     = 2  // STYLE_START_TAG_NAME
-	astroTokEndTagName            = 3  // END_TAG_NAME
-	astroTokErroneousEndTagName   = 4  // ERRONEOUS_END_TAG_NAME
-	astroTokSelfClosingTagDelim   = 5  // />
-	astroTokImplicitEndTag        = 6  // IMPLICIT_END_TAG
-	astroTokRawText               = 7  // RAW_TEXT
-	astroTokComment               = 8  // COMMENT
-	astroTokInterpolationStart    = 9  // {
-	astroTokInterpolationEnd      = 10 // }
-	astroTokFrontmatterJSBlock    = 11 // FRONTMATTER_JS_BLOCK
-	astroTokAttributeJSExpr       = 12 // ATTRIBUTE_JS_EXPR
-	astroTokAttributeBacktickStr  = 13 // ATTRIBUTE_BACKTICK_STRING
-	astroTokPermissibleText       = 14 // PERMISSIBLE_TEXT
-	astroTokFragmentTagDelim      = 15 // > (fragment)
+	astroTokStartTagName         = 0  // START_TAG_NAME
+	astroTokScriptStartTagName   = 1  // SCRIPT_START_TAG_NAME
+	astroTokStyleStartTagName    = 2  // STYLE_START_TAG_NAME
+	astroTokEndTagName           = 3  // END_TAG_NAME
+	astroTokErroneousEndTagName  = 4  // ERRONEOUS_END_TAG_NAME
+	astroTokSelfClosingTagDelim  = 5  // />
+	astroTokImplicitEndTag       = 6  // IMPLICIT_END_TAG
+	astroTokRawText              = 7  // RAW_TEXT
+	astroTokComment              = 8  // COMMENT
+	astroTokInterpolationStart   = 9  // {
+	astroTokInterpolationEnd     = 10 // }
+	astroTokFrontmatterJSBlock   = 11 // FRONTMATTER_JS_BLOCK
+	astroTokAttributeJSExpr      = 12 // ATTRIBUTE_JS_EXPR
+	astroTokAttributeBacktickStr = 13 // ATTRIBUTE_BACKTICK_STRING
+	astroTokPermissibleText      = 14 // PERMISSIBLE_TEXT
+	astroTokFragmentTagDelim     = 15 // > (fragment)
 )
 
 // Symbol IDs corresponding to the grammar's node types.
@@ -61,8 +61,8 @@ type astroState struct {
 // backtick strings, interpolation, and permissible text.
 type AstroExternalScanner struct{}
 
-func (AstroExternalScanner) Create() any  { return &astroState{} }
-func (AstroExternalScanner) Destroy(any)  {}
+func (AstroExternalScanner) Create() any { return &astroState{} }
+func (AstroExternalScanner) Destroy(any) {}
 
 func (AstroExternalScanner) Serialize(payload any, buf []byte) int {
 	s := payload.(*astroState)

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "hare",
-		Extensions:     []string{".ha"},
-		Language:       HareLanguage,
-		HighlightQuery: hareHighlightQuery,
+		Name:               "hare",
+		Extensions:         []string{".ha"},
+		Language:           HareLanguage,
+		HighlightQuery:     hareHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("hare"),
 	})
 }

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "ssh_config",
-		Extensions:     nil,
-		Language:       SshConfigLanguage,
-		HighlightQuery: sshConfigHighlightQuery,
+		Name:               "ssh_config",
+		Extensions:         nil,
+		Language:           SshConfigLanguage,
+		HighlightQuery:     sshConfigHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("ssh_config"),
 	})
 }

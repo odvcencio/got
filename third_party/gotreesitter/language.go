@@ -75,9 +75,9 @@ type LexTransition struct {
 
 // LexMode maps a parser state to its lexer configuration.
 type LexMode struct {
-	LexState           uint16
-	ExternalLexState   uint16
-	ReservedWordSetID  uint16
+	LexState          uint16
+	ExternalLexState  uint16
+	ReservedWordSetID uint16
 }
 
 // LanguageMetadata holds the grammar's semantic version (ABI 15+).

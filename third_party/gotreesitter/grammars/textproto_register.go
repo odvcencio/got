@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "textproto",
-		Extensions:     []string{".textproto", ".txtpb", ".pbtxt"},
-		Language:       TextprotoLanguage,
-		HighlightQuery: textprotoHighlightQuery,
+		Name:               "textproto",
+		Extensions:         []string{".textproto", ".txtpb", ".pbtxt"},
+		Language:           TextprotoLanguage,
+		HighlightQuery:     textprotoHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("textproto"),
 	})
 }

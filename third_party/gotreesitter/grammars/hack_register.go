@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "hack",
-		Extensions:     []string{".hack", ".hh"},
-		Language:       HackLanguage,
-		HighlightQuery: hackHighlightQuery,
+		Name:               "hack",
+		Extensions:         []string{".hack", ".hh"},
+		Language:           HackLanguage,
+		HighlightQuery:     hackHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("hack"),
 	})
 }

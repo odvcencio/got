@@ -6,16 +6,16 @@ import (
 
 // External token indexes for the Mojo grammar (Python-like).
 const (
-	mojoTokNewline      = 0
-	mojoTokIndent       = 1
-	mojoTokDedent       = 2
-	mojoTokStringStart  = 3
+	mojoTokNewline       = 0
+	mojoTokIndent        = 1
+	mojoTokDedent        = 2
+	mojoTokStringStart   = 3
 	mojoTokStringContent = 4
-	mojoTokStringEnd    = 5
-	mojoTokComment      = 6
-	mojoTokCloseParen   = 7
-	mojoTokCloseBracket = 8
-	mojoTokCloseBrace   = 9
+	mojoTokStringEnd     = 5
+	mojoTokComment       = 6
+	mojoTokCloseParen    = 7
+	mojoTokCloseBracket  = 8
+	mojoTokCloseBrace    = 9
 )
 
 const (

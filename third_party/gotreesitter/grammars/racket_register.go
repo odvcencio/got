@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "racket",
-		Extensions:     []string{".rkt"},
-		Language:       RacketLanguage,
-		HighlightQuery: racketHighlightQuery,
+		Name:               "racket",
+		Extensions:         []string{".rkt"},
+		Language:           RacketLanguage,
+		HighlightQuery:     racketHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("racket"),
 	})
 }

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "ini",
-		Extensions:     []string{".ini", ".cfg", ".conf"},
-		Language:       IniLanguage,
-		HighlightQuery: iniHighlightQuery,
+		Name:               "ini",
+		Extensions:         []string{".ini", ".cfg", ".conf"},
+		Language:           IniLanguage,
+		HighlightQuery:     iniHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("ini"),
 	})
 }

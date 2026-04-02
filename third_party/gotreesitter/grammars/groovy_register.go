@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "groovy",
-		Extensions:     []string{".groovy", ".gvy"},
-		Language:       GroovyLanguage,
-		HighlightQuery: groovyHighlightQuery,
+		Name:               "groovy",
+		Extensions:         []string{".groovy", ".gvy"},
+		Language:           GroovyLanguage,
+		HighlightQuery:     groovyHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("groovy"),
 	})
 }

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "wgsl",
-		Extensions:     []string{".wgsl"},
-		Language:       WgslLanguage,
-		HighlightQuery: wgslHighlightQuery,
+		Name:               "wgsl",
+		Extensions:         []string{".wgsl"},
+		Language:           WgslLanguage,
+		HighlightQuery:     wgslHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("wgsl"),
 	})
 }

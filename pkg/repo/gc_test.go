@@ -602,10 +602,10 @@ func TestGC_ReachabilityWalksEntireGraph(t *testing.T) {
 
 	// Go files produce entity lists, which exercises entity list -> entity refs.
 	files := map[string][]byte{
-		"main.go":         []byte("package main\n\nfunc main() {}\n"),
-		"pkg/lib.go":      []byte("package pkg\n\nfunc Lib() {}\n"),
+		"main.go":          []byte("package main\n\nfunc main() {}\n"),
+		"pkg/lib.go":       []byte("package pkg\n\nfunc Lib() {}\n"),
 		"pkg/sub/inner.go": []byte("package sub\n\nfunc Inner() {}\n"),
-		"data.txt":        []byte("plain text, no entities"),
+		"data.txt":         []byte("plain text, no entities"),
 	}
 	for name, data := range files {
 		parent := filepath.Dir(filepath.Join(dir, name))

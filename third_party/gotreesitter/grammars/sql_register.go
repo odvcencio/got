@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "sql",
-		Extensions:     []string{".sql"},
-		Language:       SqlLanguage,
-		HighlightQuery: sqlHighlightQuery,
+		Name:               "sql",
+		Extensions:         []string{".sql"},
+		Language:           SqlLanguage,
+		HighlightQuery:     sqlHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("sql"),
 	})
 }

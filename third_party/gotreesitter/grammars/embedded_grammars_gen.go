@@ -1033,4 +1033,3 @@ func YuckLanguage() *gotreesitter.Language {
 func ZigLanguage() *gotreesitter.Language {
 	return loadEmbeddedLanguage("zig.bin")
 }
-

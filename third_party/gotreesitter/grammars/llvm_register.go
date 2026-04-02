@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "llvm",
-		Extensions:     []string{".ll"},
-		Language:       LlvmLanguage,
-		HighlightQuery: llvmHighlightQuery,
+		Name:               "llvm",
+		Extensions:         []string{".ll"},
+		Language:           LlvmLanguage,
+		HighlightQuery:     llvmHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("llvm"),
 	})
 }

@@ -196,8 +196,8 @@ func TestLFS_IsLFSTracked_NoAttributes(t *testing.T) {
 func TestLFS_ObjectPath(t *testing.T) {
 	dir := t.TempDir()
 	r := &Repo{
-		RootDir: dir,
-		GraftDir:  filepath.Join(dir, ".graft"),
+		RootDir:  dir,
+		GraftDir: filepath.Join(dir, ".graft"),
 	}
 
 	oid := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"

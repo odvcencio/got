@@ -382,4 +382,3 @@ func TestMergeGoStructFieldsEmptyBase(t *testing.T) {
 		t.Errorf("merged output missing field 'Port int'\nmerged:\n%s", s)
 	}
 }
-

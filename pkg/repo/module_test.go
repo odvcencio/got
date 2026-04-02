@@ -304,10 +304,10 @@ func TestRepo_ListModules_WithLock(t *testing.T) {
 	r := createTestRepo(t)
 
 	entry := ModuleEntry{
-		Name:  "joined",
-		URL:   "https://example.com/joined.git",
-		Path:  "vendor/joined",
-		Pin:   "v1.0.0",
+		Name: "joined",
+		URL:  "https://example.com/joined.git",
+		Path: "vendor/joined",
+		Pin:  "v1.0.0",
 	}
 	if err := r.AddModuleEntry(entry); err != nil {
 		t.Fatalf("AddModuleEntry: %v", err)

@@ -10,18 +10,18 @@ import (
 // External token indexes for the Fortran grammar.
 // These must match the order in the grammar's externals array.
 const (
-	ftnTokLineContinuation    = 0  // "&"
-	ftnTokIntegerLiteral      = 1  // _integer_literal
-	ftnTokFloatLiteral        = 2  // _float_literal
-	ftnTokBozLiteral          = 3  // _boz_literal
-	ftnTokStringLiteral       = 4  // _string_literal
-	ftnTokStringLiteralKind   = 5  // identifier (string literal kind prefix)
-	ftnTokEndOfStatement      = 6  // _external_end_of_statement
-	ftnTokPreprocUnaryOp      = 7  // _preproc_unary_operator
-	ftnTokHollerithConstant   = 8  // hollerith_constant
-	ftnTokDoLabel             = 9  // statement_label_reference (do label)
-	ftnTokDoLabelVirtual      = 10 // do_label_virtual
-	ftnTokDoLabelContinue     = 11 // statement_label (do label continue)
+	ftnTokLineContinuation  = 0  // "&"
+	ftnTokIntegerLiteral    = 1  // _integer_literal
+	ftnTokFloatLiteral      = 2  // _float_literal
+	ftnTokBozLiteral        = 3  // _boz_literal
+	ftnTokStringLiteral     = 4  // _string_literal
+	ftnTokStringLiteralKind = 5  // identifier (string literal kind prefix)
+	ftnTokEndOfStatement    = 6  // _external_end_of_statement
+	ftnTokPreprocUnaryOp    = 7  // _preproc_unary_operator
+	ftnTokHollerithConstant = 8  // hollerith_constant
+	ftnTokDoLabel           = 9  // statement_label_reference (do label)
+	ftnTokDoLabelVirtual    = 10 // do_label_virtual
+	ftnTokDoLabelContinue   = 11 // statement_label (do label continue)
 )
 
 // Concrete symbol IDs from the generated Fortran grammar ExternalSymbols.
@@ -47,7 +47,7 @@ const ftnMaxLabelStack = 100
 type ftnNumberType int
 
 const (
-	ftnNumberNone    ftnNumberType = iota
+	ftnNumberNone ftnNumberType = iota
 	ftnNumberInteger
 	ftnNumberFloat
 )

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "fortran",
-		Extensions:     []string{".f", ".f90", ".f95", ".f03", ".f08"},
-		Language:       FortranLanguage,
-		HighlightQuery: fortranHighlightQuery,
+		Name:               "fortran",
+		Extensions:         []string{".f", ".f90", ".f95", ".f03", ".f08"},
+		Language:           FortranLanguage,
+		HighlightQuery:     fortranHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("fortran"),
 	})
 }

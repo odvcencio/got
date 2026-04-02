@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "objc",
-		Extensions:     []string{".m"},
-		Language:       ObjcLanguage,
-		HighlightQuery: objcHighlightQuery,
+		Name:               "objc",
+		Extensions:         []string{".m"},
+		Language:           ObjcLanguage,
+		HighlightQuery:     objcHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("objc"),
 	})
 }

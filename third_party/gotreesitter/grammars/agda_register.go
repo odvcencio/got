@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "agda",
-		Extensions:     []string{".agda"},
-		Language:       AgdaLanguage,
-		HighlightQuery: agdaHighlightQuery,
+		Name:               "agda",
+		Extensions:         []string{".agda"},
+		Language:           AgdaLanguage,
+		HighlightQuery:     agdaHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("agda"),
 	})
 }

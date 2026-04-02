@@ -11,9 +11,9 @@ import (
 // Module combines the declared configuration of a submodule (from
 // .graftmodules) with its resolved lock state (from .graftmodules.lock).
 type Module struct {
-	ModuleEntry                // embedded config entry
-	Commit      object.Hash   // resolved commit from lock file
-	ResolvedURL string        // canonicalized URL from lock file
+	ModuleEntry             // embedded config entry
+	Commit      object.Hash // resolved commit from lock file
+	ResolvedURL string      // canonicalized URL from lock file
 }
 
 // ModuleMetadataDir returns the per-module metadata directory inside .graft.

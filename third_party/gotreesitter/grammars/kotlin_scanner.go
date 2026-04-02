@@ -8,15 +8,15 @@ import (
 
 // External token indexes for the kotlin grammar.
 const (
-	kotlinTokAutoSemicolon     = 0 // "_automatic_semicolon"
-	kotlinTokImportListDelim   = 1 // "_import_list_delimiter"
-	kotlinTokSafeNav           = 2 // "\\?."
-	kotlinTokMultilineComment  = 3 // "multiline_comment"
-	kotlinTokStringStart       = 4 // "_string_start"
-	kotlinTokStringEnd         = 5 // "_string_end"
-	kotlinTokStringContent     = 6 // "string_content"
-	kotlinTokPrimaryCtorKW     = 7 // "_primary_constructor_keyword"
-	kotlinTokImportDot         = 8 // "_import_dot"
+	kotlinTokAutoSemicolon    = 0 // "_automatic_semicolon"
+	kotlinTokImportListDelim  = 1 // "_import_list_delimiter"
+	kotlinTokSafeNav          = 2 // "\\?."
+	kotlinTokMultilineComment = 3 // "multiline_comment"
+	kotlinTokStringStart      = 4 // "_string_start"
+	kotlinTokStringEnd        = 5 // "_string_end"
+	kotlinTokStringContent    = 6 // "string_content"
+	kotlinTokPrimaryCtorKW    = 7 // "_primary_constructor_keyword"
+	kotlinTokImportDot        = 8 // "_import_dot"
 )
 
 // Concrete symbol IDs from the generated kotlin grammar ExternalSymbols.

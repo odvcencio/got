@@ -4,20 +4,20 @@ import gotreesitter "github.com/odvcencio/gotreesitter"
 
 // External token indexes for the cue grammar.
 const (
-	cueTokMultiStrContent     = 0
-	cueTokMultiBytesContent   = 1
-	cueTokRawStrContent       = 2
-	cueTokRawBytesContent     = 3
-	cueTokMultiRawStrContent  = 4
+	cueTokMultiStrContent      = 0
+	cueTokMultiBytesContent    = 1
+	cueTokRawStrContent        = 2
+	cueTokRawBytesContent      = 3
+	cueTokMultiRawStrContent   = 4
 	cueTokMultiRawBytesContent = 5
 )
 
 const (
-	cueSymMultiStrContent     gotreesitter.Symbol = 95
-	cueSymMultiBytesContent   gotreesitter.Symbol = 96
-	cueSymRawStrContent       gotreesitter.Symbol = 97
-	cueSymRawBytesContent     gotreesitter.Symbol = 98
-	cueSymMultiRawStrContent  gotreesitter.Symbol = 99
+	cueSymMultiStrContent      gotreesitter.Symbol = 95
+	cueSymMultiBytesContent    gotreesitter.Symbol = 96
+	cueSymRawStrContent        gotreesitter.Symbol = 97
+	cueSymRawBytesContent      gotreesitter.Symbol = 98
+	cueSymMultiRawStrContent   gotreesitter.Symbol = 99
 	cueSymMultiRawBytesContent gotreesitter.Symbol = 100
 )
 
@@ -52,7 +52,7 @@ func (CueExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, v
 	return false
 }
 
-// cueScanMultiline scans content of triple-quoted (""" or ''') strings.
+// cueScanMultiline scans content of triple-quoted (""" or ”') strings.
 func cueScanMultiline(lexer *gotreesitter.ExternalLexer, delim rune, sym gotreesitter.Symbol) bool {
 	lexer.SetResultSymbol(sym)
 	hasContent := false

@@ -678,4 +678,3 @@ func writeTestFile(t *testing.T, path string, content []byte) {
 		t.Fatalf("WriteFile(%s): %v", path, err)
 	}
 }
-

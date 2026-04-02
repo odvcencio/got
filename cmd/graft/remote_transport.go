@@ -13,7 +13,7 @@ type remoteTransportKind string
 
 const (
 	remoteTransportGraft remoteTransportKind = "graft"
-	remoteTransportGit remoteTransportKind = "git"
+	remoteTransportGit   remoteTransportKind = "git"
 )
 
 func parseRemoteSpec(raw string) (remoteTransportKind, string, error) {

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "fsharp",
-		Extensions:     []string{".fs", ".fsi", ".fsx"},
-		Language:       FsharpLanguage,
-		HighlightQuery: fsharpHighlightQuery,
+		Name:               "fsharp",
+		Extensions:         []string{".fs", ".fsi", ".fsx"},
+		Language:           FsharpLanguage,
+		HighlightQuery:     fsharpHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("fsharp"),
 	})
 }

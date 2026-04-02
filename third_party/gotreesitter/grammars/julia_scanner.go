@@ -4,41 +4,41 @@ import gotreesitter "github.com/odvcencio/gotreesitter"
 
 // External token indexes for the Julia grammar.
 const (
-	juliaTokBlockCommentRest    = 0
-	juliaTokImmediateParen      = 1
-	juliaTokImmediateBracket    = 2
-	juliaTokImmediateBrace      = 3
-	juliaTokImmediateStringStart = 4
+	juliaTokBlockCommentRest      = 0
+	juliaTokImmediateParen        = 1
+	juliaTokImmediateBracket      = 2
+	juliaTokImmediateBrace        = 3
+	juliaTokImmediateStringStart  = 4
 	juliaTokImmediateCommandStart = 5
-	juliaTokContentCmd1         = 6
-	juliaTokContentCmd1Raw      = 7
-	juliaTokContentCmd3         = 8
-	juliaTokContentCmd3Raw      = 9
-	juliaTokContentStr1         = 10
-	juliaTokContentStr1Raw      = 11
-	juliaTokContentStr3         = 12
-	juliaTokContentStr3Raw      = 13
-	juliaTokEndCmd              = 14
-	juliaTokEndStr              = 15
+	juliaTokContentCmd1           = 6
+	juliaTokContentCmd1Raw        = 7
+	juliaTokContentCmd3           = 8
+	juliaTokContentCmd3Raw        = 9
+	juliaTokContentStr1           = 10
+	juliaTokContentStr1Raw        = 11
+	juliaTokContentStr3           = 12
+	juliaTokContentStr3Raw        = 13
+	juliaTokEndCmd                = 14
+	juliaTokEndStr                = 15
 )
 
 const (
-	juliaSymBlockCommentRest     gotreesitter.Symbol = 104
-	juliaSymImmediateParen       gotreesitter.Symbol = 105
-	juliaSymImmediateBracket     gotreesitter.Symbol = 106
-	juliaSymImmediateBrace       gotreesitter.Symbol = 107
-	juliaSymImmediateStringStart gotreesitter.Symbol = 108
+	juliaSymBlockCommentRest      gotreesitter.Symbol = 104
+	juliaSymImmediateParen        gotreesitter.Symbol = 105
+	juliaSymImmediateBracket      gotreesitter.Symbol = 106
+	juliaSymImmediateBrace        gotreesitter.Symbol = 107
+	juliaSymImmediateStringStart  gotreesitter.Symbol = 108
 	juliaSymImmediateCommandStart gotreesitter.Symbol = 109
-	juliaSymContentCmd1          gotreesitter.Symbol = 110
-	juliaSymContentCmd1Raw       gotreesitter.Symbol = 111
-	juliaSymContentCmd3          gotreesitter.Symbol = 112
-	juliaSymContentCmd3Raw       gotreesitter.Symbol = 113
-	juliaSymContentStr1          gotreesitter.Symbol = 114
-	juliaSymContentStr1Raw       gotreesitter.Symbol = 115
-	juliaSymContentStr3          gotreesitter.Symbol = 116
-	juliaSymContentStr3Raw       gotreesitter.Symbol = 117
-	juliaSymEndCmd               gotreesitter.Symbol = 118
-	juliaSymEndStr               gotreesitter.Symbol = 119
+	juliaSymContentCmd1           gotreesitter.Symbol = 110
+	juliaSymContentCmd1Raw        gotreesitter.Symbol = 111
+	juliaSymContentCmd3           gotreesitter.Symbol = 112
+	juliaSymContentCmd3Raw        gotreesitter.Symbol = 113
+	juliaSymContentStr1           gotreesitter.Symbol = 114
+	juliaSymContentStr1Raw        gotreesitter.Symbol = 115
+	juliaSymContentStr3           gotreesitter.Symbol = 116
+	juliaSymContentStr3Raw        gotreesitter.Symbol = 117
+	juliaSymEndCmd                gotreesitter.Symbol = 118
+	juliaSymEndStr                gotreesitter.Symbol = 119
 )
 
 // JuliaExternalScanner handles block comments, immediate tokens, and string/command content for Julia.

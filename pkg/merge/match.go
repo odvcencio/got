@@ -207,7 +207,7 @@ func applyRenameDetection(matches []MatchedEntity) []MatchedEntity {
 
 	// Collect candidates for rename detection, grouped by scenario.
 	// Ours side: DeletedOurs base entities paired with AddedOurs entities.
-	oursDeleted := map[string]*entity.Entity{}  // key -> base entity
+	oursDeleted := map[string]*entity.Entity{}   // key -> base entity
 	oursAdded := map[string]*entity.Entity{}     // key -> ours entity
 	theirsDeleted := map[string]*entity.Entity{} // key -> base entity
 	theirsAdded := map[string]*entity.Entity{}   // key -> theirs entity

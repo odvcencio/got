@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "corn",
-		Extensions:     nil,
-		Language:       CornLanguage,
-		HighlightQuery: cornHighlightQuery,
+		Name:               "corn",
+		Extensions:         nil,
+		Language:           CornLanguage,
+		HighlightQuery:     cornHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("corn"),
 	})
 }

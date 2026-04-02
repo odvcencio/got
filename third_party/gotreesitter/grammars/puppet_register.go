@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "puppet",
-		Extensions:     []string{".pp"},
-		Language:       PuppetLanguage,
-		HighlightQuery: puppetHighlightQuery,
+		Name:               "puppet",
+		Extensions:         []string{".pp"},
+		Language:           PuppetLanguage,
+		HighlightQuery:     puppetHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("puppet"),
 	})
 }

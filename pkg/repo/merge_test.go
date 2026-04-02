@@ -782,35 +782,35 @@ func TestThreeWayTreeMerge_SharedHelper(t *testing.T) {
 	}
 
 	baseMap := map[string]TreeFileEntry{
-		"both-modified.txt":    mkEntry(blobBase, "100644"),
-		"only-theirs-changed":  mkEntry(blobBase, "100644"),
-		"only-ours-changed":    mkEntry(blobBase, "100644"),
-		"deleted-by-theirs":    mkEntry(blobBase, "100644"),
-		"deleted-by-ours":      mkEntry(blobBase, "100644"),
-		"both-deleted":         mkEntry(blobBase, "100644"),
-		"same-in-ours-theirs":  mkEntry(blobBase, "100644"),
+		"both-modified.txt":   mkEntry(blobBase, "100644"),
+		"only-theirs-changed": mkEntry(blobBase, "100644"),
+		"only-ours-changed":   mkEntry(blobBase, "100644"),
+		"deleted-by-theirs":   mkEntry(blobBase, "100644"),
+		"deleted-by-ours":     mkEntry(blobBase, "100644"),
+		"both-deleted":        mkEntry(blobBase, "100644"),
+		"same-in-ours-theirs": mkEntry(blobBase, "100644"),
 	}
 	oursMap := map[string]TreeFileEntry{
-		"both-modified.txt":    mkEntry(blobOurs, "100644"),
-		"only-theirs-changed":  mkEntry(blobBase, "100644"),
-		"only-ours-changed":    mkEntry(blobOurs, "100644"),
-		"deleted-by-theirs":    mkEntry(blobBase, "100644"),
+		"both-modified.txt":   mkEntry(blobOurs, "100644"),
+		"only-theirs-changed": mkEntry(blobBase, "100644"),
+		"only-ours-changed":   mkEntry(blobOurs, "100644"),
+		"deleted-by-theirs":   mkEntry(blobBase, "100644"),
 		// deleted-by-ours: not present
 		// both-deleted: not present
-		"same-in-ours-theirs":  mkEntry(blobSame, "100644"),
-		"only-in-ours":         mkEntry(blobOurs, "100644"),
-		"new-in-both-same":     mkEntry(blobSame, "100644"),
+		"same-in-ours-theirs": mkEntry(blobSame, "100644"),
+		"only-in-ours":        mkEntry(blobOurs, "100644"),
+		"new-in-both-same":    mkEntry(blobSame, "100644"),
 	}
 	theirsMap := map[string]TreeFileEntry{
-		"both-modified.txt":    mkEntry(blobTheirs, "100644"),
-		"only-theirs-changed":  mkEntry(blobTheirs, "100644"),
-		"only-ours-changed":    mkEntry(blobBase, "100644"),
+		"both-modified.txt":   mkEntry(blobTheirs, "100644"),
+		"only-theirs-changed": mkEntry(blobTheirs, "100644"),
+		"only-ours-changed":   mkEntry(blobBase, "100644"),
 		// deleted-by-theirs: not present
-		"deleted-by-ours":      mkEntry(blobBase, "100644"),
+		"deleted-by-ours": mkEntry(blobBase, "100644"),
 		// both-deleted: not present
-		"same-in-ours-theirs":  mkEntry(blobSame, "100644"),
-		"new-in-theirs":        mkEntry(blobTheirs, "100644"),
-		"new-in-both-same":     mkEntry(blobSame, "100644"),
+		"same-in-ours-theirs": mkEntry(blobSame, "100644"),
+		"new-in-theirs":       mkEntry(blobTheirs, "100644"),
+		"new-in-both-same":    mkEntry(blobSame, "100644"),
 	}
 
 	result, err := r.threeWayTreeMerge(baseMap, oursMap, theirsMap)
@@ -829,16 +829,16 @@ func TestThreeWayTreeMerge_SharedHelper(t *testing.T) {
 		path   string
 		status string
 	}{
-		{"both-modified.txt", "clean"},     // both modified different lines -- text merge resolves cleanly
-		{"only-theirs-changed", "clean"},   // only theirs changed from base
-		{"only-ours-changed", "unchanged"}, // only ours changed -- keep ours, unchanged
-		{"deleted-by-theirs", "deleted"},   // theirs deleted, ours same as base -- clean delete
-		{"deleted-by-ours", "deleted"},     // ours deleted, theirs same as base -- clean delete
-		{"both-deleted", "deleted"},        // both deleted
+		{"both-modified.txt", "clean"},       // both modified different lines -- text merge resolves cleanly
+		{"only-theirs-changed", "clean"},     // only theirs changed from base
+		{"only-ours-changed", "unchanged"},   // only ours changed -- keep ours, unchanged
+		{"deleted-by-theirs", "deleted"},     // theirs deleted, ours same as base -- clean delete
+		{"deleted-by-ours", "deleted"},       // ours deleted, theirs same as base -- clean delete
+		{"both-deleted", "deleted"},          // both deleted
 		{"same-in-ours-theirs", "unchanged"}, // ours == theirs, no merge needed
-		{"only-in-ours", "unchanged"},      // only in ours, not in theirs or base
-		{"new-in-theirs", "added"},         // new in theirs only
-		{"new-in-both-same", "unchanged"},  // new in both, same content
+		{"only-in-ours", "unchanged"},        // only in ours, not in theirs or base
+		{"new-in-theirs", "added"},           // new in theirs only
+		{"new-in-both-same", "unchanged"},    // new in both, same content
 	}
 
 	for _, tc := range tests {

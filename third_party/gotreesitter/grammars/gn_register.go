@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "gn",
-		Extensions:     []string{".gn", ".gni"},
-		Language:       GnLanguage,
-		HighlightQuery: gnHighlightQuery,
+		Name:               "gn",
+		Extensions:         []string{".gn", ".gni"},
+		Language:           GnLanguage,
+		HighlightQuery:     gnHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("gn"),
 	})
 }

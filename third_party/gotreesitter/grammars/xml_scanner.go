@@ -10,32 +10,32 @@ import (
 // External token indexes for the XML grammar.
 // These must match the order in the grammar's externals array.
 const (
-	xmlTokPITarget = iota // [0] PITarget
-	xmlTokPIContent       // [1] _pi_content
-	xmlTokComment         // [2] Comment
-	xmlTokCharData        // [3] CharData
-	xmlTokCData           // [4] CData
-	xmlTokXMLModel        // [5] xml-model
-	xmlTokXMLStylesheet   // [6] xml-stylesheet
-	xmlTokStartTagName    // [7] Name (start tag)
-	xmlTokEndTagName      // [8] Name (end tag)
-	xmlTokErrEndName      // [9] _erroneous_end_name
-	xmlTokSelfClosingTag  // [10] />
+	xmlTokPITarget       = iota // [0] PITarget
+	xmlTokPIContent             // [1] _pi_content
+	xmlTokComment               // [2] Comment
+	xmlTokCharData              // [3] CharData
+	xmlTokCData                 // [4] CData
+	xmlTokXMLModel              // [5] xml-model
+	xmlTokXMLStylesheet         // [6] xml-stylesheet
+	xmlTokStartTagName          // [7] Name (start tag)
+	xmlTokEndTagName            // [8] Name (end tag)
+	xmlTokErrEndName            // [9] _erroneous_end_name
+	xmlTokSelfClosingTag        // [10] />
 )
 
 // Concrete symbol IDs from the generated XML grammar ExternalSymbols.
 const (
-	xmlSymPITarget        gotreesitter.Symbol = 66
-	xmlSymPIContent       gotreesitter.Symbol = 67
-	xmlSymComment         gotreesitter.Symbol = 68
-	xmlSymCharData        gotreesitter.Symbol = 69
-	xmlSymCData           gotreesitter.Symbol = 70
-	xmlSymXMLModel        gotreesitter.Symbol = 22
-	xmlSymXMLStylesheet   gotreesitter.Symbol = 21
-	xmlSymStartTagName    gotreesitter.Symbol = 71
-	xmlSymEndTagName      gotreesitter.Symbol = 72
-	xmlSymErrEndName      gotreesitter.Symbol = 73
-	xmlSymSelfClosingTag  gotreesitter.Symbol = 16
+	xmlSymPITarget       gotreesitter.Symbol = 66
+	xmlSymPIContent      gotreesitter.Symbol = 67
+	xmlSymComment        gotreesitter.Symbol = 68
+	xmlSymCharData       gotreesitter.Symbol = 69
+	xmlSymCData          gotreesitter.Symbol = 70
+	xmlSymXMLModel       gotreesitter.Symbol = 22
+	xmlSymXMLStylesheet  gotreesitter.Symbol = 21
+	xmlSymStartTagName   gotreesitter.Symbol = 71
+	xmlSymEndTagName     gotreesitter.Symbol = 72
+	xmlSymErrEndName     gotreesitter.Symbol = 73
+	xmlSymSelfClosingTag gotreesitter.Symbol = 16
 )
 
 // xmlScannerState holds a stack of tag name strings, mirroring the C

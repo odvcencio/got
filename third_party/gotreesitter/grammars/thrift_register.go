@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "thrift",
-		Extensions:     []string{".thrift"},
-		Language:       ThriftLanguage,
-		HighlightQuery: thriftHighlightQuery,
+		Name:               "thrift",
+		Extensions:         []string{".thrift"},
+		Language:           ThriftLanguage,
+		HighlightQuery:     thriftHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("thrift"),
 	})
 }

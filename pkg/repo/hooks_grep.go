@@ -29,7 +29,7 @@ var langToGlob = map[string]string{
 	"go":         "*.go",
 	"rust":       "*.rs",
 	"javascript": "*.js",
-	"typescript":  "*.ts",
+	"typescript": "*.ts",
 	"python":     "*.py",
 	"java":       "*.java",
 	"c":          "*.c",

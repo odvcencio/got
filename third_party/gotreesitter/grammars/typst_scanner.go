@@ -9,108 +9,108 @@ import (
 // External token indexes for the Typst grammar.
 // Must match the order of external symbols in the generated Typst grammar.
 const (
-	typstTokIndent          = 0  // _indent
-	typstTokDedent          = 1  // _dedent
-	typstTokRedent          = 2  // _redent
-	typstTokLineStartCheck  = 3  // _line_start_check
-	typstTokContent         = 4  // [ (content block open)
-	typstTokStrong          = 5  // * (strong markup open)
-	typstTokEmph            = 6  // _ (emph markup open)
-	typstTokBarrier         = 7  // _barrier
-	typstTokBracket         = 8  // text (bracket)
-	typstTokSection         = 9  // _token_section
-	typstTokTermination     = 10 // _termination
-	typstTokInlinedItemEnd  = 11 // end (inlined item end)
-	typstTokInlinedStmtEnd  = 12 // end (inlined stmt end)
-	typstTokBlockedExprEnd  = 13 // sep (blocked expr end)
-	typstTokMathLetter      = 14 // letter
-	typstTokMathIdent       = 15 // ident
-	typstTokMathFrac        = 16 // /
-	typstTokMathGroupEnd    = 17 // )
-	typstTokElse            = 18 // else
-	typstTokUnit            = 19 // _token_unit
-	typstTokURL             = 20 // _token_url
-	typstTokItem            = 21 // - (list item)
-	typstTokTerm            = 22 // / (term)
-	typstTokHead1           = 23 // =
-	typstTokHead2           = 24 // ==
-	typstTokHead3           = 25 // ===
-	typstTokHead4           = 26 // ====
-	typstTokHead5           = 27 // =====
-	typstTokHeadP           = 28 // ====== (6+)
-	typstTokStringBlob      = 29 // _token_string_blob
-	typstTokRawSpanBlob     = 30 // blob (raw span)
-	typstTokRawBlckLdlm     = 31 // ``` (raw block left delimiter)
-	typstTokRawBlckRdlm     = 32 // ``` (raw block right delimiter)
-	typstTokRawBlckBlob     = 33 // blob (raw block)
-	typstTokRawLang         = 34 // ident (raw language)
-	typstTokIdentifier      = 35 // _token_identifier
-	typstTokLabel           = 36 // _token_label
-	typstTokAntiMarkup      = 37 // _token_anti_markup
-	typstTokComment         = 38 // comment
-	typstTokSpace           = 39 // _sp
-	typstTokImmediateSet    = 40 // _immediate
-	typstTokImmediateParen  = 41 // _immediate_paren
-	typstTokImmediateBrack  = 42 // _immediate_brack
-	typstTokImmediateIdent  = 43 // _immediate_ident
-	typstTokImmMathCall     = 44 // _immediate_math_call
-	typstTokImmMathApply    = 45 // _immediate_math_apply
-	typstTokImmMathField    = 46 // _immediate_math_field
-	typstTokImmMathPrime    = 47 // _immediate_math_prime
-	typstTokRecovery        = 48 // _recovery
+	typstTokIndent         = 0  // _indent
+	typstTokDedent         = 1  // _dedent
+	typstTokRedent         = 2  // _redent
+	typstTokLineStartCheck = 3  // _line_start_check
+	typstTokContent        = 4  // [ (content block open)
+	typstTokStrong         = 5  // * (strong markup open)
+	typstTokEmph           = 6  // _ (emph markup open)
+	typstTokBarrier        = 7  // _barrier
+	typstTokBracket        = 8  // text (bracket)
+	typstTokSection        = 9  // _token_section
+	typstTokTermination    = 10 // _termination
+	typstTokInlinedItemEnd = 11 // end (inlined item end)
+	typstTokInlinedStmtEnd = 12 // end (inlined stmt end)
+	typstTokBlockedExprEnd = 13 // sep (blocked expr end)
+	typstTokMathLetter     = 14 // letter
+	typstTokMathIdent      = 15 // ident
+	typstTokMathFrac       = 16 // /
+	typstTokMathGroupEnd   = 17 // )
+	typstTokElse           = 18 // else
+	typstTokUnit           = 19 // _token_unit
+	typstTokURL            = 20 // _token_url
+	typstTokItem           = 21 // - (list item)
+	typstTokTerm           = 22 // / (term)
+	typstTokHead1          = 23 // =
+	typstTokHead2          = 24 // ==
+	typstTokHead3          = 25 // ===
+	typstTokHead4          = 26 // ====
+	typstTokHead5          = 27 // =====
+	typstTokHeadP          = 28 // ====== (6+)
+	typstTokStringBlob     = 29 // _token_string_blob
+	typstTokRawSpanBlob    = 30 // blob (raw span)
+	typstTokRawBlckLdlm    = 31 // ``` (raw block left delimiter)
+	typstTokRawBlckRdlm    = 32 // ``` (raw block right delimiter)
+	typstTokRawBlckBlob    = 33 // blob (raw block)
+	typstTokRawLang        = 34 // ident (raw language)
+	typstTokIdentifier     = 35 // _token_identifier
+	typstTokLabel          = 36 // _token_label
+	typstTokAntiMarkup     = 37 // _token_anti_markup
+	typstTokComment        = 38 // comment
+	typstTokSpace          = 39 // _sp
+	typstTokImmediateSet   = 40 // _immediate
+	typstTokImmediateParen = 41 // _immediate_paren
+	typstTokImmediateBrack = 42 // _immediate_brack
+	typstTokImmediateIdent = 43 // _immediate_ident
+	typstTokImmMathCall    = 44 // _immediate_math_call
+	typstTokImmMathApply   = 45 // _immediate_math_apply
+	typstTokImmMathField   = 46 // _immediate_math_field
+	typstTokImmMathPrime   = 47 // _immediate_math_prime
+	typstTokRecovery       = 48 // _recovery
 )
 
 // Concrete symbol IDs from the generated Typst grammar ExternalSymbols.
 const (
-	typstSymIndent          gotreesitter.Symbol = 74
-	typstSymDedent          gotreesitter.Symbol = 75
-	typstSymRedent          gotreesitter.Symbol = 76
-	typstSymLineStartCheck  gotreesitter.Symbol = 77
-	typstSymContent         gotreesitter.Symbol = 78
-	typstSymStrong          gotreesitter.Symbol = 79
-	typstSymEmph            gotreesitter.Symbol = 80
-	typstSymBarrier         gotreesitter.Symbol = 81
-	typstSymBracket         gotreesitter.Symbol = 82
-	typstSymSection         gotreesitter.Symbol = 83
-	typstSymTermination     gotreesitter.Symbol = 84
-	typstSymInlinedItemEnd  gotreesitter.Symbol = 85
-	typstSymInlinedStmtEnd  gotreesitter.Symbol = 86
-	typstSymBlockedExprEnd  gotreesitter.Symbol = 87
-	typstSymMathLetter      gotreesitter.Symbol = 88
-	typstSymMathIdent       gotreesitter.Symbol = 89
-	typstSymMathFrac        gotreesitter.Symbol = 90
-	typstSymMathGroupEnd    gotreesitter.Symbol = 91
-	typstSymElse            gotreesitter.Symbol = 92
-	typstSymUnit            gotreesitter.Symbol = 93
-	typstSymURL             gotreesitter.Symbol = 94
-	typstSymItem            gotreesitter.Symbol = 95
-	typstSymTerm            gotreesitter.Symbol = 96
-	typstSymHead1           gotreesitter.Symbol = 97
-	typstSymHead2           gotreesitter.Symbol = 98
-	typstSymHead3           gotreesitter.Symbol = 99
-	typstSymHead4           gotreesitter.Symbol = 100
-	typstSymHead5           gotreesitter.Symbol = 101
-	typstSymHeadP           gotreesitter.Symbol = 102
-	typstSymStringBlob      gotreesitter.Symbol = 103
-	typstSymRawSpanBlob     gotreesitter.Symbol = 104
-	typstSymRawBlckLdlm     gotreesitter.Symbol = 105
-	typstSymRawBlckRdlm     gotreesitter.Symbol = 106
-	typstSymRawBlckBlob     gotreesitter.Symbol = 107
-	typstSymRawLang         gotreesitter.Symbol = 108
-	typstSymIdentifier      gotreesitter.Symbol = 109
-	typstSymLabel           gotreesitter.Symbol = 110
-	typstSymAntiMarkup      gotreesitter.Symbol = 111
-	typstSymComment         gotreesitter.Symbol = 112
-	typstSymSpace           gotreesitter.Symbol = 113
-	typstSymImmediateSet    gotreesitter.Symbol = 114
-	typstSymImmediateParen  gotreesitter.Symbol = 115
-	typstSymImmediateBrack  gotreesitter.Symbol = 116
-	typstSymImmediateIdent  gotreesitter.Symbol = 117
-	typstSymImmMathCall     gotreesitter.Symbol = 118
-	typstSymImmMathApply    gotreesitter.Symbol = 119
-	typstSymImmMathField    gotreesitter.Symbol = 120
-	typstSymImmMathPrime    gotreesitter.Symbol = 121
-	typstSymRecovery        gotreesitter.Symbol = 122
+	typstSymIndent         gotreesitter.Symbol = 74
+	typstSymDedent         gotreesitter.Symbol = 75
+	typstSymRedent         gotreesitter.Symbol = 76
+	typstSymLineStartCheck gotreesitter.Symbol = 77
+	typstSymContent        gotreesitter.Symbol = 78
+	typstSymStrong         gotreesitter.Symbol = 79
+	typstSymEmph           gotreesitter.Symbol = 80
+	typstSymBarrier        gotreesitter.Symbol = 81
+	typstSymBracket        gotreesitter.Symbol = 82
+	typstSymSection        gotreesitter.Symbol = 83
+	typstSymTermination    gotreesitter.Symbol = 84
+	typstSymInlinedItemEnd gotreesitter.Symbol = 85
+	typstSymInlinedStmtEnd gotreesitter.Symbol = 86
+	typstSymBlockedExprEnd gotreesitter.Symbol = 87
+	typstSymMathLetter     gotreesitter.Symbol = 88
+	typstSymMathIdent      gotreesitter.Symbol = 89
+	typstSymMathFrac       gotreesitter.Symbol = 90
+	typstSymMathGroupEnd   gotreesitter.Symbol = 91
+	typstSymElse           gotreesitter.Symbol = 92
+	typstSymUnit           gotreesitter.Symbol = 93
+	typstSymURL            gotreesitter.Symbol = 94
+	typstSymItem           gotreesitter.Symbol = 95
+	typstSymTerm           gotreesitter.Symbol = 96
+	typstSymHead1          gotreesitter.Symbol = 97
+	typstSymHead2          gotreesitter.Symbol = 98
+	typstSymHead3          gotreesitter.Symbol = 99
+	typstSymHead4          gotreesitter.Symbol = 100
+	typstSymHead5          gotreesitter.Symbol = 101
+	typstSymHeadP          gotreesitter.Symbol = 102
+	typstSymStringBlob     gotreesitter.Symbol = 103
+	typstSymRawSpanBlob    gotreesitter.Symbol = 104
+	typstSymRawBlckLdlm    gotreesitter.Symbol = 105
+	typstSymRawBlckRdlm    gotreesitter.Symbol = 106
+	typstSymRawBlckBlob    gotreesitter.Symbol = 107
+	typstSymRawLang        gotreesitter.Symbol = 108
+	typstSymIdentifier     gotreesitter.Symbol = 109
+	typstSymLabel          gotreesitter.Symbol = 110
+	typstSymAntiMarkup     gotreesitter.Symbol = 111
+	typstSymComment        gotreesitter.Symbol = 112
+	typstSymSpace          gotreesitter.Symbol = 113
+	typstSymImmediateSet   gotreesitter.Symbol = 114
+	typstSymImmediateParen gotreesitter.Symbol = 115
+	typstSymImmediateBrack gotreesitter.Symbol = 116
+	typstSymImmediateIdent gotreesitter.Symbol = 117
+	typstSymImmMathCall    gotreesitter.Symbol = 118
+	typstSymImmMathApply   gotreesitter.Symbol = 119
+	typstSymImmMathField   gotreesitter.Symbol = 120
+	typstSymImmMathPrime   gotreesitter.Symbol = 121
+	typstSymRecovery       gotreesitter.Symbol = 122
 )
 
 // Container types for the Typst scanner's container stack.

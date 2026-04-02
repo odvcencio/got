@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "luau",
-		Extensions:     []string{".luau"},
-		Language:       LuauLanguage,
-		HighlightQuery: luauHighlightQuery,
+		Name:               "luau",
+		Extensions:         []string{".luau"},
+		Language:           LuauLanguage,
+		HighlightQuery:     luauHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("luau"),
 	})
 }

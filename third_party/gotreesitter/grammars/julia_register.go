@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "julia",
-		Extensions:     []string{".jl"},
-		Language:       JuliaLanguage,
-		HighlightQuery: juliaHighlightQuery,
+		Name:               "julia",
+		Extensions:         []string{".jl"},
+		Language:           JuliaLanguage,
+		HighlightQuery:     juliaHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("julia"),
 	})
 }

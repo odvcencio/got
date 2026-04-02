@@ -198,7 +198,7 @@ func blameCoord(cmd *cobra.Command, r *repo.Repo, filePath, entityFilter string,
 }
 
 type coordBlameResult struct {
-	File           string             `json:"file"`
-	ActiveClaims   []coord.ClaimInfo  `json:"active_claims"`
-	RecentActivity []coord.FeedEvent  `json:"recent_activity"`
+	File           string            `json:"file"`
+	ActiveClaims   []coord.ClaimInfo `json:"active_claims"`
+	RecentActivity []coord.FeedEvent `json:"recent_activity"`
 }

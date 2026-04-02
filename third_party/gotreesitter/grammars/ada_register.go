@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "ada",
-		Extensions:     nil,
-		Language:       AdaLanguage,
-		HighlightQuery: adaHighlightQuery,
+		Name:               "ada",
+		Extensions:         nil,
+		Language:           AdaLanguage,
+		HighlightQuery:     adaHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("ada"),
 	})
 }

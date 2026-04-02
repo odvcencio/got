@@ -33,7 +33,7 @@ type tealState struct {
 // TealExternalScanner handles Teal/Lua string and comment scanning.
 type TealExternalScanner struct{}
 
-func (TealExternalScanner) Create() any { return &tealState{} }
+func (TealExternalScanner) Create() any         { return &tealState{} }
 func (TealExternalScanner) Destroy(payload any) {}
 
 func (TealExternalScanner) Serialize(payload any, buf []byte) int {

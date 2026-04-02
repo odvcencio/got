@@ -475,4 +475,3 @@ func orderFields(merged map[string]structField, base, ours, theirs []structField
 
 	return result
 }
-

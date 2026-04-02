@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "scheme",
-		Extensions:     []string{".scm", ".ss"},
-		Language:       SchemeLanguage,
-		HighlightQuery: schemeHighlightQuery,
+		Name:               "scheme",
+		Extensions:         []string{".scm", ".ss"},
+		Language:           SchemeLanguage,
+		HighlightQuery:     schemeHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("scheme"),
 	})
 }

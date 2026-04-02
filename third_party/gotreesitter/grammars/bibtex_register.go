@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "bibtex",
-		Extensions:     nil,
-		Language:       BibtexLanguage,
-		HighlightQuery: bibtexHighlightQuery,
+		Name:               "bibtex",
+		Extensions:         nil,
+		Language:           BibtexLanguage,
+		HighlightQuery:     bibtexHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("bibtex"),
 	})
 }

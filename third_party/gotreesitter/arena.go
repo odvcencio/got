@@ -91,7 +91,7 @@ type nodeArenaPool struct {
 	mu      sync.Mutex
 	class   arenaClass
 	maxSize int
-	free      []*nodeArena
+	free    []*nodeArena
 }
 
 // ArenaProfile captures node arena allocation statistics.
@@ -455,4 +455,3 @@ func maxRetainedNodeCapacityForClass(class arenaClass) int {
 func maxRetainedOverflowNodeCapacityForClass(class arenaClass) int {
 	return max(maxRetainedNodeCapacityForClass(class)/2, nodeCapacityForClass(class))
 }
-

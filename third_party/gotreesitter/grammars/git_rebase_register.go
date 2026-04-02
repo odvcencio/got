@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "git_rebase",
-		Extensions:     nil,
-		Language:       GitRebaseLanguage,
-		HighlightQuery: gitRebaseHighlightQuery,
+		Name:               "git_rebase",
+		Extensions:         nil,
+		Language:           GitRebaseLanguage,
+		HighlightQuery:     gitRebaseHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("git_rebase"),
 	})
 }

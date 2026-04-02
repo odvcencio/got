@@ -35,7 +35,7 @@ type luauState struct {
 // and block/quoted strings for Luau.
 type LuauExternalScanner struct{}
 
-func (LuauExternalScanner) Create() any { return &luauState{} }
+func (LuauExternalScanner) Create() any         { return &luauState{} }
 func (LuauExternalScanner) Destroy(payload any) {}
 func (LuauExternalScanner) Serialize(payload any, buf []byte) int {
 	s := payload.(*luauState)

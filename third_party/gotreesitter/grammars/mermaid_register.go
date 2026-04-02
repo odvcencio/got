@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "mermaid",
-		Extensions:     []string{".mmd", ".mermaid"},
-		Language:       MermaidLanguage,
-		HighlightQuery: mermaidHighlightQuery,
+		Name:               "mermaid",
+		Extensions:         []string{".mmd", ".mermaid"},
+		Language:           MermaidLanguage,
+		HighlightQuery:     mermaidHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("mermaid"),
 	})
 }

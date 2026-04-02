@@ -8,23 +8,23 @@ import (
 
 // External token indexes for the org grammar.
 const (
-	orgTokListStart  = 0
-	orgTokListEnd    = 1
+	orgTokListStart   = 0
+	orgTokListEnd     = 1
 	orgTokListItemEnd = 2
-	orgTokBullet     = 3
-	orgTokHlStars    = 4
-	orgTokSectionEnd = 5
-	orgTokEndOfFile  = 6
+	orgTokBullet      = 3
+	orgTokHlStars     = 4
+	orgTokSectionEnd  = 5
+	orgTokEndOfFile   = 6
 )
 
 const (
-	orgSymListStart  gotreesitter.Symbol = 117
-	orgSymListEnd    gotreesitter.Symbol = 118
+	orgSymListStart   gotreesitter.Symbol = 117
+	orgSymListEnd     gotreesitter.Symbol = 118
 	orgSymListItemEnd gotreesitter.Symbol = 119
-	orgSymBullet     gotreesitter.Symbol = 120
-	orgSymHlStars    gotreesitter.Symbol = 121
-	orgSymSectionEnd gotreesitter.Symbol = 122
-	orgSymEndOfFile  gotreesitter.Symbol = 123
+	orgSymBullet      gotreesitter.Symbol = 120
+	orgSymHlStars     gotreesitter.Symbol = 121
+	orgSymSectionEnd  gotreesitter.Symbol = 122
+	orgSymEndOfFile   gotreesitter.Symbol = 123
 )
 
 // org bullet types

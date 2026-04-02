@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "css",
-		Extensions:     []string{".css"},
-		Language:       CssLanguage,
-		HighlightQuery: cssHighlightQuery,
+		Name:               "css",
+		Extensions:         []string{".css"},
+		Language:           CssLanguage,
+		HighlightQuery:     cssHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("css"),
 	})
 }

@@ -16,10 +16,12 @@ const (
 // HlslExternalScanner handles C++ R"delim(...)delim" raw string literals for HLSL.
 type HlslExternalScanner struct{}
 
-func (HlslExternalScanner) Create() any                           { return rawStringCreate() }
-func (HlslExternalScanner) Destroy(payload any)                   {}
-func (HlslExternalScanner) Serialize(payload any, buf []byte) int { return rawStringSerialize(payload, buf) }
-func (HlslExternalScanner) Deserialize(payload any, buf []byte)   { rawStringDeserialize(payload, buf) }
+func (HlslExternalScanner) Create() any         { return rawStringCreate() }
+func (HlslExternalScanner) Destroy(payload any) {}
+func (HlslExternalScanner) Serialize(payload any, buf []byte) int {
+	return rawStringSerialize(payload, buf)
+}
+func (HlslExternalScanner) Deserialize(payload any, buf []byte) { rawStringDeserialize(payload, buf) }
 
 func (HlslExternalScanner) Scan(payload any, lexer *gotreesitter.ExternalLexer, validSymbols []bool) bool {
 	return rawStringScan(payload, lexer, validSymbols,

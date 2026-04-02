@@ -128,16 +128,16 @@ var hsSymMap = [49]gotreesitter.Symbol{
 // ---------------------------------------------------------------------------
 
 const (
-	hsDeclLayout     = 0
-	hsDoLayout       = 1
-	hsCaseLayout     = 2
-	hsLetLayout      = 3
-	hsQuoteLayout    = 4
-	hsMultiWayIf     = 5
-	hsBraces         = 6
-	hsTExp           = 7
-	hsModuleHeader   = 8
-	hsNoContext      = 9
+	hsDeclLayout   = 0
+	hsDoLayout     = 1
+	hsCaseLayout   = 2
+	hsLetLayout    = 3
+	hsQuoteLayout  = 4
+	hsMultiWayIf   = 5
+	hsBraces       = 6
+	hsTExp         = 7
+	hsModuleHeader = 8
+	hsNoContext    = 9
 )
 
 // ---------------------------------------------------------------------------
@@ -2183,7 +2183,7 @@ func (env *hsEnv) scan() bool {
 //     [4 bytes] indent (uint32 LE)
 
 const hsSerializeHeaderSize = 1 + 1 + 4 + 1 + 2 // 9 bytes
-const hsSerializeContextSize = 1 + 4             // 5 bytes
+const hsSerializeContextSize = 1 + 4            // 5 bytes
 
 func hsSerialize(state *hsState, buf []byte) int {
 	needed := hsSerializeHeaderSize + len(state.contexts)*hsSerializeContextSize

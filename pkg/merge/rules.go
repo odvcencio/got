@@ -6,7 +6,7 @@ import "github.com/odvcencio/graft/pkg/entity"
 type DiagSeverity int
 
 const (
-	DiagInfo    DiagSeverity = iota
+	DiagInfo DiagSeverity = iota
 	DiagWarning
 	DiagError
 )

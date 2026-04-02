@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "caddy",
-		Extensions:     nil,
-		Language:       CaddyLanguage,
-		HighlightQuery: caddyHighlightQuery,
+		Name:               "caddy",
+		Extensions:         nil,
+		Language:           CaddyLanguage,
+		HighlightQuery:     caddyHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("caddy"),
 	})
 }

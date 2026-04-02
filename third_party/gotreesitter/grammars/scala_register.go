@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "scala",
-		Extensions:     []string{".scala"},
-		Language:       ScalaLanguage,
-		HighlightQuery: scalaHighlightQuery,
+		Name:               "scala",
+		Extensions:         []string{".scala"},
+		Language:           ScalaLanguage,
+		HighlightQuery:     scalaHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("scala"),
 	})
 }

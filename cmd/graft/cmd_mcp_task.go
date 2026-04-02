@@ -381,4 +381,3 @@ func mcpToolTaskDelete(args map[string]any) (any, error) {
 		"id":     id,
 	}, nil
 }
-

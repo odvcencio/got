@@ -9,15 +9,15 @@ import (
 
 // External token indexes for the Blade grammar.
 const (
-	bladeTokStartTagName           = 0
-	bladeTokScriptStartTagName     = 1
-	bladeTokStyleStartTagName      = 2
-	bladeTokEndTagName             = 3
-	bladeTokErroneousEndTagName    = 4
-	bladeTokSelfClosingTagDelim    = 5
-	bladeTokImplicitEndTag         = 6
-	bladeTokRawText                = 7
-	bladeTokComment                = 8
+	bladeTokStartTagName        = 0
+	bladeTokScriptStartTagName  = 1
+	bladeTokStyleStartTagName   = 2
+	bladeTokEndTagName          = 3
+	bladeTokErroneousEndTagName = 4
+	bladeTokSelfClosingTagDelim = 5
+	bladeTokImplicitEndTag      = 6
+	bladeTokRawText             = 7
+	bladeTokComment             = 8
 )
 
 // bladeSyms caches resolved external symbol IDs for the blade grammar.
@@ -56,7 +56,7 @@ type bladeState struct {
 // BladeExternalScanner handles HTML tag tracking for Blade templates.
 type BladeExternalScanner struct{}
 
-func (BladeExternalScanner) Create() any { return &bladeState{} }
+func (BladeExternalScanner) Create() any         { return &bladeState{} }
 func (BladeExternalScanner) Destroy(payload any) {}
 
 func (BladeExternalScanner) Serialize(payload any, buf []byte) int {
@@ -130,7 +130,7 @@ type goLexerAdapter struct {
 	l *gotreesitter.ExternalLexer
 }
 
-func (a *goLexerAdapter) lookahead() rune  { return a.l.Lookahead() }
+func (a *goLexerAdapter) lookahead() rune   { return a.l.Lookahead() }
 func (a *goLexerAdapter) advance(skip bool) { a.l.Advance(skip) }
 func (a *goLexerAdapter) markEnd()          { a.l.MarkEnd() }
 func (a *goLexerAdapter) eof() bool         { return a.l.Lookahead() == 0 }

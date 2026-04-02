@@ -243,4 +243,3 @@ func extractEntityListAndMap(path string, state cherryPickFileState) (*entity.En
 	}
 	return el, entity.BuildEntityMap(el), nil
 }
-

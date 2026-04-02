@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "dockerfile",
-		Extensions:     nil,
-		Language:       DockerfileLanguage,
-		HighlightQuery: dockerfileHighlightQuery,
+		Name:               "dockerfile",
+		Extensions:         nil,
+		Language:           DockerfileLanguage,
+		HighlightQuery:     dockerfileHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("dockerfile"),
 	})
 }

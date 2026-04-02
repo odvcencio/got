@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "scss",
-		Extensions:     []string{".scss"},
-		Language:       ScssLanguage,
-		HighlightQuery: scssHighlightQuery,
+		Name:               "scss",
+		Extensions:         []string{".scss"},
+		Language:           ScssLanguage,
+		HighlightQuery:     scssHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("scss"),
 	})
 }

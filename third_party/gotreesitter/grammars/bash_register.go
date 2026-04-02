@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "bash",
-		Extensions:     []string{".sh"},
-		Language:       BashLanguage,
-		HighlightQuery: bashHighlightQuery,
+		Name:               "bash",
+		Extensions:         []string{".sh"},
+		Language:           BashLanguage,
+		HighlightQuery:     bashHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("bash"),
 	})
 }

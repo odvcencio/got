@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "properties",
-		Extensions:     []string{".properties"},
-		Language:       PropertiesLanguage,
-		HighlightQuery: propertiesHighlightQuery,
+		Name:               "properties",
+		Extensions:         []string{".properties"},
+		Language:           PropertiesLanguage,
+		HighlightQuery:     propertiesHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("properties"),
 	})
 }

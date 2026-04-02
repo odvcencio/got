@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "janet",
-		Extensions:     []string{".janet"},
-		Language:       JanetLanguage,
-		HighlightQuery: janetHighlightQuery,
+		Name:               "janet",
+		Extensions:         []string{".janet"},
+		Language:           JanetLanguage,
+		HighlightQuery:     janetHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("janet"),
 	})
 }

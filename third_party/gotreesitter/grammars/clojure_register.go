@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "clojure",
-		Extensions:     []string{".clj", ".cljs", ".cljc", ".edn"},
-		Language:       ClojureLanguage,
-		HighlightQuery: clojureHighlightQuery,
+		Name:               "clojure",
+		Extensions:         []string{".clj", ".cljs", ".cljc", ".edn"},
+		Language:           ClojureLanguage,
+		HighlightQuery:     clojureHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("clojure"),
 	})
 }

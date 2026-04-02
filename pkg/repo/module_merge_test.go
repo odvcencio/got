@@ -95,7 +95,7 @@ func TestMergeModules_BothChangedNewerWins(t *testing.T) {
 	// c0 = base, c1 = ours (gen 2), c3 = theirs (gen 4). Theirs is newer.
 	hashes := makeCommitChain(t, r.Store, 4)
 	hashBase := hashes[0]
-	hashOurs := hashes[1]  // generation 2
+	hashOurs := hashes[1]   // generation 2
 	hashTheirs := hashes[3] // generation 4
 
 	baseMap := moduleMap(TreeModuleEntry{Path: "libs/bar", BlobHash: hashBase})
@@ -309,7 +309,7 @@ func TestMergeModules_AddedBothDifferentNewerWins(t *testing.T) {
 	}
 
 	hashes := makeCommitChain(t, r.Store, 3)
-	hashOurs := hashes[0]  // generation 1
+	hashOurs := hashes[0]   // generation 1
 	hashTheirs := hashes[2] // generation 3
 
 	baseMap := moduleMap()

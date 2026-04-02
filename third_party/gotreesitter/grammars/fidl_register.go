@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "fidl",
-		Extensions:     nil,
-		Language:       FidlLanguage,
-		HighlightQuery: fidlHighlightQuery,
+		Name:               "fidl",
+		Extensions:         nil,
+		Language:           FidlLanguage,
+		HighlightQuery:     fidlHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("fidl"),
 	})
 }

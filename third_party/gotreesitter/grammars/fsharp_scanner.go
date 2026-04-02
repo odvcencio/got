@@ -6,48 +6,48 @@ import (
 
 // External token indexes for the F# grammar.
 const (
-	fsTokNewline           = 0
-	fsTokIndent            = 1
-	fsTokDedent            = 2
-	fsTokThen              = 3
-	fsTokElse              = 4
-	fsTokElif              = 5
-	fsTokPreprocIf         = 6
-	fsTokPreprocElse       = 7
-	fsTokPreprocEnd        = 8
-	fsTokClass             = 9
-	fsTokStruct            = 10
-	fsTokInterface         = 11
-	fsTokEnd               = 12
-	fsTokAnd               = 13
-	fsTokWith              = 14
-	fsTokTripleQuoteContent = 15
+	fsTokNewline             = 0
+	fsTokIndent              = 1
+	fsTokDedent              = 2
+	fsTokThen                = 3
+	fsTokElse                = 4
+	fsTokElif                = 5
+	fsTokPreprocIf           = 6
+	fsTokPreprocElse         = 7
+	fsTokPreprocEnd          = 8
+	fsTokClass               = 9
+	fsTokStruct              = 10
+	fsTokInterface           = 11
+	fsTokEnd                 = 12
+	fsTokAnd                 = 13
+	fsTokWith                = 14
+	fsTokTripleQuoteContent  = 15
 	fsTokBlockCommentContent = 16
-	fsTokInsideString      = 17
-	fsTokNewlineNoAligned  = 18
-	fsTokTupleMarker       = 19
-	fsTokErrorSentinel     = 20
+	fsTokInsideString        = 17
+	fsTokNewlineNoAligned    = 18
+	fsTokTupleMarker         = 19
+	fsTokErrorSentinel       = 20
 )
 
 const (
-	fsSymNewline            gotreesitter.Symbol = 185
-	fsSymIndent             gotreesitter.Symbol = 186
-	fsSymDedent             gotreesitter.Symbol = 187
-	fsSymThen               gotreesitter.Symbol = 62
-	fsSymElse               gotreesitter.Symbol = 61
-	fsSymElif               gotreesitter.Symbol = 63
-	fsSymPreprocIf          gotreesitter.Symbol = 182
-	fsSymPreprocElse        gotreesitter.Symbol = 184
-	fsSymPreprocEnd         gotreesitter.Symbol = 183
-	fsSymClass              gotreesitter.Symbol = 109
-	fsSymStruct             gotreesitter.Symbol = 188
-	fsSymInterface          gotreesitter.Symbol = 189
-	fsSymEnd                gotreesitter.Symbol = 82
-	fsSymAnd                gotreesitter.Symbol = 12
-	fsSymWith               gotreesitter.Symbol = 43
-	fsSymTripleQuoteContent gotreesitter.Symbol = 190
+	fsSymNewline             gotreesitter.Symbol = 185
+	fsSymIndent              gotreesitter.Symbol = 186
+	fsSymDedent              gotreesitter.Symbol = 187
+	fsSymThen                gotreesitter.Symbol = 62
+	fsSymElse                gotreesitter.Symbol = 61
+	fsSymElif                gotreesitter.Symbol = 63
+	fsSymPreprocIf           gotreesitter.Symbol = 182
+	fsSymPreprocElse         gotreesitter.Symbol = 184
+	fsSymPreprocEnd          gotreesitter.Symbol = 183
+	fsSymClass               gotreesitter.Symbol = 109
+	fsSymStruct              gotreesitter.Symbol = 188
+	fsSymInterface           gotreesitter.Symbol = 189
+	fsSymEnd                 gotreesitter.Symbol = 82
+	fsSymAnd                 gotreesitter.Symbol = 12
+	fsSymWith                gotreesitter.Symbol = 43
+	fsSymTripleQuoteContent  gotreesitter.Symbol = 190
 	fsSymBlockCommentContent gotreesitter.Symbol = 191
-	fsSymNewlineNoAligned   gotreesitter.Symbol = 193
+	fsSymNewlineNoAligned    gotreesitter.Symbol = 193
 )
 
 type fsState struct {

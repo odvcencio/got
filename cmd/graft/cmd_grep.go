@@ -299,9 +299,9 @@ func rewrittenFiles(results []repo.StructuralGrepResult) []string {
 
 // JSONStructuralGrepOutput is the top-level JSON output for structural grep.
 type JSONStructuralGrepOutput struct {
-	Results    []JSONStructuralGrepResult `json:"results"`
-	IsRewrite  bool                       `json:"isRewrite,omitempty"`
-	Rewritten  []string                   `json:"rewritten,omitempty"`
+	Results   []JSONStructuralGrepResult `json:"results"`
+	IsRewrite bool                       `json:"isRewrite,omitempty"`
+	Rewritten []string                   `json:"rewritten,omitempty"`
 }
 
 // JSONStructuralGrepResult represents a single structural match in JSON.

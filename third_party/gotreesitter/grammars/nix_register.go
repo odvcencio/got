@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "nix",
-		Extensions:     []string{".nix"},
-		Language:       NixLanguage,
-		HighlightQuery: nixHighlightQuery,
+		Name:               "nix",
+		Extensions:         []string{".nix"},
+		Language:           NixLanguage,
+		HighlightQuery:     nixHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("nix"),
 	})
 }

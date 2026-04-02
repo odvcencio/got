@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "gitattributes",
-		Extensions:     []string{".gitattributes"},
-		Language:       GitattributesLanguage,
-		HighlightQuery: gitattributesHighlightQuery,
+		Name:               "gitattributes",
+		Extensions:         []string{".gitattributes"},
+		Language:           GitattributesLanguage,
+		HighlightQuery:     gitattributesHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("gitattributes"),
 	})
 }

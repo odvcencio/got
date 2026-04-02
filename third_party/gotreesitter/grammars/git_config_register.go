@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "git_config",
-		Extensions:     []string{".gitconfig"},
-		Language:       GitConfigLanguage,
-		HighlightQuery: gitConfigHighlightQuery,
+		Name:               "git_config",
+		Extensions:         []string{".gitconfig"},
+		Language:           GitConfigLanguage,
+		HighlightQuery:     gitConfigHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("git_config"),
 	})
 }

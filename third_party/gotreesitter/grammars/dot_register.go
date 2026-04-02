@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "dot",
-		Extensions:     []string{".dot", ".gv"},
-		Language:       DotLanguage,
-		HighlightQuery: dotHighlightQuery,
+		Name:               "dot",
+		Extensions:         []string{".dot", ".gv"},
+		Language:           DotLanguage,
+		HighlightQuery:     dotHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("dot"),
 	})
 }

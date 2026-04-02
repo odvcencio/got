@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "mojo",
-		Extensions:     []string{".mojo", ".🔥"},
-		Language:       MojoLanguage,
-		HighlightQuery: mojoHighlightQuery,
+		Name:               "mojo",
+		Extensions:         []string{".mojo", ".🔥"},
+		Language:           MojoLanguage,
+		HighlightQuery:     mojoHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("mojo"),
 	})
 }

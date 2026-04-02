@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "c",
-		Extensions:     []string{".c", ".h"},
-		Language:       CLanguage,
-		HighlightQuery: cHighlightQuery,
+		Name:               "c",
+		Extensions:         []string{".c", ".h"},
+		Language:           CLanguage,
+		HighlightQuery:     cHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("c"),
 	})
 }

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "cpon",
-		Extensions:     nil,
-		Language:       CponLanguage,
-		HighlightQuery: cponHighlightQuery,
+		Name:               "cpon",
+		Extensions:         nil,
+		Language:           CponLanguage,
+		HighlightQuery:     cponHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("cpon"),
 	})
 }

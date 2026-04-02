@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "cuda",
-		Extensions:     nil,
-		Language:       CudaLanguage,
-		HighlightQuery: cudaHighlightQuery,
+		Name:               "cuda",
+		Extensions:         nil,
+		Language:           CudaLanguage,
+		HighlightQuery:     cudaHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("cuda"),
 	})
 }

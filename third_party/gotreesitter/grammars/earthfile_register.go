@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "earthfile",
-		Extensions:     nil,
-		Language:       EarthfileLanguage,
-		HighlightQuery: earthfileHighlightQuery,
+		Name:               "earthfile",
+		Extensions:         nil,
+		Language:           EarthfileLanguage,
+		HighlightQuery:     earthfileHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("earthfile"),
 	})
 }

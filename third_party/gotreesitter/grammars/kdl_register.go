@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "kdl",
-		Extensions:     []string{".kdl"},
-		Language:       KdlLanguage,
-		HighlightQuery: kdlHighlightQuery,
+		Name:               "kdl",
+		Extensions:         []string{".kdl"},
+		Language:           KdlLanguage,
+		HighlightQuery:     kdlHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("kdl"),
 	})
 }

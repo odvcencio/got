@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "tablegen",
-		Extensions:     []string{".td"},
-		Language:       TablegenLanguage,
-		HighlightQuery: tablegenHighlightQuery,
+		Name:               "tablegen",
+		Extensions:         []string{".td"},
+		Language:           TablegenLanguage,
+		HighlightQuery:     tablegenHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("tablegen"),
 	})
 }

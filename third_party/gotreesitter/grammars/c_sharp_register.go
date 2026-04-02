@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "c_sharp",
-		Extensions:     []string{".cs"},
-		Language:       CSharpLanguage,
-		HighlightQuery: cSharpHighlightQuery,
+		Name:               "c_sharp",
+		Extensions:         []string{".cs"},
+		Language:           CSharpLanguage,
+		HighlightQuery:     cSharpHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("c_sharp"),
 	})
 }

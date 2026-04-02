@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "php",
-		Extensions:     []string{".php"},
-		Language:       PhpLanguage,
-		HighlightQuery: phpHighlightQuery,
+		Name:               "php",
+		Extensions:         []string{".php"},
+		Language:           PhpLanguage,
+		HighlightQuery:     phpHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("php"),
 	})
 }

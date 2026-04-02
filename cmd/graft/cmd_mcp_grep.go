@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/odvcencio/graft/pkg/entity"
-	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/odvcencio/gotreesitter/grammars"
 	tsgrep "github.com/odvcencio/gotreesitter/grep"
+	"github.com/odvcencio/graft/pkg/entity"
+	"github.com/odvcencio/graft/pkg/repo"
 )
 
 // mcpGrepToolDefs returns tool definitions for structural grep operations.

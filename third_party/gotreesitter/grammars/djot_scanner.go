@@ -94,89 +94,89 @@ const (
 
 // Concrete symbol IDs from the generated Djot grammar ExternalSymbols.
 const (
-	djotSymIgnored                   gotreesitter.Symbol = 63
-	djotSymBlockClose                gotreesitter.Symbol = 64
-	djotSymEOFOrNewline              gotreesitter.Symbol = 65
-	djotSymNewline                   gotreesitter.Symbol = 66
-	djotSymNewlineInline             gotreesitter.Symbol = 67
-	djotSymNonWhitespaceCheck        gotreesitter.Symbol = 68
-	djotSymHardLineBreak             gotreesitter.Symbol = 69
-	djotSymFrontmatterMarker         gotreesitter.Symbol = 70
-	djotSymHeadingBegin              gotreesitter.Symbol = 71
-	djotSymHeadingContinuation       gotreesitter.Symbol = 72
-	djotSymDivBegin                  gotreesitter.Symbol = 73
-	djotSymDivEnd                    gotreesitter.Symbol = 74
-	djotSymCodeBlockBegin            gotreesitter.Symbol = 75
-	djotSymCodeBlockEnd              gotreesitter.Symbol = 76
-	djotSymListMarkerDash            gotreesitter.Symbol = 77
-	djotSymListMarkerStar            gotreesitter.Symbol = 78
-	djotSymListMarkerPlus            gotreesitter.Symbol = 79
-	djotSymListMarkerTaskBegin       gotreesitter.Symbol = 80
-	djotSymListMarkerDefinition      gotreesitter.Symbol = 81
-	djotSymListMarkerDecimalPeriod   gotreesitter.Symbol = 82
+	djotSymIgnored                    gotreesitter.Symbol = 63
+	djotSymBlockClose                 gotreesitter.Symbol = 64
+	djotSymEOFOrNewline               gotreesitter.Symbol = 65
+	djotSymNewline                    gotreesitter.Symbol = 66
+	djotSymNewlineInline              gotreesitter.Symbol = 67
+	djotSymNonWhitespaceCheck         gotreesitter.Symbol = 68
+	djotSymHardLineBreak              gotreesitter.Symbol = 69
+	djotSymFrontmatterMarker          gotreesitter.Symbol = 70
+	djotSymHeadingBegin               gotreesitter.Symbol = 71
+	djotSymHeadingContinuation        gotreesitter.Symbol = 72
+	djotSymDivBegin                   gotreesitter.Symbol = 73
+	djotSymDivEnd                     gotreesitter.Symbol = 74
+	djotSymCodeBlockBegin             gotreesitter.Symbol = 75
+	djotSymCodeBlockEnd               gotreesitter.Symbol = 76
+	djotSymListMarkerDash             gotreesitter.Symbol = 77
+	djotSymListMarkerStar             gotreesitter.Symbol = 78
+	djotSymListMarkerPlus             gotreesitter.Symbol = 79
+	djotSymListMarkerTaskBegin        gotreesitter.Symbol = 80
+	djotSymListMarkerDefinition       gotreesitter.Symbol = 81
+	djotSymListMarkerDecimalPeriod    gotreesitter.Symbol = 82
 	djotSymListMarkerLowerAlphaPeriod gotreesitter.Symbol = 83
 	djotSymListMarkerUpperAlphaPeriod gotreesitter.Symbol = 84
 	djotSymListMarkerLowerRomanPeriod gotreesitter.Symbol = 85
 	djotSymListMarkerUpperRomanPeriod gotreesitter.Symbol = 86
-	djotSymListMarkerDecimalParen    gotreesitter.Symbol = 87
-	djotSymListMarkerLowerAlphaParen gotreesitter.Symbol = 88
-	djotSymListMarkerUpperAlphaParen gotreesitter.Symbol = 89
-	djotSymListMarkerLowerRomanParen gotreesitter.Symbol = 90
-	djotSymListMarkerUpperRomanParen gotreesitter.Symbol = 91
-	djotSymListMarkerDecimalParens   gotreesitter.Symbol = 92
+	djotSymListMarkerDecimalParen     gotreesitter.Symbol = 87
+	djotSymListMarkerLowerAlphaParen  gotreesitter.Symbol = 88
+	djotSymListMarkerUpperAlphaParen  gotreesitter.Symbol = 89
+	djotSymListMarkerLowerRomanParen  gotreesitter.Symbol = 90
+	djotSymListMarkerUpperRomanParen  gotreesitter.Symbol = 91
+	djotSymListMarkerDecimalParens    gotreesitter.Symbol = 92
 	djotSymListMarkerLowerAlphaParens gotreesitter.Symbol = 93
 	djotSymListMarkerUpperAlphaParens gotreesitter.Symbol = 94
 	djotSymListMarkerLowerRomanParens gotreesitter.Symbol = 95
 	djotSymListMarkerUpperRomanParens gotreesitter.Symbol = 96
-	djotSymListItemContinuation      gotreesitter.Symbol = 97
-	djotSymListItemEnd               gotreesitter.Symbol = 98
-	djotSymIndentedContentSpacer     gotreesitter.Symbol = 99
-	djotSymCloseParagraph            gotreesitter.Symbol = 100
-	djotSymBlockQuoteBegin           gotreesitter.Symbol = 101
-	djotSymBlockQuoteContinuation    gotreesitter.Symbol = 102
-	djotSymThematicBreakDash         gotreesitter.Symbol = 103
-	djotSymThematicBreakStar         gotreesitter.Symbol = 104
-	djotSymFootnoteMarkBegin         gotreesitter.Symbol = 105
-	djotSymFootnoteContinuation      gotreesitter.Symbol = 106
-	djotSymFootnoteEnd               gotreesitter.Symbol = 107
-	djotSymLinkRefDefMarkBegin       gotreesitter.Symbol = 108
-	djotSymLinkRefDefLabelEnd        gotreesitter.Symbol = 109
-	djotSymTableHeaderBegin          gotreesitter.Symbol = 110
-	djotSymTableSeparatorBegin       gotreesitter.Symbol = 111
-	djotSymTableRowBegin             gotreesitter.Symbol = 112
-	djotSymTableRowEndNewline        gotreesitter.Symbol = 113
-	djotSymTableCellEnd              gotreesitter.Symbol = 114
-	djotSymTableCaptionBegin         gotreesitter.Symbol = 115
-	djotSymTableCaptionEnd           gotreesitter.Symbol = 116
-	djotSymBlockAttributeBegin       gotreesitter.Symbol = 117
-	djotSymCommentEndMarker          gotreesitter.Symbol = 118
-	djotSymCommentClose              gotreesitter.Symbol = 119
-	djotSymInlineCommentBegin        gotreesitter.Symbol = 120
-	djotSymVerbatimBegin             gotreesitter.Symbol = 121
-	djotSymVerbatimEnd               gotreesitter.Symbol = 122
-	djotSymVerbatimContent           gotreesitter.Symbol = 123
-	djotSymEmphasisMarkBegin         gotreesitter.Symbol = 124
-	djotSymEmphasisEnd               gotreesitter.Symbol = 125
-	djotSymStrongMarkBegin           gotreesitter.Symbol = 126
-	djotSymStrongEnd                 gotreesitter.Symbol = 127
-	djotSymSuperscriptMarkBegin      gotreesitter.Symbol = 128
-	djotSymSuperscriptEnd            gotreesitter.Symbol = 129
-	djotSymSubscriptMarkBegin        gotreesitter.Symbol = 130
-	djotSymSubscriptEnd              gotreesitter.Symbol = 131
-	djotSymHighlightedMarkBegin      gotreesitter.Symbol = 132
-	djotSymHighlightedEnd            gotreesitter.Symbol = 133
-	djotSymInsertMarkBegin           gotreesitter.Symbol = 134
-	djotSymInsertEnd                 gotreesitter.Symbol = 135
-	djotSymDeleteMarkBegin           gotreesitter.Symbol = 136
-	djotSymDeleteEnd                 gotreesitter.Symbol = 137
-	djotSymParensSpanMarkBegin       gotreesitter.Symbol = 138
-	djotSymParensSpanEnd             gotreesitter.Symbol = 139
-	djotSymCurlyBracketSpanMarkBegin gotreesitter.Symbol = 140
-	djotSymCurlyBracketSpanEnd       gotreesitter.Symbol = 141
+	djotSymListItemContinuation       gotreesitter.Symbol = 97
+	djotSymListItemEnd                gotreesitter.Symbol = 98
+	djotSymIndentedContentSpacer      gotreesitter.Symbol = 99
+	djotSymCloseParagraph             gotreesitter.Symbol = 100
+	djotSymBlockQuoteBegin            gotreesitter.Symbol = 101
+	djotSymBlockQuoteContinuation     gotreesitter.Symbol = 102
+	djotSymThematicBreakDash          gotreesitter.Symbol = 103
+	djotSymThematicBreakStar          gotreesitter.Symbol = 104
+	djotSymFootnoteMarkBegin          gotreesitter.Symbol = 105
+	djotSymFootnoteContinuation       gotreesitter.Symbol = 106
+	djotSymFootnoteEnd                gotreesitter.Symbol = 107
+	djotSymLinkRefDefMarkBegin        gotreesitter.Symbol = 108
+	djotSymLinkRefDefLabelEnd         gotreesitter.Symbol = 109
+	djotSymTableHeaderBegin           gotreesitter.Symbol = 110
+	djotSymTableSeparatorBegin        gotreesitter.Symbol = 111
+	djotSymTableRowBegin              gotreesitter.Symbol = 112
+	djotSymTableRowEndNewline         gotreesitter.Symbol = 113
+	djotSymTableCellEnd               gotreesitter.Symbol = 114
+	djotSymTableCaptionBegin          gotreesitter.Symbol = 115
+	djotSymTableCaptionEnd            gotreesitter.Symbol = 116
+	djotSymBlockAttributeBegin        gotreesitter.Symbol = 117
+	djotSymCommentEndMarker           gotreesitter.Symbol = 118
+	djotSymCommentClose               gotreesitter.Symbol = 119
+	djotSymInlineCommentBegin         gotreesitter.Symbol = 120
+	djotSymVerbatimBegin              gotreesitter.Symbol = 121
+	djotSymVerbatimEnd                gotreesitter.Symbol = 122
+	djotSymVerbatimContent            gotreesitter.Symbol = 123
+	djotSymEmphasisMarkBegin          gotreesitter.Symbol = 124
+	djotSymEmphasisEnd                gotreesitter.Symbol = 125
+	djotSymStrongMarkBegin            gotreesitter.Symbol = 126
+	djotSymStrongEnd                  gotreesitter.Symbol = 127
+	djotSymSuperscriptMarkBegin       gotreesitter.Symbol = 128
+	djotSymSuperscriptEnd             gotreesitter.Symbol = 129
+	djotSymSubscriptMarkBegin         gotreesitter.Symbol = 130
+	djotSymSubscriptEnd               gotreesitter.Symbol = 131
+	djotSymHighlightedMarkBegin       gotreesitter.Symbol = 132
+	djotSymHighlightedEnd             gotreesitter.Symbol = 133
+	djotSymInsertMarkBegin            gotreesitter.Symbol = 134
+	djotSymInsertEnd                  gotreesitter.Symbol = 135
+	djotSymDeleteMarkBegin            gotreesitter.Symbol = 136
+	djotSymDeleteEnd                  gotreesitter.Symbol = 137
+	djotSymParensSpanMarkBegin        gotreesitter.Symbol = 138
+	djotSymParensSpanEnd              gotreesitter.Symbol = 139
+	djotSymCurlyBracketSpanMarkBegin  gotreesitter.Symbol = 140
+	djotSymCurlyBracketSpanEnd        gotreesitter.Symbol = 141
 	djotSymSquareBracketSpanMarkBegin gotreesitter.Symbol = 142
-	djotSymSquareBracketSpanEnd      gotreesitter.Symbol = 143
-	djotSymInFallback                gotreesitter.Symbol = 144
-	djotSymError                     gotreesitter.Symbol = 145
+	djotSymSquareBracketSpanEnd       gotreesitter.Symbol = 143
+	djotSymInFallback                 gotreesitter.Symbol = 144
+	djotSymError                      gotreesitter.Symbol = 145
 )
 
 // tokenToSym maps external token indexes to Symbol IDs.
@@ -270,7 +270,7 @@ var djotTokenToSym = [83]gotreesitter.Symbol{
 type djotBlockType uint8
 
 const (
-	djotBlockQuote        djotBlockType = iota
+	djotBlockQuote djotBlockType = iota
 	djotCodeBlock
 	djotDiv
 	djotSection
@@ -305,7 +305,7 @@ const (
 type djotOrderedListType uint8
 
 const (
-	djotDecimal    djotOrderedListType = iota
+	djotDecimal djotOrderedListType = iota
 	djotLowerAlpha
 	djotUpperAlpha
 	djotLowerRoman
@@ -333,7 +333,7 @@ const (
 type djotSpanType uint8
 
 const (
-	djotSpanSingle                         djotSpanType = iota
+	djotSpanSingle djotSpanType = iota
 	djotSpanBracketed
 	djotSpanBracketedAndSingle
 	djotSpanBracketedAndSingleNoWhitespace

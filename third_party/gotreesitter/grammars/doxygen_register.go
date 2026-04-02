@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "doxygen",
-		Extensions:     nil,
-		Language:       DoxygenLanguage,
-		HighlightQuery: doxygenHighlightQuery,
+		Name:               "doxygen",
+		Extensions:         nil,
+		Language:           DoxygenLanguage,
+		HighlightQuery:     doxygenHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("doxygen"),
 	})
 }

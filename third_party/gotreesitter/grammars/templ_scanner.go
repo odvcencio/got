@@ -37,7 +37,7 @@ type templState struct {
 // TemplExternalScanner handles CSS property values, script blocks, and element text for templ.
 type TemplExternalScanner struct{}
 
-func (TemplExternalScanner) Create() any { return &templState{} }
+func (TemplExternalScanner) Create() any         { return &templState{} }
 func (TemplExternalScanner) Destroy(payload any) {}
 
 func (TemplExternalScanner) Serialize(payload any, buf []byte) int {

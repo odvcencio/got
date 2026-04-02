@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "odin",
-		Extensions:     []string{".odin"},
-		Language:       OdinLanguage,
-		HighlightQuery: odinHighlightQuery,
+		Name:               "odin",
+		Extensions:         []string{".odin"},
+		Language:           OdinLanguage,
+		HighlightQuery:     odinHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("odin"),
 	})
 }

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "faust",
-		Extensions:     nil,
-		Language:       FaustLanguage,
-		HighlightQuery: faustHighlightQuery,
+		Name:               "faust",
+		Extensions:         nil,
+		Language:           FaustLanguage,
+		HighlightQuery:     faustHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("faust"),
 	})
 }

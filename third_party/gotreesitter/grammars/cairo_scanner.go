@@ -29,11 +29,11 @@ const (
 
 // Python string type
 const (
-	cairoPstNone       = 0
-	cairoPst1SqString  = 1
-	cairoPst3SqString  = 2
-	cairoPst1DqString  = 3
-	cairoPst3DqString  = 4
+	cairoPstNone      = 0
+	cairoPst1SqString = 1
+	cairoPst3SqString = 2
+	cairoPst1DqString = 3
+	cairoPst3DqString = 4
 )
 
 // cairoState tracks the hint parsing context.
@@ -46,7 +46,7 @@ type cairoState struct {
 // CairoExternalScanner handles %{ %} hint blocks with embedded Python in Cairo.
 type CairoExternalScanner struct{}
 
-func (CairoExternalScanner) Create() any { return &cairoState{} }
+func (CairoExternalScanner) Create() any         { return &cairoState{} }
 func (CairoExternalScanner) Destroy(payload any) {}
 
 func (CairoExternalScanner) Serialize(payload any, buf []byte) int {

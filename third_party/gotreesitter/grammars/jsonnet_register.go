@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "jsonnet",
-		Extensions:     []string{".jsonnet", ".libsonnet"},
-		Language:       JsonnetLanguage,
-		HighlightQuery: jsonnetHighlightQuery,
+		Name:               "jsonnet",
+		Extensions:         []string{".jsonnet", ".libsonnet"},
+		Language:           JsonnetLanguage,
+		HighlightQuery:     jsonnetHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("jsonnet"),
 	})
 }

@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "diff",
-		Extensions:     nil,
-		Language:       DiffLanguage,
-		HighlightQuery: diffHighlightQuery,
+		Name:               "diff",
+		Extensions:         nil,
+		Language:           DiffLanguage,
+		HighlightQuery:     diffHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("diff"),
 	})
 }

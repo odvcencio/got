@@ -3,7 +3,7 @@ package gotreesitter
 const (
 	defaultGSSNodeSlabCap   = 4 * 1024
 	fullParseGSSNodeSlabCap = 32 * 1024
-	maxRetainedGSSNodes   = 256 * 1024
+	maxRetainedGSSNodes     = 256 * 1024
 )
 
 type gssNode struct {

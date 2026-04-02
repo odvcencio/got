@@ -4,10 +4,10 @@ package grammars
 
 func init() {
 	Register(LangEntry{
-		Name:           "smithy",
-		Extensions:     []string{".smithy"},
-		Language:       SmithyLanguage,
-		HighlightQuery: smithyHighlightQuery,
+		Name:               "smithy",
+		Extensions:         []string{".smithy"},
+		Language:           SmithyLanguage,
+		HighlightQuery:     smithyHighlightQuery,
 		TokenSourceFactory: defaultTokenSourceFactory("smithy"),
 	})
 }

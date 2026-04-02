@@ -232,4 +232,3 @@ func runMergePreviewJSON(r *repo.Repo, cmd *cobra.Command, branchName, current s
 	}
 	return mergeReportToJSON(cmd, report, "preview", branchName, current)
 }
-
