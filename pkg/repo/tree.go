@@ -2,12 +2,18 @@ package repo
 
 import (
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/odvcencio/graft/pkg/object"
 )
+
+// DefaultSidecarDirs lists directories whose contents are injected into every
+// commit tree automatically, without requiring the user to stage them.
+var DefaultSidecarDirs = []string{".gts"}
 
 // TreeFileEntry represents a single file in a flattened tree.
 type TreeFileEntry struct {
@@ -24,7 +30,149 @@ type TreeFileEntry struct {
 // BuildTree groups them by directory, recursively creates subtrees, and
 // returns the root tree hash.
 func (r *Repo) BuildTree(s *Staging) (object.Hash, error) {
-	return r.buildTreeDir(s, "")
+	rootHash, err := r.buildTreeDir(s, "")
+	if err != nil {
+		return "", err
+	}
+
+	// Inject sidecar directories into the root tree.
+	rootHash, err = r.injectSidecarDirs(rootHash, DefaultSidecarDirs)
+	if err != nil {
+		return "", fmt.Errorf("inject sidecar dirs: %w", err)
+	}
+	return rootHash, nil
+}
+
+// injectSidecarDirs reads each sidecar directory from the working tree,
+// writes its files as blobs, builds subtrees, and merges them into the root
+// tree. Directories that do not exist or are empty are silently skipped.
+func (r *Repo) injectSidecarDirs(rootHash object.Hash, dirs []string) (object.Hash, error) {
+	if len(dirs) == 0 {
+		return rootHash, nil
+	}
+
+	// Collect sidecar subtree entries to add to the root tree.
+	var sidecarEntries []object.TreeEntry
+	for _, dir := range dirs {
+		absDir := filepath.Join(r.RootDir, dir)
+		info, err := os.Stat(absDir)
+		if err != nil || !info.IsDir() {
+			continue // directory does not exist or is not a directory
+		}
+
+		subtreeHash, err := r.buildSidecarSubtree(absDir)
+		if err != nil {
+			return "", fmt.Errorf("build sidecar subtree %q: %w", dir, err)
+		}
+		if subtreeHash == "" {
+			continue // empty directory
+		}
+
+		sidecarEntries = append(sidecarEntries, object.TreeEntry{
+			Name:        dir,
+			IsDir:       true,
+			Mode:        object.TreeModeDir,
+			SubtreeHash: subtreeHash,
+		})
+	}
+
+	if len(sidecarEntries) == 0 {
+		return rootHash, nil
+	}
+
+	// Read the existing root tree and merge sidecar entries.
+	rootTree, err := r.Store.ReadTree(rootHash)
+	if err != nil {
+		return "", fmt.Errorf("read root tree for sidecar merge: %w", err)
+	}
+
+	// Build a map of existing entries for dedup.
+	entryMap := make(map[string]int, len(rootTree.Entries))
+	for i, e := range rootTree.Entries {
+		entryMap[e.Name] = i
+	}
+
+	for _, se := range sidecarEntries {
+		if idx, exists := entryMap[se.Name]; exists {
+			// Replace existing entry (sidecar overrides).
+			rootTree.Entries[idx] = se
+		} else {
+			rootTree.Entries = append(rootTree.Entries, se)
+		}
+	}
+
+	// Re-sort entries by name (required by tree format).
+	sort.Slice(rootTree.Entries, func(i, j int) bool {
+		return rootTree.Entries[i].Name < rootTree.Entries[j].Name
+	})
+
+	newHash, err := r.Store.WriteTree(rootTree)
+	if err != nil {
+		return "", fmt.Errorf("write merged root tree: %w", err)
+	}
+	return newHash, nil
+}
+
+// buildSidecarSubtree recursively walks a directory on disk, writes blobs for
+// each file, and returns a tree hash. Returns ("", nil) if the directory is
+// empty.
+func (r *Repo) buildSidecarSubtree(dir string) (object.Hash, error) {
+	dirEntries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("read dir %q: %w", dir, err)
+	}
+
+	var entries []object.TreeEntry
+	for _, de := range dirEntries {
+		name := de.Name()
+		childPath := filepath.Join(dir, name)
+
+		if de.IsDir() {
+			subtreeHash, err := r.buildSidecarSubtree(childPath)
+			if err != nil {
+				return "", err
+			}
+			if subtreeHash == "" {
+				continue // skip empty subdirectories
+			}
+			entries = append(entries, object.TreeEntry{
+				Name:        name,
+				IsDir:       true,
+				Mode:        object.TreeModeDir,
+				SubtreeHash: subtreeHash,
+			})
+		} else {
+			data, err := os.ReadFile(childPath)
+			if err != nil {
+				return "", fmt.Errorf("read sidecar file %q: %w", childPath, err)
+			}
+			blobHash, err := r.Store.WriteBlob(&object.Blob{Data: data})
+			if err != nil {
+				return "", fmt.Errorf("write sidecar blob %q: %w", childPath, err)
+			}
+			entries = append(entries, object.TreeEntry{
+				Name:     name,
+				IsDir:    false,
+				Mode:     object.TreeModeFile,
+				BlobHash: blobHash,
+			})
+		}
+	}
+
+	if len(entries) == 0 {
+		return "", nil
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name < entries[j].Name
+	})
+
+	treeObj := &object.TreeObj{Entries: entries}
+	h, err := r.Store.WriteTree(treeObj)
+	if err != nil {
+		return "", fmt.Errorf("write sidecar tree: %w", err)
+	}
+	return h, nil
 }
 
 // buildTreeDir builds a TreeObj for the given directory prefix and writes it
