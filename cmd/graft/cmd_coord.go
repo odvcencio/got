@@ -21,7 +21,7 @@ func newCoordCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "coord",
 		Short: "Multi-agent coordination dashboard and tools",
-		Long:  `View and manage entity-level coordination state: agents, claims, feed, and impact analysis.`,
+		Long:  `View and manage shared coordination state: agents, claims, plans, notes, tasks, feed, and impact analysis.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return coordDashboard(jsonFlag, allWorkspaces)
 		},
@@ -43,6 +43,7 @@ func newCoordCmd() *cobra.Command {
 	cmd.AddCommand(newCoordUnwatchCmd(&jsonFlag))
 	cmd.AddCommand(newCoordResolveCmd(&jsonFlag))
 	cmd.AddCommand(newCoordPlanCmd(&jsonFlag))
+	cmd.AddCommand(newCoordNoteCmd(&jsonFlag))
 	cmd.AddCommand(newCoordTaskCmd(&jsonFlag))
 	cmd.AddCommand(newCoordPublishCmd(&jsonFlag))
 	cmd.AddCommand(newCoordHeartbeatCmd(&jsonFlag))
@@ -65,6 +66,9 @@ func openCoordinator() (*coord.Coordinator, *repo.Repo, error) {
 
 // readActiveAgentID reads the current agent ID from .graft/coord/agent-id.
 func readActiveAgentID(r *repo.Repo) string {
+	if envID := strings.TrimSpace(os.Getenv("GRAFT_COORD_AGENT_ID")); envID != "" {
+		return envID
+	}
 	data, err := os.ReadFile(filepath.Join(r.GraftDir, "coord", "agent-id"))
 	if err != nil {
 		return ""
@@ -88,6 +92,7 @@ func coordDashboard(jsonOutput bool, allWorkspaces bool) error {
 	claims, _ := c.ListClaims()
 	feedEvents, _ := c.WalkFeed("", 100)
 	tasks, _ := c.ListTasks()
+	notes, _ := c.ListNotes()
 
 	// Count conflicts: claims by different agents on same entity
 	conflictCount := 0
@@ -119,6 +124,7 @@ func coordDashboard(jsonOutput bool, allWorkspaces bool) error {
 		Claims:       len(claims),
 		Conflicts:    conflictCount,
 		FeedCount:    len(feedEvents),
+		Notes:        len(notes),
 		Tasks:        len(tasks),
 		TasksPending: taskPending,
 		TasksActive:  taskInProgress,
@@ -135,6 +141,7 @@ func coordDashboard(jsonOutput bool, allWorkspaces bool) error {
 	fmt.Printf("  Claims:     %d\n", result.Claims)
 	fmt.Printf("  Conflicts:  %d\n", result.Conflicts)
 	fmt.Printf("  Feed:       %d event(s)\n", result.FeedCount)
+	fmt.Printf("  Notes:      %d\n", result.Notes)
 	fmt.Printf("  Tasks:      %d (%d pending, %d active)\n", result.Tasks, result.TasksPending, result.TasksActive)
 	if activeID != "" {
 		fmt.Printf("  Active as:  %s\n", activeID)
@@ -154,10 +161,12 @@ func coordDashboardAll(jsonOutput bool) error {
 		claims, _ := c.ListClaims()
 		feedEvents, _ := c.WalkFeed("", 100)
 		tasks, _ := c.ListTasks()
+		notes, _ := c.ListNotes()
 
 		result.Agents += len(agents)
 		result.Claims += len(claims)
 		result.FeedCount += len(feedEvents)
+		result.Notes += len(notes)
 		result.Tasks += len(tasks)
 
 		for _, t := range tasks {
@@ -199,6 +208,7 @@ func coordDashboardAll(jsonOutput bool) error {
 	fmt.Printf("  Claims:     %d\n", result.Claims)
 	fmt.Printf("  Conflicts:  %d\n", result.Conflicts)
 	fmt.Printf("  Feed:       %d event(s)\n", result.FeedCount)
+	fmt.Printf("  Notes:      %d\n", result.Notes)
 	fmt.Printf("  Tasks:      %d (%d pending, %d active)\n", result.Tasks, result.TasksPending, result.TasksActive)
 	if result.ActiveID != "" {
 		fmt.Printf("  Active as:  %s\n", result.ActiveID)
@@ -214,6 +224,7 @@ type dashboardResult struct {
 	Claims       int    `json:"claims"`
 	Conflicts    int    `json:"conflicts"`
 	FeedCount    int    `json:"feed_count"`
+	Notes        int    `json:"notes"`
 	Tasks        int    `json:"tasks"`
 	TasksPending int    `json:"tasks_pending"`
 	TasksActive  int    `json:"tasks_active"`
