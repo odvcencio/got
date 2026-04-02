@@ -21,6 +21,7 @@ func newRepairCmd() *cobra.Command {
 		Short: "Repair or rebuild local graft metadata",
 	}
 	cmd.AddCommand(newRepairReseedCmd())
+	cmd.AddCommand(newRepairResyncGitCmd())
 	return cmd
 }
 
@@ -164,6 +165,48 @@ func newRepairReseedCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&yes, "yes", false, "replace the current .graft directory without prompting")
 	cmd.Flags().StringVar(&gitRef, "git-ref", "HEAD", "git ref to snapshot into the new graft store")
 	return cmd
+}
+
+func newRepairResyncGitCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "resync-git",
+		Short: "Force-sync git to match graft's current state",
+		Long:  "Brings the colocated .git/ repository in sync with graft by staging all files and creating a git commit matching graft's HEAD.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := repo.Open(".")
+			if err != nil {
+				return err
+			}
+			if !r.HasGitDir() {
+				return fmt.Errorf("no .git/ directory found; nothing to resync")
+			}
+
+			branch, _ := r.CurrentBranch()
+			if branch != "" {
+				r.GitShadowCheckout(branch)
+			}
+
+			author := r.ResolveAuthor()
+			head, _ := r.ResolveRef("HEAD")
+			short := string(head)
+			if len(short) > 12 {
+				short = short[:12]
+			}
+			msg := fmt.Sprintf("graft resync: match graft HEAD %s", short)
+
+			r.GitShadowSyncSnapshot(msg, author)
+			r.ClearShadowFailures()
+
+			out := cmd.OutOrStdout()
+			if branch != "" {
+				fmt.Fprintf(out, "git synced to graft HEAD %s on branch %s\n", short, branch)
+			} else {
+				fmt.Fprintf(out, "git synced to graft HEAD %s\n", short)
+			}
+			return nil
+		},
+	}
 }
 
 type stashedIgnoreFile struct {
