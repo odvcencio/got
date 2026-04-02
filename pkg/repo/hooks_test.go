@@ -323,3 +323,69 @@ func TestRunHooksForPoint_PostHooksContinueOnFailure(t *testing.T) {
 		t.Error("second hook should have run despite first failing (canAbort=false)")
 	}
 }
+
+func TestCommit_RunsPreCommitAnalysisHook(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hook tests require unix shell scripts")
+	}
+
+	r := initRepoWithFile(t, "main.go", []byte("package main\n"))
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Install a pre-commit-analysis hook via hooks.toml.
+	gtsDir := filepath.Join(r.RootDir, ".gts")
+	marker := filepath.Join(gtsDir, "hook-ran")
+	hookScript := writeScript(t, r.RootDir, "analysis-hook.sh",
+		"#!/bin/sh\nmkdir -p "+gtsDir+" && touch "+marker+"\n")
+
+	hooksToml := "[pre-commit-analysis.gts-refresh]\nrun = \"" + hookScript + "\"\non_fail = \"warn\"\n"
+	if err := os.WriteFile(filepath.Join(r.RootDir, "hooks.toml"), []byte(hooksToml), 0o644); err != nil {
+		t.Fatalf("write hooks.toml: %v", err)
+	}
+
+	_, err := r.Commit("test commit", "Test <test@test.com>")
+	if err != nil {
+		t.Fatalf("commit failed: %v", err)
+	}
+
+	if _, err := os.Stat(marker); os.IsNotExist(err) {
+		t.Fatal("pre-commit-analysis hook did not run")
+	}
+}
+
+func TestCommit_PreCommitAnalysisHookReceivesStagedPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hook tests require unix shell scripts")
+	}
+
+	r := initRepoWithFile(t, "main.go", []byte("package main\n"))
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Hook that captures stdin (the staged paths payload) to a file.
+	stdinCapture := filepath.Join(r.RootDir, "stdin-capture.txt")
+	hookScript := writeScript(t, r.RootDir, "capture-hook.sh",
+		"#!/bin/sh\ncat > "+stdinCapture+"\n")
+
+	hooksToml := "[pre-commit-analysis.capture]\nrun = \"" + hookScript + "\"\n"
+	if err := os.WriteFile(filepath.Join(r.RootDir, "hooks.toml"), []byte(hooksToml), 0o644); err != nil {
+		t.Fatalf("write hooks.toml: %v", err)
+	}
+
+	_, err := r.Commit("test commit", "Test <test@test.com>")
+	if err != nil {
+		t.Fatalf("commit failed: %v", err)
+	}
+
+	data, err := os.ReadFile(stdinCapture)
+	if err != nil {
+		t.Fatalf("read stdin capture: %v", err)
+	}
+	got := strings.TrimSpace(string(data))
+	if !strings.Contains(got, "main.go") {
+		t.Errorf("expected staged paths to contain main.go, got: %q", got)
+	}
+}

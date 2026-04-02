@@ -55,6 +55,11 @@ const (
 
 	// HookPostPush runs after a push operation completes.
 	HookPostPush HookName = "post-push"
+
+	// HookPreCommitAnalysis runs before the tree is built during commit,
+	// allowing analysis tools to write sidecar files (e.g. .gts/) that
+	// will be injected into the committed tree.
+	HookPreCommitAnalysis HookName = "pre-commit-analysis"
 )
 
 // RunHook executes the named hook script if it exists and is executable.
@@ -188,4 +193,19 @@ func runBuiltinHook(ctx context.Context, repoRoot string, entry HookEntry, paylo
 	default:
 		return fmt.Errorf("hook %s.%s: unknown built-in type %q", entry.Point, entry.Name, entry.Type)
 	}
+}
+
+// RunHooksForPointByName loads hooks for the given point from hooks.toml
+// and runs them with the provided payload piped to stdin.
+// canAbort controls whether failures stop execution.
+func (r *Repo) RunHooksForPointByName(point string, payload []byte, canAbort bool) error {
+	cfg, err := LoadHooksConfig(r.RootDir, nil)
+	if err != nil || len(cfg.Hooks) == 0 {
+		return nil
+	}
+	entries := cfg.ForPoint(point)
+	if len(entries) == 0 {
+		return nil
+	}
+	return RunHooksForPoint(context.Background(), r.RootDir, entries, payload, canAbort)
 }

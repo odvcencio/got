@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -104,6 +105,16 @@ func (r *Repo) CommitWithSigner(message, author string, signer CommitSigner) (ob
 	if len(stg.Entries) == 0 {
 		return "", fmt.Errorf("commit: nothing staged")
 	}
+
+	// 1b. Run pre-commit-analysis hooks before building the tree. These
+	// allow analysis tools to write sidecar files (e.g. .gts/) that
+	// BuildTree will inject into the committed tree.
+	stagedPaths := make([]string, 0, len(stg.Entries))
+	for p := range stg.Entries {
+		stagedPaths = append(stagedPaths, p)
+	}
+	sort.Strings(stagedPaths)
+	r.RunHooksForPointByName(string(HookPreCommitAnalysis), []byte(strings.Join(stagedPaths, "\n")), false)
 
 	// 2. Build tree from staging.
 	treeHash, err := r.BuildTree(stg)
