@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -144,6 +145,37 @@ func TestNonExecutableHookIsSkipped(t *testing.T) {
 	}
 	if c.Message != "should succeed anyway" {
 		t.Errorf("Message = %q, want %q", c.Message, "should succeed anyway")
+	}
+}
+
+func TestRunHook_ExternalProcessGuardCanBlock(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hook tests require unix shell scripts")
+	}
+
+	r := initRepoWithFile(t, "main.go", []byte("package main\n\nfunc main() {}\n"))
+	marker := filepath.Join(r.RootDir, "hook-ran")
+	installHook(t, r, HookPreCommit, "#!/bin/sh\ntouch "+marker+"\n", true)
+
+	prev := SetExternalProcessGuard(func(spec ExternalProcessSpec) error {
+		if spec.Label == "repo-hook:pre-commit" {
+			return errors.New("blocked by external process guard")
+		}
+		return nil
+	})
+	t.Cleanup(func() {
+		SetExternalProcessGuard(prev)
+	})
+
+	_, err := r.Commit("blocked by guard", "test-author")
+	if err == nil {
+		t.Fatal("expected commit to fail due to external process guard")
+	}
+	if !strings.Contains(err.Error(), "blocked by external process guard") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("hook marker should not exist, stat error=%v", statErr)
 	}
 }
 

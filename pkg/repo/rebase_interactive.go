@@ -3,7 +3,6 @@ package repo
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -113,11 +112,15 @@ func (r *Repo) RebaseInteractive(upstream string) error {
 		editor = "vi"
 	}
 
-	editorCmd := exec.Command(editor, tmpPath)
-	editorCmd.Stdin = os.Stdin
-	editorCmd.Stdout = os.Stdout
-	editorCmd.Stderr = os.Stderr
-	if err := editorCmd.Run(); err != nil {
+	if err := RunExternalProcess(ExternalProcessSpec{
+		Dir:    r.RootDir,
+		Path:   editor,
+		Args:   []string{tmpPath},
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		Label:  "rebase-editor:todo",
+	}); err != nil {
 		return fmt.Errorf("rebase: editor exited with error: %w", err)
 	}
 
@@ -220,11 +223,15 @@ func (r *Repo) RebaseInteractiveWithAutosquash(upstream string) error {
 		editor = "vi"
 	}
 
-	editorCmd := exec.Command(editor, tmpPath)
-	editorCmd.Stdin = os.Stdin
-	editorCmd.Stdout = os.Stdout
-	editorCmd.Stderr = os.Stderr
-	if err := editorCmd.Run(); err != nil {
+	if err := RunExternalProcess(ExternalProcessSpec{
+		Dir:    r.RootDir,
+		Path:   editor,
+		Args:   []string{tmpPath},
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		Label:  "rebase-editor:autosquash-todo",
+	}); err != nil {
 		return fmt.Errorf("rebase: editor exited with error: %w", err)
 	}
 
@@ -867,11 +874,15 @@ func (r *Repo) rewordLastCommit() error {
 		editor = "vi"
 	}
 
-	editorCmd := exec.Command(editor, tmpPath)
-	editorCmd.Stdin = os.Stdin
-	editorCmd.Stdout = os.Stdout
-	editorCmd.Stderr = os.Stderr
-	if err := editorCmd.Run(); err != nil {
+	if err := RunExternalProcess(ExternalProcessSpec{
+		Dir:    r.RootDir,
+		Path:   editor,
+		Args:   []string{tmpPath},
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		Label:  "rebase-editor:reword",
+	}); err != nil {
 		return fmt.Errorf("editor exited with error: %w", err)
 	}
 
@@ -907,12 +918,15 @@ func (r *Repo) rewordLastCommit() error {
 
 // execCommand runs a shell command during interactive rebase.
 func (r *Repo) execCommand(command string) error {
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Dir = r.RootDir
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return RunExternalProcess(ExternalProcessSpec{
+		Dir:    r.RootDir,
+		Path:   "sh",
+		Args:   []string{"-c", command},
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+		Label:  "rebase-exec",
+	})
 }
 
 // buildTodoItems creates TodoItem entries from a list of commit hashes.
@@ -966,9 +980,9 @@ func formatTodoItems(items []TodoItem) string {
 func autosquashTodoList(items []TodoItem) []TodoItem {
 	// Separate normal items from fixup/squash items.
 	type squashEntry struct {
-		item       TodoItem
+		item        TodoItem
 		targetTitle string
-		action     TodoAction
+		action      TodoAction
 	}
 
 	var normal []TodoItem

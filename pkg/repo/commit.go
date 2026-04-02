@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -186,10 +185,13 @@ func (r *Repo) gitMirrorCommit(message, author string) {
 	if _, err := os.Stat(gitDir); err != nil {
 		return // no git repo
 	}
-	cmd := exec.Command("git", "commit", "--allow-empty", "-m", message, "--author", author)
-	cmd.Dir = r.RootDir
-	cmd.Env = append(os.Environ(), "GIT_COMMITTER_NAME=graft", "GIT_COMMITTER_EMAIL=graft@noreply")
-	_ = cmd.Run()
+	_ = RunExternalProcess(ExternalProcessSpec{
+		Dir:   r.RootDir,
+		Path:  "git",
+		Args:  []string{"commit", "--allow-empty", "-m", message, "--author", author},
+		Env:   append(os.Environ(), "GIT_COMMITTER_NAME=graft", "GIT_COMMITTER_EMAIL=graft@noreply"),
+		Label: "git-mirror-commit",
+	})
 }
 
 // CommitAmend replaces the current HEAD commit with a new one built from the

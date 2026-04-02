@@ -1,9 +1,9 @@
 package repo
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 )
 
@@ -27,21 +27,34 @@ func runMirrorHook(ctx context.Context, repoRoot string, entry HookEntry) error 
 		args = append(args, "--mirror", gitURL)
 	}
 
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = repoRoot
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("mirror hook %s: git push failed: %s: %w", entry.Name, strings.TrimSpace(string(output)), err)
+	var output bytes.Buffer
+	if err := RunExternalProcess(ExternalProcessSpec{
+		Context: ctx,
+		Dir:     repoRoot,
+		Path:    "git",
+		Args:    args,
+		Stdout:  &output,
+		Stderr:  &output,
+		Label:   "hook-mirror:" + entry.Name,
+	}); err != nil {
+		return fmt.Errorf("mirror hook %s: git push failed: %s: %w", entry.Name, strings.TrimSpace(output.String()), err)
 	}
 	return nil
 }
 
 func resolveGitMirrorRemote(repoRoot, name string) (string, error) {
-	cmd := exec.Command("git", "remote", "get-url", name)
-	cmd.Dir = repoRoot
-	output, err := cmd.Output()
+	var output bytes.Buffer
+	err := RunExternalProcess(ExternalProcessSpec{
+		Context: context.Background(),
+		Dir:     repoRoot,
+		Path:    "git",
+		Args:    []string{"remote", "get-url", name},
+		Stdout:  &output,
+		Stderr:  &output,
+		Label:   "hook-mirror-resolve:" + name,
+	})
 	if err == nil {
-		url := strings.TrimSpace(string(output))
+		url := strings.TrimSpace(output.String())
 		if url != "" {
 			return url, nil
 		}

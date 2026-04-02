@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -81,16 +80,19 @@ func (r *Repo) RunHook(name HookName, args ...string) error {
 		return nil
 	}
 
-	cmd := exec.Command(hookPath, args...)
-	cmd.Dir = r.RootDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(),
-		"GRAFT_DIR="+r.GraftDir,
-		"GRAFT_WORK_TREE="+r.RootDir,
-	)
-
-	if err := cmd.Run(); err != nil {
+	if err := RunExternalProcess(ExternalProcessSpec{
+		Context: context.Background(),
+		Dir:     r.RootDir,
+		Path:    hookPath,
+		Args:    args,
+		Stdout:  os.Stdout,
+		Stderr:  os.Stderr,
+		Env: append(os.Environ(),
+			"GRAFT_DIR="+r.GraftDir,
+			"GRAFT_WORK_TREE="+r.RootDir,
+		),
+		Label: "repo-hook:" + string(name),
+	}); err != nil {
 		return fmt.Errorf("hook %s: %w", name, err)
 	}
 	return nil
@@ -140,17 +142,20 @@ func RunHookEntry(ctx context.Context, repoRoot string, entry HookEntry, payload
 		return fmt.Errorf("hook %s.%s: empty run command", entry.Point, entry.Name)
 	}
 
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
-	cmd.Dir = repoRoot
-	cmd.Stdin = bytes.NewReader(payload)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(),
-		"GRAFT_HOOK="+entry.Point+"."+entry.Name,
-		"GRAFT_REPO_ROOT="+repoRoot,
-	)
-
-	if err := cmd.Run(); err != nil {
+	if err := RunExternalProcess(ExternalProcessSpec{
+		Context: ctx,
+		Dir:     repoRoot,
+		Path:    parts[0],
+		Args:    parts[1:],
+		Stdin:   bytes.NewReader(payload),
+		Stdout:  os.Stdout,
+		Stderr:  os.Stderr,
+		Env: append(os.Environ(),
+			"GRAFT_HOOK="+entry.Point+"."+entry.Name,
+			"GRAFT_REPO_ROOT="+repoRoot,
+		),
+		Label: "hook-entry:" + entry.Point + "." + entry.Name,
+	}); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Errorf("hook %s.%s: timed out after %s", entry.Point, entry.Name, entry.Timeout)
 		}

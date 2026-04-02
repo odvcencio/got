@@ -83,7 +83,7 @@ func Init(path string) (*Repo, error) {
 	}
 
 	return &Repo{
-		RootDir: path,
+		RootDir:  path,
 		GraftDir: graftDir,
 		Store:    object.NewStore(graftDir),
 	}, nil
