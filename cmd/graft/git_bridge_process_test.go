@@ -23,7 +23,7 @@ func TestRunGitStreaming_BlockedByCoorddGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repo.Init: %v", err)
 	}
-	cmd := exec.Command("git", "-C", dir, "init")
+	cmd := exec.Command("git", "-C", dir, "init", "-b", "main")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, string(out))
 	}

@@ -22,9 +22,12 @@ func initGitBackedGraftRepo(t *testing.T) *repo.Repo {
 	if err != nil {
 		t.Fatalf("repo.Init: %v", err)
 	}
-	runGitMainTestCommand(t, dir, "init")
+	runGitMainTestCommand(t, dir, "init", "-b", "main")
 	runGitMainTestCommand(t, dir, "config", "user.name", "Test User")
 	runGitMainTestCommand(t, dir, "config", "user.email", "test@example.com")
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".graft/\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile .gitignore: %v", err)
+	}
 	if err := coordd.SaveGuardConfig(r.GraftDir, &coordd.GuardConfig{
 		Mode:             "advisory",
 		PreferredBackend: "host-direct",

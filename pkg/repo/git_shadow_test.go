@@ -18,7 +18,7 @@ func initGitGraftRepo(t *testing.T) *Repo {
 	dir := t.TempDir()
 
 	// git init
-	cmd := exec.Command("git", "init", dir)
+	cmd := exec.Command("git", "init", "-b", "main", dir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
