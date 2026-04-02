@@ -16,12 +16,13 @@ func writeJSON(w io.Writer, v any) error {
 
 // JSONStatusOutput is the top-level JSON output for "graft status --json".
 type JSONStatusOutput struct {
-	Branch    string            `json:"branch"`
-	NoCommits bool              `json:"noCommits"`
-	Conflicts []JSONStatusEntry `json:"conflicts,omitempty"`
-	Staged    []JSONStatusEntry `json:"staged,omitempty"`
-	Unstaged  []JSONStatusEntry `json:"unstaged,omitempty"`
-	Untracked []string          `json:"untracked,omitempty"`
+	Branch       string            `json:"branch"`
+	NoCommits    bool              `json:"noCommits"`
+	ShadowDesync bool              `json:"shadow_desync,omitempty"`
+	Conflicts    []JSONStatusEntry `json:"conflicts,omitempty"`
+	Staged       []JSONStatusEntry `json:"staged,omitempty"`
+	Unstaged     []JSONStatusEntry `json:"unstaged,omitempty"`
+	Untracked    []string          `json:"untracked,omitempty"`
 }
 
 // JSONStatusEntry represents a single file in a status category.

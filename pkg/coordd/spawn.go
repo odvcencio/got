@@ -14,8 +14,7 @@ import (
 	"time"
 
 	"github.com/odvcencio/arbiter"
-	arbcompiler "github.com/odvcencio/arbiter/compiler"
-	"github.com/odvcencio/graft/pkg/repo"
+		"github.com/odvcencio/graft/pkg/repo"
 )
 
 //go:embed default_spawn_policy.arb
@@ -23,7 +22,7 @@ var defaultSpawnPolicySource []byte
 
 var (
 	defaultSpawnPolicyOnce sync.Once
-	defaultSpawnPolicySet  *arbcompiler.CompiledRuleset
+	defaultSpawnPolicySet  *arbiter.Program
 	defaultSpawnPolicyErr  error
 )
 
@@ -113,7 +112,7 @@ type SpawnResult struct {
 	Record           *SpawnRecord          `json:"record,omitempty"`
 }
 
-func defaultSpawnPolicyRuleset() (*arbcompiler.CompiledRuleset, error) {
+func defaultSpawnPolicyRuleset() (*arbiter.Program, error) {
 	defaultSpawnPolicyOnce.Do(func() {
 		defaultSpawnPolicySet, defaultSpawnPolicyErr = arbiter.Compile(defaultSpawnPolicySource)
 	})

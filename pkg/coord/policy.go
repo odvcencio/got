@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/odvcencio/arbiter"
-	arbcompiler "github.com/odvcencio/arbiter/compiler"
 )
 
 //go:embed default_claim_policy.arb
@@ -18,7 +17,7 @@ var defaultClaimPolicySource []byte
 
 var (
 	defaultClaimPolicyOnce sync.Once
-	defaultClaimPolicySet  *arbcompiler.CompiledRuleset
+	defaultClaimPolicySet  *arbiter.Program
 	defaultClaimPolicyErr  error
 )
 
@@ -92,7 +91,7 @@ type ClaimDecisionContext struct {
 	Decision *ClaimPolicyDecision `json:"decision,omitempty"`
 }
 
-func defaultClaimPolicyRuleset() (*arbcompiler.CompiledRuleset, error) {
+func defaultClaimPolicyRuleset() (*arbiter.Program, error) {
 	defaultClaimPolicyOnce.Do(func() {
 		defaultClaimPolicySet, defaultClaimPolicyErr = arbiter.Compile(defaultClaimPolicySource)
 	})

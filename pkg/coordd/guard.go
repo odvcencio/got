@@ -12,8 +12,7 @@ import (
 	"time"
 
 	"github.com/odvcencio/arbiter"
-	arbcompiler "github.com/odvcencio/arbiter/compiler"
-	"github.com/odvcencio/graft/pkg/repo"
+		"github.com/odvcencio/graft/pkg/repo"
 )
 
 //go:embed default_action_policy.arb
@@ -21,7 +20,7 @@ var defaultActionPolicySource []byte
 
 var (
 	defaultActionPolicyOnce sync.Once
-	defaultActionPolicySet  *arbcompiler.CompiledRuleset
+	defaultActionPolicySet  *arbiter.Program
 	defaultActionPolicyErr  error
 )
 
@@ -91,7 +90,7 @@ type ActionPolicyDecision struct {
 	Trace   []ActionPolicyTrace `json:"trace,omitempty"`
 }
 
-func defaultActionPolicyRuleset() (*arbcompiler.CompiledRuleset, error) {
+func defaultActionPolicyRuleset() (*arbiter.Program, error) {
 	defaultActionPolicyOnce.Do(func() {
 		defaultActionPolicySet, defaultActionPolicyErr = arbiter.Compile(defaultActionPolicySource)
 	})
