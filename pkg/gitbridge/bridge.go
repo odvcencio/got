@@ -83,6 +83,9 @@ func InitBridge(dir string) (*Bridge, error) {
 		// Non-fatal: best effort.
 		_ = err
 	}
+	if err := b.addPatternToGitExclude(".gts/"); err != nil {
+		_ = err
+	}
 
 	if err := b.importHEAD(); err != nil {
 		_ = hm.Close()
@@ -95,6 +98,12 @@ func InitBridge(dir string) (*Bridge, error) {
 // addToGitExclude adds ".graft/" to .git/info/exclude so git ignores the
 // .graft directory without modifying .gitignore.
 func (b *Bridge) addToGitExclude() error {
+	return b.addPatternToGitExclude(".graft/")
+}
+
+// addPatternToGitExclude adds the given pattern to .git/info/exclude if it is
+// not already present.
+func (b *Bridge) addPatternToGitExclude(pattern string) error {
 	infoDir := filepath.Join(b.gitDir, "info")
 	if err := os.MkdirAll(infoDir, 0o755); err != nil {
 		return fmt.Errorf("create .git/info: %w", err)
@@ -102,11 +111,11 @@ func (b *Bridge) addToGitExclude() error {
 
 	excludePath := filepath.Join(infoDir, "exclude")
 
-	// Read existing content to check if .graft/ is already excluded.
+	// Read existing content to check if the pattern is already excluded.
 	existing, _ := os.ReadFile(excludePath)
 	scanner := bufio.NewScanner(bytes.NewReader(existing))
 	for scanner.Scan() {
-		if strings.TrimSpace(scanner.Text()) == ".graft/" {
+		if strings.TrimSpace(scanner.Text()) == pattern {
 			return nil // already present
 		}
 	}
@@ -117,7 +126,7 @@ func (b *Bridge) addToGitExclude() error {
 	}
 	defer f.Close()
 
-	_, err = fmt.Fprintln(f, ".graft/")
+	_, err = fmt.Fprintln(f, pattern)
 	return err
 }
 

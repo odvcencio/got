@@ -358,6 +358,23 @@ func TestIgnore_ExplainBuiltins(t *testing.T) {
 	}
 }
 
+// Test: .gts/ is always ignored (hardcoded builtin pattern).
+func TestIgnore_GtsDirAlwaysIgnored(t *testing.T) {
+	dir := t.TempDir()
+
+	ic := NewIgnoreChecker(dir)
+
+	if !ic.IsIgnored(".gts") {
+		t.Error("expected .gts to be ignored")
+	}
+	if !ic.IsIgnored(".gts/index.db") {
+		t.Error("expected .gts/index.db to be ignored")
+	}
+	if !ic.IsIgnored(".gts/cache/data") {
+		t.Error("expected .gts/cache/data to be ignored")
+	}
+}
+
 func writeGotignore(t *testing.T, dir, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, ".graftignore"), []byte(content), 0o644); err != nil {
