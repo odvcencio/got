@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/odvcencio/graft/pkg/repo"
 	"github.com/spf13/cobra"
@@ -185,15 +183,18 @@ func resolveGitPushRef(ctx context.Context, root, branch string) (string, error)
 }
 
 func syncGitSnapshotFromWorktree(ctx context.Context, r *repo.Repo) error {
-	if err := runGitStreaming(ctx, r.RootDir, io.Discard, io.Discard, "add", "-A", "--", ".", ":(exclude).graft"); err != nil {
+	// .graft is already ignored by bridge bootstrap/config, and passing an
+	// explicit exclude pathspec here causes git add to fail once the ignored
+	// path is discovered. Stage the worktree root directly and rely on the
+	// repo's ignore rules to keep graft metadata out of the mirror commit.
+	if err := runGitStreaming(ctx, r.RootDir, io.Discard, io.Discard, "add", "-A", "--", "."); err != nil {
 		return err
 	}
-	diffCmd := exec.CommandContext(ctx, "git", "-C", r.RootDir, "diff", "--cached", "--quiet")
-	if err := diffCmd.Run(); err == nil {
+	if err := runGitStreaming(ctx, r.RootDir, io.Discard, io.Discard, "diff", "--cached", "--quiet"); err == nil {
 		return nil
 	} else {
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		var exitCoder interface{ ExitCode() int }
+		if !errors.As(err, &exitCoder) || exitCoder.ExitCode() != 1 {
 			return fmt.Errorf("git diff --cached failed: %w", err)
 		}
 	}
@@ -299,34 +300,9 @@ func gitHeadAuthor(ctx context.Context, root string) string {
 }
 
 func runGitCapture(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
-	}
-	return stdout.Bytes(), nil
+	return runGitCaptureWithLabel(ctx, dir, "git-bridge:capture", args...)
 }
 
 func runGitStreaming(ctx context.Context, dir string, stdout, stderr io.Writer, args ...string) error {
-	gitArgs := append([]string{}, args...)
-	if strings.TrimSpace(dir) != "" {
-		gitArgs = append([]string{"-C", dir}, gitArgs...)
-	}
-	cctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-	defer cancel()
-
-	cmd := exec.CommandContext(cctx, "git", gitArgs...)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
-	}
-	return nil
+	return runGitStreamingWithLabel(ctx, dir, stdout, stderr, "git-bridge:stream", args...)
 }

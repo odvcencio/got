@@ -2,10 +2,10 @@ package main
 
 import (
 	"archive/tar"
+	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -37,7 +37,7 @@ func newRepairReseedCmd() *cobra.Command {
 				return fmt.Errorf("repair reseed replaces the local .graft directory; re-run with --yes")
 			}
 
-			rootDir, err := gitTopLevel(".")
+			rootDir, err := gitTopLevel(cmd.Context(), ".")
 			if err != nil {
 				return err
 			}
@@ -54,7 +54,7 @@ func newRepairReseedCmd() *cobra.Command {
 			}
 			defer os.RemoveAll(tempDir)
 
-			if err := extractGitArchive(rootDir, gitRef, tempDir); err != nil {
+			if err := extractGitArchive(cmd.Context(), rootDir, gitRef, tempDir); err != nil {
 				return err
 			}
 
@@ -73,7 +73,7 @@ func newRepairReseedCmd() *cobra.Command {
 				}
 			}
 
-			if branch := gitBranchForReseed(rootDir, gitRef); branch != "" {
+			if branch := gitBranchForReseed(cmd.Context(), rootDir, gitRef); branch != "" {
 				if err := tmpRepo.SetHeadSymbolic("refs/heads/" + branch); err != nil {
 					return err
 				}
@@ -113,11 +113,11 @@ func newRepairReseedCmd() *cobra.Command {
 				return err
 			}
 			if len(staging.Entries) > 0 {
-				author := gitCommitAuthor(rootDir, gitRef)
+				author := gitCommitAuthor(cmd.Context(), rootDir, gitRef)
 				if strings.TrimSpace(author) == "" {
 					author = tmpRepo.ResolveAuthor()
 				}
-				msg := reseedCommitMessage(rootDir, gitRef)
+				msg := reseedCommitMessage(cmd.Context(), rootDir, gitRef)
 				h, err := tmpRepo.Commit(msg, author)
 				if err != nil {
 					return err
@@ -173,33 +173,30 @@ type stashedIgnoreFile struct {
 	Mode    os.FileMode
 }
 
-func gitTopLevel(path string) (string, error) {
-	cmd := exec.Command("git", "-C", path, "rev-parse", "--show-toplevel")
-	output, err := cmd.Output()
+func gitTopLevel(ctx context.Context, path string) (string, error) {
+	output, err := runGitCaptureWithLabel(ctx, path, "git-repair:toplevel", "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", fmt.Errorf("resolve git toplevel: %w", err)
 	}
 	return strings.TrimSpace(string(output)), nil
 }
 
-func extractGitArchive(rootDir, gitRef, destDir string) error {
-	cmd := exec.Command("git", "-C", rootDir, "archive", "--format=tar", gitRef)
-	stdout, err := cmd.StdoutPipe()
+func extractGitArchive(ctx context.Context, rootDir, gitRef, destDir string) error {
+	tarFile, err := os.CreateTemp("", "graft-reseed-archive-*.tar")
 	if err != nil {
-		return fmt.Errorf("git archive %s: %w", gitRef, err)
+		return fmt.Errorf("create git archive temp file: %w", err)
 	}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("git archive %s: %w", gitRef, err)
-	}
+	tarPath := tarFile.Name()
+	defer os.Remove(tarPath)
+	defer tarFile.Close()
 
-	if err := extractTar(stdout, destDir); err != nil {
-		_ = cmd.Wait()
+	if err := runGitStreamingWithLabel(ctx, rootDir, tarFile, io.Discard, "git-repair:archive", "archive", "--format=tar", gitRef); err != nil {
 		return err
 	}
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("git archive %s: %w", gitRef, err)
+	if _, err := tarFile.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("rewind git archive temp file: %w", err)
 	}
-	return nil
+	return extractTar(tarFile, destDir)
 }
 
 func extractTar(r io.Reader, destDir string) error {
@@ -317,10 +314,9 @@ func readReseedConfig(existingGraftDir string) (*repo.Config, error) {
 	return cfg, nil
 }
 
-func gitBranchForReseed(rootDir, gitRef string) string {
+func gitBranchForReseed(ctx context.Context, rootDir, gitRef string) string {
 	if strings.TrimSpace(gitRef) == "" || gitRef == "HEAD" {
-		cmd := exec.Command("git", "-C", rootDir, "symbolic-ref", "--quiet", "--short", "HEAD")
-		output, err := cmd.Output()
+		output, err := runGitCaptureWithLabel(ctx, rootDir, "git-repair:branch", "symbolic-ref", "--quiet", "--short", "HEAD")
 		if err == nil {
 			return strings.TrimSpace(string(output))
 		}
@@ -329,25 +325,22 @@ func gitBranchForReseed(rootDir, gitRef string) string {
 	if strings.HasPrefix(gitRef, "refs/heads/") {
 		return strings.TrimPrefix(gitRef, "refs/heads/")
 	}
-	cmd := exec.Command("git", "-C", rootDir, "show-ref", "--verify", "--quiet", "refs/heads/"+gitRef)
-	if err := cmd.Run(); err == nil {
+	if err := runGitStreamingWithLabel(ctx, rootDir, io.Discard, io.Discard, "git-repair:show-ref", "show-ref", "--verify", "--quiet", "refs/heads/"+gitRef); err == nil {
 		return gitRef
 	}
 	return ""
 }
 
-func gitCommitAuthor(rootDir, gitRef string) string {
-	cmd := exec.Command("git", "-C", rootDir, "log", "-1", "--format=%an <%ae>", gitRef)
-	output, err := cmd.Output()
+func gitCommitAuthor(ctx context.Context, rootDir, gitRef string) string {
+	output, err := runGitCaptureWithLabel(ctx, rootDir, "git-repair:author", "log", "-1", "--format=%an <%ae>", gitRef)
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(string(output))
 }
 
-func reseedCommitMessage(rootDir, gitRef string) string {
-	cmd := exec.Command("git", "-C", rootDir, "rev-parse", "--short=12", gitRef)
-	output, err := cmd.Output()
+func reseedCommitMessage(ctx context.Context, rootDir, gitRef string) string {
+	output, err := runGitCaptureWithLabel(ctx, rootDir, "git-repair:rev-parse", "rev-parse", "--short=12", gitRef)
 	short := strings.TrimSpace(string(output))
 	if err != nil || short == "" {
 		return fmt.Sprintf("snapshot: reseed graft state from git %s", gitRef)

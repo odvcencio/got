@@ -12,7 +12,7 @@ func mcpPlanToolDefs() []mcpTool {
 	return []mcpTool{
 		{
 			Name:        "graft_plan_create",
-			Description: "Create a coordination plan stored in refs/plans/. Plans track multi-step work with assignable steps for agent collaboration.",
+			Description: "Create a coordination plan stored in refs/coord/plans/. Plans track multi-step work with assignable steps for agent collaboration.",
 			InputSchema: mcpSchema{
 				Properties: map[string]mcpProperty{
 					"title":       {Type: "string", Description: "plan title (required)"},
@@ -261,9 +261,9 @@ func mcpToolPlanUpdate(args map[string]any) (any, error) {
 	}
 
 	return map[string]any{
-		"status":  "updated",
-		"id":      plan.ID,
-		"title":   plan.Title,
+		"status":      "updated",
+		"id":          plan.ID,
+		"title":       plan.Title,
 		"plan_status": plan.Status,
 	}, nil
 }

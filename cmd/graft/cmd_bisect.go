@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -204,10 +203,15 @@ func newBisectRunCmd() *cobra.Command {
 
 			for {
 				// Run the user script.
-				c := exec.Command("sh", "-c", script)
-				c.Stdout = os.Stdout
-				c.Stderr = os.Stderr
-				runErr := c.Run()
+				runErr := repo.RunExternalProcess(repo.ExternalProcessSpec{
+					Context: cmd.Context(),
+					Dir:     r.RootDir,
+					Path:    "sh",
+					Args:    []string{"-c", script},
+					Stdout:  cmd.OutOrStdout(),
+					Stderr:  cmd.ErrOrStderr(),
+					Label:   "bisect-run",
+				})
 
 				var result *repo.BisectResult
 				if runErr == nil {

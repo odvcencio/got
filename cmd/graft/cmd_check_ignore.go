@@ -2,11 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -198,17 +198,15 @@ func graftIgnoreExplanation(checker *repo.IgnoreChecker, relPath string) repo.Ig
 func gitIgnoreExplanation(rootDir, relPath string) (*repo.IgnoreExplanation, error) {
 	explanation := &repo.IgnoreExplanation{Path: relPath}
 
-	quiet := exec.Command("git", "-C", rootDir, "check-ignore", "-q", "--", relPath)
-	if err := quiet.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	if err := runGitStreamingWithLabel(context.Background(), rootDir, io.Discard, io.Discard, "git-check-ignore:quiet", "check-ignore", "-q", "--", relPath); err != nil {
+		var exitCoder interface{ ExitCode() int }
+		if errors.As(err, &exitCoder) && exitCoder.ExitCode() == 1 {
 			return explanation, nil
 		}
 		return nil, fmt.Errorf("git check-ignore %q: %w", relPath, err)
 	}
 
-	verbose := exec.Command("git", "-C", rootDir, "check-ignore", "-v", "--", relPath)
-	output, err := verbose.Output()
+	output, err := runGitCaptureWithLabel(context.Background(), rootDir, "git-check-ignore:verbose", "check-ignore", "-v", "--", relPath)
 	if err != nil {
 		return nil, fmt.Errorf("git check-ignore -v %q: %w", relPath, err)
 	}

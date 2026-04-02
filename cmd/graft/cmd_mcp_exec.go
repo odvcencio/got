@@ -72,7 +72,7 @@ func mcpToolExec(args map[string]any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	decision, err := coordd.EvaluateActionPolicy(input)
+	decision, err := coordd.EvaluateActionPolicyWithRepo(r, input)
 	if err != nil {
 		return nil, err
 	}
