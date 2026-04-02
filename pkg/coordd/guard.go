@@ -223,15 +223,15 @@ func evaluateActionPolicyWithView(r *repo.Repo, input ActionPolicyInput, bundleI
 	}
 
 	ctx := actionPolicyContext(input)
-	dc := arbiter.DataFromMap(actionInputToMap(input), bundle.full.Ruleset)
+	dc := arbiter.DataFromMap(actionInputToMap(input), bundle.full)
 	var (
 		matched  []vm.MatchedRule
-		govTrace *govern.Trace
+		govTrace *govern.Arbitrace
 	)
 	if view != nil {
-		matched, govTrace, err = arbiter.EvalGovernedWithOverrides(bundle.full.Ruleset, dc, bundle.full.Segments, ctx, bundleID, view)
+		matched, govTrace, err = arbiter.EvalGovernedWithOverrides(bundle.full, dc, bundle.full.Segments, ctx, bundleID, view)
 	} else {
-		matched, govTrace, err = arbiter.EvalGoverned(bundle.full.Ruleset, dc, bundle.full.Segments, ctx)
+		matched, govTrace, err = arbiter.EvalGoverned(bundle.full, dc, bundle.full.Segments, ctx)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("evaluate action policy: %w", err)

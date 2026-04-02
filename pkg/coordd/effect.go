@@ -52,10 +52,10 @@ func EvaluateEffects(input ActionPolicyInput, result ExecResult) ([]EffectResult
 		"exit_code": result.ExitCode,
 	}
 
-	dc := arbiter.DataFromMap(inputMap, bundle.full.Ruleset)
+	dc := arbiter.DataFromMap(inputMap, bundle.full)
 	ctx := actionPolicyContext(input)
 
-	matched, _, err := arbiter.EvalGoverned(bundle.full.Ruleset, dc, bundle.full.Segments, ctx)
+	matched, _, err := arbiter.EvalGoverned(bundle.full, dc, bundle.full.Segments, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate effect policy: %w", err)
 	}
