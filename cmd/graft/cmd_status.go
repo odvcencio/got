@@ -49,7 +49,7 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			if jsonFlag {
-				return statusJSON(cmd, entries, branch, noCommits)
+				return statusJSON(cmd, r, entries, branch, noCommits)
 			}
 
 			if shortFlag {
@@ -149,6 +149,10 @@ func newStatusCmd() *cobra.Command {
 				}
 			}
 
+			if r.HasShadowFailures() {
+				fmt.Fprintln(out, "\nwarning: git shadow out of sync (run 'graft repair resync-git' to fix)")
+			}
+
 			return nil
 		},
 	}
@@ -160,10 +164,11 @@ func newStatusCmd() *cobra.Command {
 }
 
 // statusJSON builds and writes the JSON output for the status command.
-func statusJSON(cmd *cobra.Command, entries []repo.StatusEntry, branch string, noCommits bool) error {
+func statusJSON(cmd *cobra.Command, r *repo.Repo, entries []repo.StatusEntry, branch string, noCommits bool) error {
 	result := JSONStatusOutput{
-		Branch:    branch,
-		NoCommits: noCommits,
+		Branch:       branch,
+		NoCommits:    noCommits,
+		ShadowDesync: r.HasShadowFailures(),
 	}
 
 	for _, e := range entries {
