@@ -4,6 +4,10 @@
 # coordination agent so child workstreams remain attributable, and governed
 # children cannot request a broader profile than their governed parent.
 
+segment spawn_advisory {
+    action.advisory == true
+}
+
 rule MissingCommand priority 0 {
     when {
         spawn.command_present == false
@@ -60,6 +64,17 @@ rule InvalidRequestedProfile priority 40 {
     }
 }
 
+rule InvalidRuntime priority 45 {
+    when {
+        spawn.runtime_valid == false
+    }
+    then HardBlock {
+        code: "invalid_runtime",
+        reason: "requested spawn runtime is not recognized",
+        profile: "blocked",
+    }
+}
+
 rule RequestedProfileTooNarrow priority 50 {
     when {
         spawn.selected_valid == false
@@ -84,9 +99,8 @@ rule ParentProfileEscalation priority 60 {
 }
 
 rule AdvisoryReadOnly priority 900 {
-    when {
-        action.advisory == true
-        and spawn.selected_profile == "read_only"
+    when segment spawn_advisory {
+        spawn.selected_profile == "read_only"
     }
     then Advisory {
         code: "spawn_allowed",
@@ -96,9 +110,8 @@ rule AdvisoryReadOnly priority 900 {
 }
 
 rule AdvisoryRepoWrite priority 901 {
-    when {
-        action.advisory == true
-        and spawn.selected_profile == "repo_write"
+    when segment spawn_advisory {
+        spawn.selected_profile == "repo_write"
     }
     then Advisory {
         code: "spawn_allowed",
@@ -108,9 +121,8 @@ rule AdvisoryRepoWrite priority 901 {
 }
 
 rule AdvisoryNetworkRead priority 902 {
-    when {
-        action.advisory == true
-        and spawn.selected_profile == "network_read"
+    when segment spawn_advisory {
+        spawn.selected_profile == "network_read"
     }
     then Advisory {
         code: "spawn_allowed",
@@ -120,9 +132,8 @@ rule AdvisoryNetworkRead priority 902 {
 }
 
 rule AdvisoryRepoWriteNetwork priority 903 {
-    when {
-        action.advisory == true
-        and spawn.selected_profile == "repo_write_network"
+    when segment spawn_advisory {
+        spawn.selected_profile == "repo_write_network"
     }
     then Advisory {
         code: "spawn_allowed",

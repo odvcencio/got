@@ -1,6 +1,7 @@
 package coordd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -28,6 +29,13 @@ type ExecIO struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+}
+
+type guardedProcessSpec struct {
+	Context context.Context
+	Dir     string
+	Env     []string
+	IO      ExecIO
 }
 
 type ExitCodeError struct {
@@ -60,14 +68,37 @@ func (e *ExitCodeError) ExitCode() int {
 }
 
 func ExecuteGuarded(r *repo.Repo, input ActionPolicyInput, decision *ActionPolicyDecision) (*ExecResult, error) {
-	return ExecuteGuardedWithIO(r, input, decision, ExecIO{
-		Stdin:  os.Stdin,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
+	return executeGuardedWithSpec(r, input, decision, guardedProcessSpec{
+		Context: context.Background(),
+		IO: ExecIO{
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		},
 	})
 }
 
 func ExecuteGuardedWithIO(r *repo.Repo, input ActionPolicyInput, decision *ActionPolicyDecision, execIO ExecIO) (*ExecResult, error) {
+	return executeGuardedWithSpec(r, input, decision, guardedProcessSpec{
+		Context: context.Background(),
+		IO:      execIO,
+	})
+}
+
+func ExecuteGuardedProcessWithIO(r *repo.Repo, spec repo.ExternalProcessSpec, input ActionPolicyInput, decision *ActionPolicyDecision) (*ExecResult, error) {
+	return executeGuardedWithSpec(r, input, decision, guardedProcessSpec{
+		Context: spec.Context,
+		Dir:     spec.Dir,
+		Env:     spec.Env,
+		IO: ExecIO{
+			Stdin:  spec.Stdin,
+			Stdout: spec.Stdout,
+			Stderr: spec.Stderr,
+		},
+	})
+}
+
+func executeGuardedWithSpec(r *repo.Repo, input ActionPolicyInput, decision *ActionPolicyDecision, proc guardedProcessSpec) (*ExecResult, error) {
 	if len(input.Action.Argv) == 0 {
 		return nil, fmt.Errorf("missing command")
 	}
@@ -76,6 +107,7 @@ func ExecuteGuardedWithIO(r *repo.Repo, input ActionPolicyInput, decision *Actio
 	}
 
 	requestedProfile := ResolveRuntimeProfile(decision.Profile, input.Action)
+	spawnID, taskID := coorddExecutionContextFromEnv()
 	result := &ExecResult{
 		Decision:         decision,
 		RequestedProfile: requestedProfile,
@@ -83,6 +115,17 @@ func ExecuteGuardedWithIO(r *repo.Repo, input ActionPolicyInput, decision *Actio
 	}
 	if decision.Action == "HardBlock" {
 		result.ExitCode = 126
+		if r != nil {
+			_ = SaveExecTrace(r.GraftDir, &ExecTrace{
+				CreatedAt: time.Now().UTC(),
+				RepoRoot:  input.Repo.Root,
+				AgentID:   input.Session.AgentID,
+				SpawnID:   spawnID,
+				TaskID:    taskID,
+				Input:     input,
+				Result:    result,
+			})
+		}
 		return result, &ExitCodeError{
 			Code: 126,
 			Err:  fmt.Errorf("coordd blocked action: %s", decision.Reason),
@@ -127,11 +170,16 @@ func ExecuteGuardedWithIO(r *repo.Repo, input ActionPolicyInput, decision *Actio
 				"effective_profile": effectiveProfile,
 				"degradations":      degradations,
 				"snapshot_id":       result.SnapshotID,
+				"label":             input.Process.Label,
+				"origin":            input.Process.Origin,
+				"point":             input.Process.Point,
+				"spawn_id":          spawnID,
+				"task_id":           taskID,
 			},
 		})
 	}
 
-	runErr := runWithBackend(backendName, r, input, decision.Action, requestedProfile, effectiveProfile, execIO)
+	runErr := runWithBackend(backendName, r, input, decision.Action, requestedProfile, effectiveProfile, proc)
 	exitCode := 0
 	status := "ok"
 	if runErr != nil {
@@ -165,7 +213,24 @@ func ExecuteGuardedWithIO(r *repo.Repo, input ActionPolicyInput, decision *Actio
 				"status":            status,
 				"exit_code":         exitCode,
 				"snapshot_id":       result.SnapshotID,
+				"label":             input.Process.Label,
+				"origin":            input.Process.Origin,
+				"point":             input.Process.Point,
+				"spawn_id":          spawnID,
+				"task_id":           taskID,
 			},
+		})
+	}
+
+	if r != nil {
+		_ = SaveExecTrace(r.GraftDir, &ExecTrace{
+			CreatedAt: started,
+			RepoRoot:  input.Repo.Root,
+			AgentID:   input.Session.AgentID,
+			SpawnID:   spawnID,
+			TaskID:    taskID,
+			Input:     input,
+			Result:    result,
 		})
 	}
 
@@ -173,6 +238,10 @@ func ExecuteGuardedWithIO(r *repo.Repo, input ActionPolicyInput, decision *Actio
 		return result, &ExitCodeError{Code: exitCode, Err: runErr}
 	}
 	return result, nil
+}
+
+func coorddExecutionContextFromEnv() (string, string) {
+	return strings.TrimSpace(os.Getenv("GRAFT_COORDD_SPAWN_ID")), strings.TrimSpace(os.Getenv("GRAFT_COORDD_TASK_ID"))
 }
 
 func loadGuardConfigForExec(r *repo.Repo) (*GuardConfig, error) {
@@ -206,7 +275,10 @@ func selectExecBackend(r *repo.Repo, cfg *GuardConfig, requested RuntimeProfile)
 	if cfg != nil && cfg.PreferredBackend != "" {
 		preference = cfg.PreferredBackend
 	}
+	return selectExecBackendForPreference(r, cfg, requested, preference)
+}
 
+func selectExecBackendForPreference(r *repo.Repo, cfg *GuardConfig, requested RuntimeProfile, preference string) (string, RuntimeProfile, []string, error) {
 	switch preference {
 	case "auto":
 		if canUseContainer(r, cfg, requested) {
@@ -281,29 +353,30 @@ func canUseContainer(r *repo.Repo, cfg *GuardConfig, requested RuntimeProfile) b
 	return true
 }
 
-func runWithBackend(backend string, r *repo.Repo, input ActionPolicyInput, decisionAction string, requested, effective RuntimeProfile, execIO ExecIO) error {
+func runWithBackend(backend string, r *repo.Repo, input ActionPolicyInput, decisionAction string, requested, effective RuntimeProfile, proc guardedProcessSpec) error {
 	switch backend {
 	case "host-direct":
-		return runDirect(input, decisionAction, requested, effective, execIO)
+		return runDirect(input, decisionAction, requested, effective, proc)
 	case "host-bwrap":
-		return runBwrap(r, input, decisionAction, requested, effective, execIO)
+		return runBwrap(r, input, decisionAction, requested, effective, proc)
 	case "container":
 		cfg, err := loadGuardConfigForExec(r)
 		if err != nil {
 			return err
 		}
-		return runContainer(r, cfg, input, decisionAction, requested, effective, execIO)
+		return runContainer(r, cfg, input, decisionAction, requested, effective, proc)
 	default:
 		return fmt.Errorf("unknown coordd backend %q", backend)
 	}
 }
 
-func runDirect(input ActionPolicyInput, decisionAction string, requested, effective RuntimeProfile, execIO ExecIO) error {
-	cmd := exec.Command(input.Action.Argv[0], input.Action.Argv[1:]...)
-	cmd.Stdin = execInput(execIO.Stdin, os.Stdin)
-	cmd.Stdout = execOutput(execIO.Stdout, os.Stdout)
-	cmd.Stderr = execOutput(execIO.Stderr, os.Stderr)
-	cmd.Env = append(os.Environ(),
+func runDirect(input ActionPolicyInput, decisionAction string, requested, effective RuntimeProfile, proc guardedProcessSpec) error {
+	cmd := exec.CommandContext(execContext(proc.Context), input.Action.Argv[0], input.Action.Argv[1:]...)
+	cmd.Dir = proc.Dir
+	cmd.Stdin = execInput(proc.IO.Stdin, os.Stdin)
+	cmd.Stdout = execOutput(proc.IO.Stdout, os.Stdout)
+	cmd.Stderr = execOutput(proc.IO.Stderr, os.Stderr)
+	cmd.Env = append(execEnv(proc.Env),
 		"GRAFT_COORDD_GUARDED=1",
 		"GRAFT_COORDD_SELECTOR="+input.Action.Selector,
 		"GRAFT_COORDD_POLICY_ACTION="+decisionAction,
@@ -313,57 +386,27 @@ func runDirect(input ActionPolicyInput, decisionAction string, requested, effect
 	return cmd.Run()
 }
 
-func runBwrap(r *repo.Repo, input ActionPolicyInput, decisionAction string, requested, effective RuntimeProfile, execIO ExecIO) error {
+func runBwrap(r *repo.Repo, input ActionPolicyInput, decisionAction string, requested, effective RuntimeProfile, proc guardedProcessSpec) error {
 	if !canUseBwrap(r, requested) {
 		return fmt.Errorf("host-bwrap backend unavailable")
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil && r != nil {
-		cwd = r.RootDir
-	}
-	if cwd == "" && r != nil {
-		cwd = r.RootDir
+	cwd, err := resolveExecDir(r, proc.Dir)
+	if err != nil {
+		return fmt.Errorf("resolve exec dir: %w", err)
 	}
 
-	args := []string{
-		"--die-with-parent",
-		"--new-session",
-		"--proc", "/proc",
-		"--dev", "/dev",
-		"--ro-bind", "/", "/",
-		"--tmpfs", "/tmp",
-	}
-	if requested.Network == NetworkDeny {
-		args = append(args, "--unshare-net")
-	}
+	rootDir := ""
 	if r != nil {
-		switch requested.FilesystemScope {
-		case FilesystemScopeRepoRW:
-			args = append(args, "--bind", r.RootDir, r.RootDir)
-		case FilesystemScopeRepoRO:
-			args = append(args, "--ro-bind", r.RootDir, r.RootDir)
-		}
+		rootDir = r.RootDir
 	}
-	if cwd != "" {
-		if r != nil {
-			if rel, relErr := filepath.Rel(r.RootDir, cwd); relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-				args = append(args, "--chdir", cwd)
-			} else {
-				args = append(args, "--chdir", r.RootDir)
-			}
-		} else {
-			args = append(args, "--chdir", cwd)
-		}
-	}
-	args = append(args, "--")
-	args = append(args, input.Action.Argv...)
+	args := buildBwrapArgs(rootDir, cwd, input.Action.Argv, requested, true)
 
-	cmd := exec.Command("bwrap", args...)
-	cmd.Stdin = execInput(execIO.Stdin, os.Stdin)
-	cmd.Stdout = execOutput(execIO.Stdout, os.Stdout)
-	cmd.Stderr = execOutput(execIO.Stderr, os.Stderr)
-	cmd.Env = append(os.Environ(),
+	cmd := exec.CommandContext(execContext(proc.Context), "bwrap", args...)
+	cmd.Stdin = execInput(proc.IO.Stdin, os.Stdin)
+	cmd.Stdout = execOutput(proc.IO.Stdout, os.Stdout)
+	cmd.Stderr = execOutput(proc.IO.Stderr, os.Stderr)
+	cmd.Env = append(execEnv(proc.Env),
 		"GRAFT_COORDD_GUARDED=1",
 		"GRAFT_COORDD_SELECTOR="+input.Action.Selector,
 		"GRAFT_COORDD_POLICY_ACTION="+decisionAction,
@@ -403,7 +446,7 @@ func resolveContainerRuntime(cfg *GuardConfig) (string, error) {
 	}
 }
 
-func containerWorkspacePaths(r *repo.Repo) (string, string, error) {
+func containerWorkspacePaths(r *repo.Repo, workdir string) (string, string, error) {
 	hostRoot := ""
 	if r != nil && r.RootDir != "" {
 		hostRoot = r.RootDir
@@ -416,9 +459,13 @@ func containerWorkspacePaths(r *repo.Repo) (string, string, error) {
 	}
 
 	containerRoot := "/workspace"
-	cwd, err := os.Getwd()
-	if err != nil {
-		return hostRoot, containerRoot, nil
+	cwd := strings.TrimSpace(workdir)
+	if cwd == "" {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			return hostRoot, containerRoot, nil
+		}
 	}
 	rel, relErr := filepath.Rel(hostRoot, cwd)
 	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
@@ -430,7 +477,7 @@ func containerWorkspacePaths(r *repo.Repo) (string, string, error) {
 	return hostRoot, filepath.Join(containerRoot, filepath.ToSlash(rel)), nil
 }
 
-func BuildContainerInvocation(runtimeName, image, hostRoot, containerWorkdir string, input ActionPolicyInput, decisionAction string, requested, effective RuntimeProfile) (*ContainerInvocation, error) {
+func BuildContainerInvocation(runtimeName, image, hostRoot, containerWorkdir string, input ActionPolicyInput, decisionAction string, requested, effective RuntimeProfile, extraEnv []string) (*ContainerInvocation, error) {
 	runtimeName = strings.TrimSpace(runtimeName)
 	image = strings.TrimSpace(image)
 	if runtimeName == "" {
@@ -462,13 +509,20 @@ func BuildContainerInvocation(runtimeName, image, hostRoot, containerWorkdir str
 		"--tmpfs", "/tmp:rw,nosuid,nodev",
 		"--tmpfs", "/home/coordd:rw,nosuid,nodev",
 		"--workdir", containerWorkdir,
-		"--env", "HOME=/home/coordd",
-		"--env", "GRAFT_COORDD_GUARDED=1",
-		"--env", "GRAFT_COORDD_SELECTOR="+input.Action.Selector,
-		"--env", "GRAFT_COORDD_POLICY_ACTION="+decisionAction,
-		"--env", "GRAFT_COORDD_REQUESTED_PROFILE="+requested.Name,
-		"--env", "GRAFT_COORDD_EFFECTIVE_PROFILE="+effective.Name,
 	)
+	for _, envEntry := range append(append([]string(nil), extraEnv...),
+		"HOME=/home/coordd",
+		"GRAFT_COORDD_GUARDED=1",
+		"GRAFT_COORDD_SELECTOR="+input.Action.Selector,
+		"GRAFT_COORDD_POLICY_ACTION="+decisionAction,
+		"GRAFT_COORDD_REQUESTED_PROFILE="+requested.Name,
+		"GRAFT_COORDD_EFFECTIVE_PROFILE="+effective.Name,
+	) {
+		if strings.TrimSpace(envEntry) == "" {
+			continue
+		}
+		args = append(args, "--env", envEntry)
+	}
 
 	if requested.Network == NetworkDeny {
 		args = append(args, "--network", "none")
@@ -480,32 +534,77 @@ func BuildContainerInvocation(runtimeName, image, hostRoot, containerWorkdir str
 	}
 	args = append(args, "-v", hostRoot+":/workspace"+mountMode)
 	args = append(args, image)
-	args = append(args, input.Action.Argv...)
+	args = append(args, containerArgvForAction(hostRoot, input.Action.Argv)...)
 	return &ContainerInvocation{
 		Runtime: runtimeName,
 		Args:    args,
 	}, nil
 }
 
-func runContainer(r *repo.Repo, cfg *GuardConfig, input ActionPolicyInput, decisionAction string, requested, effective RuntimeProfile, execIO ExecIO) error {
+func runContainer(r *repo.Repo, cfg *GuardConfig, input ActionPolicyInput, decisionAction string, requested, effective RuntimeProfile, proc guardedProcessSpec) error {
 	runtimeName, err := resolveContainerRuntime(cfg)
 	if err != nil {
 		return err
 	}
-	hostRoot, containerWorkdir, err := containerWorkspacePaths(r)
+	hostRoot, containerWorkdir, err := containerWorkspacePaths(r, proc.Dir)
 	if err != nil {
 		return fmt.Errorf("resolve container workspace: %w", err)
 	}
-	invocation, err := BuildContainerInvocation(runtimeName, cfg.ContainerImage, hostRoot, containerWorkdir, input, decisionAction, requested, effective)
+	invocation, err := BuildContainerInvocation(runtimeName, cfg.ContainerImage, hostRoot, containerWorkdir, input, decisionAction, requested, effective, proc.Env)
 	if err != nil {
 		return err
 	}
 
-	cmd := exec.Command(invocation.Runtime, invocation.Args...)
-	cmd.Stdin = execInput(execIO.Stdin, os.Stdin)
-	cmd.Stdout = execOutput(execIO.Stdout, os.Stdout)
-	cmd.Stderr = execOutput(execIO.Stderr, os.Stderr)
+	cmd := exec.CommandContext(execContext(proc.Context), invocation.Runtime, invocation.Args...)
+	cmd.Stdin = execInput(proc.IO.Stdin, os.Stdin)
+	cmd.Stdout = execOutput(proc.IO.Stdout, os.Stdout)
+	cmd.Stderr = execOutput(proc.IO.Stderr, os.Stderr)
 	return cmd.Run()
+}
+
+func execContext(ctx context.Context) context.Context {
+	if ctx != nil {
+		return ctx
+	}
+	return context.Background()
+}
+
+func execEnv(env []string) []string {
+	if len(env) > 0 {
+		return append([]string(nil), env...)
+	}
+	return append([]string(nil), os.Environ()...)
+}
+
+func resolveExecDir(r *repo.Repo, requestedDir string) (string, error) {
+	if strings.TrimSpace(requestedDir) != "" {
+		return requestedDir, nil
+	}
+	cwd, err := os.Getwd()
+	if err == nil && strings.TrimSpace(cwd) != "" {
+		return cwd, nil
+	}
+	if r != nil && strings.TrimSpace(r.RootDir) != "" {
+		return r.RootDir, nil
+	}
+	return "", err
+}
+
+func containerArgvForAction(hostRoot string, argv []string) []string {
+	if len(argv) == 0 {
+		return nil
+	}
+	mapped := append([]string(nil), argv...)
+	program := strings.TrimSpace(mapped[0])
+	if !filepath.IsAbs(program) || strings.TrimSpace(hostRoot) == "" {
+		return mapped
+	}
+	rel, err := filepath.Rel(hostRoot, program)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return mapped
+	}
+	mapped[0] = filepath.ToSlash(filepath.Join("/workspace", rel))
+	return mapped
 }
 
 func execInput(current io.Reader, fallback *os.File) io.Reader {

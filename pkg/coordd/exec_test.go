@@ -36,7 +36,7 @@ func TestBuildContainerInvocation_PodmanRepoWrite(t *testing.T) {
 	}
 	requested := ResolveRuntimeProfile("repo_write", ActionPolicyAction{WritesFilesystem: true})
 
-	invocation, err := BuildContainerInvocation("podman", "docker.io/library/alpine:3.20", "/tmp/repo", "/workspace/subdir", input, "Allow", requested, requested)
+	invocation, err := BuildContainerInvocation("podman", "docker.io/library/alpine:3.20", "/tmp/repo", "/workspace/subdir", input, "Allow", requested, requested, []string{"FOO=bar"})
 	if err != nil {
 		t.Fatalf("BuildContainerInvocation: %v", err)
 	}
@@ -52,5 +52,27 @@ func TestBuildContainerInvocation_PodmanRepoWrite(t *testing.T) {
 	}
 	if !strings.Contains(joined, "--workdir /workspace/subdir") {
 		t.Fatalf("expected workdir in %q", joined)
+	}
+	if !strings.Contains(joined, "--env FOO=bar") {
+		t.Fatalf("expected extra env in %q", joined)
+	}
+}
+
+func TestBuildContainerInvocation_RewritesRepoAbsoluteProgramPath(t *testing.T) {
+	input := ActionPolicyInput{
+		Action: ActionPolicyAction{
+			Selector: "shell:/tmp/repo/.graft/hooks/pre-commit",
+			Argv:     []string{"/tmp/repo/.graft/hooks/pre-commit", "arg1"},
+		},
+	}
+	requested := ResolveRuntimeProfile("repo_write", ActionPolicyAction{WritesFilesystem: true})
+
+	invocation, err := BuildContainerInvocation("podman", "docker.io/library/alpine:3.20", "/tmp/repo", "/workspace", input, "Allow", requested, requested, nil)
+	if err != nil {
+		t.Fatalf("BuildContainerInvocation: %v", err)
+	}
+	joined := strings.Join(invocation.Args, " ")
+	if !strings.Contains(joined, "/workspace/.graft/hooks/pre-commit arg1") {
+		t.Fatalf("expected program path rewrite in %q", joined)
 	}
 }
