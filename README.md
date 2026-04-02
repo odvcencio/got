@@ -1,10 +1,12 @@
 # graft
 
-Structural version control. Merges functions, not lines.
+Structural version control with built-in coordination and governed execution.
 
 Git treats source files as bags of lines. Two developers add different functions to the same file — conflict. Both add different imports — conflict. One renames a variable, another adds a function nearby — conflict. None of these are real conflicts.
 
 **graft** is a standalone version control system that decomposes source into structural entities via [gotreesitter](https://github.com/odvcencio/gotreesitter) — functions, methods, classes, imports — and merges at that level. Independent additions merge cleanly. Import blocks get set-union merged. Only genuine semantic overlaps produce conflicts.
+
+That structural recording point is what makes the rest of graft possible. Once changes are recorded against entities instead of line hunks, graft can coordinate work on real code objects, record governed decisions around them, and give agents a shared runtime that is tied directly to version control instead of bolted on beside it.
 
 ```
 # Git: CONFLICT (both modified main.go)
@@ -49,6 +51,11 @@ go install github.com/odvcencio/graft/cmd/graft@latest
 Requires Go 1.25+. Pure Go, no C dependencies.
 
 ## Usage
+
+Graft is two things at once:
+
+- A structural VCS that stores and merges code by entity.
+- A governed coordination runtime that lets humans and agents claim work, publish plans, keep shared notes, and run actions through policy.
 
 Graft follows the same mental model as Git:
 
@@ -166,6 +173,38 @@ graft verify [--signatures] [--json]  Verify object integrity and commit signatu
 graft version                         Print version
 ```
 
+**Coordination & Runtime**
+```
+graft workon --as <name>              Join coordination as an agent identity
+graft coord                           Show coordination dashboard
+graft coord check                     Inspect claims/impact before acting
+graft coord plan ...                  Manage canonical shared plans in refs/coord/plans/
+graft coord note ...                  Manage shared scratch/handoff/status notes in refs/coord/notes/
+graft coord task ...                  Manage operational work items in refs/coord/tasks/
+graft coordd serve                    Run the local coordination/event daemon
+graft coordd exec -- <cmd...>         Run a governed command through policy + runtime selection
+graft coordd spawn ...                Authorize or launch governed child workstreams
+graft workspace ...                   Register related repos for cross-repo coordination
+graft mcp ...                         Expose graft as an MCP server for AI hosts
+```
+
+### Repo-local coordd policies
+
+`coordd` can load repo-local Arbiter bundles from `.graft/coordd/policies/`.
+
+- Action policy roots: `.graft/coordd/policies/action.arb` or `.graft/coordd/policies/action/main.arb`
+- Spawn policy roots: `.graft/coordd/policies/spawn.arb` or `.graft/coordd/policies/spawn/main.arb`
+- These are the only auto-loaded roots. Files like `action.example.arb`, `spawn.example.arb`, or `something.example.arb` are ignored unless a live policy explicitly `include`s them.
+- For examples and starter layouts, prefer either commented-out snippets inside the real bundle or separate `*.example.arb` files that can never be mistaken for active policy.
+
+### Plans vs notes
+
+Graft intentionally keeps active coordination material out of tracked source history.
+
+- Canonical plans live in `refs/coord/plans/`. They are the checked-in program record for multi-step work, ownership, and completion state. Use `graft coord plan ...`.
+- Shared notes live in `refs/coord/notes/`. They are the shared scratchspace for in-progress thinking, handoffs, short-lived status updates, and coordination context that should not clutter the source tree. Use `graft coord note ...`.
+- Source-controlled docs stay for durable product or user documentation. The repo should not fill up with transient plan/spec Markdown when that material belongs in coord refs instead.
+
 ### Remote shorthand
 
 Use `orchard:owner/repo` instead of full URLs:
@@ -251,6 +290,7 @@ graft diff main..feature --json
   HEAD                    ref: refs/heads/main
   objects/                SHA-256 content-addressed store (2-char fan-out)
   refs/heads/             Branch tips
+  refs/coord/             Coordination state: agents, claims, plans, notes, tasks, feed, policy
   index                   Staging area
 ```
 
@@ -268,6 +308,8 @@ graft diff main..feature --json
 | `pkg/diff` | Entity-level diff computation |
 | `pkg/merge` | Structural three-way merge orchestrator |
 | `pkg/repo` | Repository operations (init, commit, branch, checkout, merge, rebase, stash, bisect, ...) |
+| `pkg/coord` | Shared coordination state stored in `refs/coord/` |
+| `pkg/coordd` | Local coordination daemon, governed execution, spawn, traces |
 | `pkg/remote` | Remote sync, pack transport, and protocol client |
 | `pkg/userconfig` | Global user configuration (`~/.graftconfig`) |
 
@@ -285,7 +327,7 @@ Any language with a tree-sitter grammar can be parsed. Declaration classificatio
 
 ## Status
 
-Active development. 800+ tests passing across core packages. Structural merge is production-grade for supported scenarios, with pack files, object verification, remote sync, and entity-aware history workflows.
+Active development. Structural merge is already the foundation; coordination, sandboxing, and governed multi-agent runtime are the frontier being built directly into the VCS.
 
 What exists:
 - Content-addressed object store (SHA-256)
@@ -309,6 +351,8 @@ What exists:
 - Git forge clone support (GitHub, GitLab, Bitbucket shorthand)
 - Large file storage (LFS) with pattern-based tracking
 - `.graftignore` support
+- Agent coordination with shared refs for plans, notes, tasks, claims, feed, and sessions
+- `coordd` local daemon with governed exec/spawn, runtime profiles, snapshots, and decision traces
 
 ## Dependencies
 
