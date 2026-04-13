@@ -8,7 +8,7 @@ import (
 
 	gotreesitter "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/grammars"
-	classify "github.com/odvcencio/gts-suite/pkg/lang/treesitter"
+	classify "github.com/odvcencio/canopy/pkg/lang/treesitter"
 )
 
 // ErrDataFormatSkipped is returned when extraction is skipped because the file

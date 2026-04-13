@@ -9,10 +9,8 @@ github.com/klauspost/compress v1.18.4 h1:RPhnKRAQ4Fh8zU2FY/6ZFDwTVTxgJ/EMydqSTzE
 github.com/klauspost/compress v1.18.4/go.mod h1:R0h/fSBs8DE4ENlcrlib3PsXS61voFxhIs2DeRhCvJ4=
 github.com/odvcencio/arbiter v1.6.0 h1:UrJkRQ2lSp0yr3dsUWjOlOAHl8VkHHG+nBnHXsbl4fE=
 github.com/odvcencio/arbiter v1.6.0/go.mod h1:wQVPJ+PgKzxB0w3RgAbFJemDhkPjTdl3uGlSHOt0ztI=
-github.com/odvcencio/gotreesitter v0.10.0 h1:JqkkMFv8UwWMogr0VEmMMgcv2fllfrMIone7yGfc+ZY=
-github.com/odvcencio/gotreesitter v0.10.0/go.mod h1:Sx+iYJBfw5xSWkSttLSuFvguJctlH+ma1BTxZ0MPCqo=
-github.com/odvcencio/gts-suite v0.5.0 h1:Q++knO355x+T54vTN+88XlhHBhDq15QYH4zmO6Mr/8A=
-github.com/odvcencio/gts-suite v0.5.0/go.mod h1:LkjVxU9aXZMTkMt6jclV2+Iefx6ytbdrTkHCXoMYVNY=
+github.com/odvcencio/gotreesitter v0.13.0 h1:y2CuuMjh88r648IQQph4mDbt0i3cA6G6ZKt8hUq5Y4g=
+github.com/odvcencio/gotreesitter v0.13.0/go.mod h1:Sx+iYJBfw5xSWkSttLSuFvguJctlH+ma1BTxZ0MPCqo=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/spf13/cobra v1.10.2 h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=
 github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiTUUS4=
