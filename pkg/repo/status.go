@@ -105,10 +105,13 @@ func (r *Repo) Status() ([]StatusEntry, error) {
 			return nil
 		}
 
-		// Only track regular files.
-		if !d.IsDir() {
-			workFiles[rel] = true
+		// Only track regular files. Staging refuses symlink targets, and a
+		// symlink that points at a directory would make the rename and
+		// content scans read a directory, so skip symlinks here.
+		if d.IsDir() || d.Type()&fs.ModeSymlink != 0 {
+			return nil
 		}
+		workFiles[rel] = true
 		return nil
 	})
 	if err != nil {

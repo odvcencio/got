@@ -940,3 +940,39 @@ func statusCacheSize(r *Repo) int {
 	defer r.statusHashCacheMu.Unlock()
 	return len(r.statusHashCache)
 }
+
+func TestStatus_SkipsSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Init(dir)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := r.Add([]string{"main.go"}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "target"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "target", "data.txt"), []byte("data\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "target"), filepath.Join(dir, "dirlink")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "main.go"), filepath.Join(dir, "filelink")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	entries, err := r.Status()
+	if err != nil {
+		t.Fatalf("Status with symlinks: %v", err)
+	}
+	for _, e := range entries {
+		if e.Path == "dirlink" || e.Path == "filelink" {
+			t.Errorf("Status listed symlink %q; symlinks cannot be staged and must be skipped", e.Path)
+		}
+	}
+}
